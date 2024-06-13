@@ -1,0 +1,95 @@
+{
+    "name": "MICA",
+
+    "namespace": "Stanford\\MICA",
+
+    "description": "An EM specific to the MICA project.  Chatbot Agent",
+
+    "documentation": "README.md",
+
+    "authors": [
+        {
+            "name": "Irvin Szeto",
+            "email": "irvins@stanford.edu",
+            "institution": "Stanford University"
+        },
+        {
+            "name": "Jordan Schultz",
+            "email": "jmschultz@stanford.edu",
+            "institution": "Stanford University"
+        }
+    ],
+
+    "framework-version": 9,
+
+    "permissions": [
+        "redcap_every_page_top",
+        "redcap_module_system_enable"
+    ],
+
+    "enable-every-page-hooks-on-system-pages": true,
+
+    "links": {
+        "project": [
+
+        ],
+        "control-center": [
+
+        ]
+    },
+
+    "no-auth-pages": [
+
+    ],
+
+    "auth-ajax-actions": [
+        "callAI"
+    ],
+
+    "no-auth-ajax-actions": [
+        "callAI"
+    ],
+
+    "project-settings": [
+        {
+            "key": "enable-project-debug-logging",
+            "name": "<b>Enable Debug Logging</b><br><i>(optional)</i> Requires installation and configuration of emLogger",
+            "required": false,
+            "type": "checkbox"
+        }
+    ],
+
+    "system-settings": [
+        {
+            "key": "chatbot_system_context_persona",
+            "name": "Raw text to inject into system context to tune the chatbot's persona",
+            "required": true,
+            "type": "textarea"
+        },
+        {
+            "key": "chatbot_system_context_steps",
+            "name": "Raw text to inject into system context to tune the chatbot's behavior",
+            "required": true,
+            "type": "textarea"
+        },
+        {
+            "key": "chatbot_system_context_rules",
+            "name": "Raw text to inject into system context to tune the chatbot's bounds",
+            "required": true,
+            "type": "textarea"
+        },
+        {
+            "key": "enable-system-debug-logging",
+            "name": "<b>Enable Debug Logging (system-wide)</b><i>(optional)</i> Requires installation and configuration of emLogger",
+            "required": false,
+            "type": "checkbox"
+        }
+    ],
+
+    "compatibility": {
+        "php-version-min": "",
+        "php-version-max": "",
+        "redcap-version-min": "",
+        "redcap-version-max": ""
+    }
+}
