@@ -14,7 +14,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
     private \Stanford\SecureChatAI\SecureChatAI $secureChatInstance;
 
-    const SecureChatInstanceModuleName = 'SecureChatAI';
+    const SecureChatInstanceModuleName = 'secure_chat_ai';
 
     public $system_context_persona;
     public $system_context_steps;
