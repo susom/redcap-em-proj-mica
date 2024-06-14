@@ -1,7 +1,6 @@
 <?php
 namespace Stanford\MICA;
 
-require 'vendor/autoload.php';
 require_once "emLoggerTrait.php";
 
 use \REDCapEntity\Entity;
@@ -11,25 +10,24 @@ use \REDCapEntity\EntityFactory;
 class MICA extends \ExternalModules\AbstractExternalModule {
 
     use emLoggerTrait;
-    const BUILD_FILE_DIR = 'chatbot_ui/build/static/';
+    const BUILD_FILE_DIR = 'chatbot_ui/build/static';
 
     private \Stanford\SecureChatAI\SecureChatAI $secureChatInstance;
 
-    const SecureChatInstanceModuleName = 'SecureChatAI';
+    const SecureChatInstanceModuleName = 'wtf';
 
-    private $system_context_persona;
-    private $system_context_steps;
+    public $system_context_persona;
+    public $system_context_steps;
 
-    private $system_context_rules;
+    public $system_context_rules;
 
     private $entityFactory;
 
     public function __construct() {
         parent::__construct();
-        $this->system_context_persona = $this->getSystemSetting('chatbot_system_context_persona');
-        $this->system_context_steps = $this->getSystemSetting('chatbot_system_context_steps');
-        $this->system_context_rules = $this->getSystemSetting('chatbot_system_context_rules');
-
+        $this->system_context_persona = $this->getProjectSetting('chatbot_system_context_persona',59);
+        $this->system_context_steps = $this->getProjectSetting('chatbot_system_context_steps',59);
+        $this->system_context_rules = $this->getProjectSetting('chatbot_system_context_rules',59);
         $this->entityFactory = new \REDCapEntity\EntityFactory();
     }
 
@@ -73,6 +71,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     }
 
     public function generateAssetFiles(): array {
+
         $assetFolders = ['css', 'js', 'media'];
         $cwd = $this->getModulePath();
         $assets = [];
@@ -80,9 +79,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         foreach ($assetFolders as $folder) {
             $full_path = $cwd . self::BUILD_FILE_DIR . '/' . $folder;
             $dir_files = scandir($full_path);
-
             if (!$dir_files) {
-                $this->emError("No directory files found in $full_path");
                 continue;
             }
 

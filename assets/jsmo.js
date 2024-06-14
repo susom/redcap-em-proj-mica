@@ -1,6 +1,13 @@
 ;{
     const module = ExternalModules.Stanford.MICA;
 
+    console.log("ExternalModules:", window.ExternalModules);
+    if (!window.ExternalModules.moduleQueuedAjax) {
+        console.error("moduleQueuedAjax is not defined!");
+    } else {
+        console.log("moduleQueuedAjax is defined.");
+    }
+
     Object.assign(module, {
         InitFunction: function () {
             console.log("Calling this InitFunction() after load...", window.mica_jsmo_module.data);

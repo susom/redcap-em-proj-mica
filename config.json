@@ -44,7 +44,7 @@
     },
 
     "no-auth-pages": [
-
+        "pages/chatbot"
     ],
 
     "auth-ajax-actions": [
@@ -56,15 +56,6 @@
     ],
 
     "project-settings": [
-        {
-            "key": "enable-project-debug-logging",
-            "name": "<b>Enable Debug Logging</b><br><i>(optional)</i> Requires installation and configuration of emLogger",
-            "required": false,
-            "type": "checkbox"
-        }
-    ],
-
-    "system-settings": [
         {
             "key": "chatbot_system_context_persona",
             "name": "Raw text to inject into system context to tune the chatbot's persona",
@@ -83,6 +74,15 @@
             "required": true,
             "type": "textarea"
         },
+        {
+            "key": "enable-project-debug-logging",
+            "name": "<b>Enable Debug Logging</b><br><i>(optional)</i> Requires installation and configuration of emLogger",
+            "required": false,
+            "type": "checkbox"
+        }
+    ],
+
+    "system-settings": [
         {
             "key": "enable-system-debug-logging",
             "name": "<b>Enable Debug Logging (system-wide)</b><i>(optional)</i> Requires installation and configuration of emLogger",
