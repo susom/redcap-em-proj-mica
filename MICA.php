@@ -17,12 +17,19 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
     const SecureChatInstanceModuleName = 'SecureChatAI';
 
-    private $system_context;
+    private $system_context_persona;
+    private $system_context_steps;
+
+    private $system_context_rules;
+
     private $entityFactory;
 
     public function __construct() {
         parent::__construct();
-        $this->system_context = $this->getSystemSetting('chatbot_system_context');
+        $this->system_context_persona = $this->getSystemSetting('chatbot_system_context_persona');
+        $this->system_context_steps = $this->getSystemSetting('chatbot_system_context_steps');
+        $this->system_context_rules = $this->getSystemSetting('chatbot_system_context_rules');
+
         $this->entityFactory = new \REDCapEntity\EntityFactory();
     }
 
@@ -62,42 +69,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     }
 
     public function redcap_every_page_top($project_id) {
-        try {
-            preg_match('/redcap_v[\d\.].*\/index\.php/m', $_SERVER['SCRIPT_NAME'], $matches, PREG_OFFSET_CAPTURE);
-            if (strpos($_SERVER['SCRIPT_NAME'], 'ProjectSetup') !== false || !empty($matches)) {
-                $this->injectIntegrationUI();
-            }
-        } catch (\Exception $e) {
-            \REDCap::logEvent('Exception initiating REDCap Chatbot.', $e->getMessage());
-        }
-    }
 
-    public function injectJSMO($data = null, $init_method = null): void {
-        echo $this->initializeJavascriptModuleObject();
-        $cmds = [
-            "window.chatbot_jsmo_module = " . $this->getJavascriptModuleObjectName()
-        ];
-
-        $initial_system_context = $this->appendSystemContext(array(), $this->system_context);
-        $data = !empty($initial_system_context) ? $initial_system_context : null;
-        if (!empty($data)) $cmds[] = "window.chatbot_jsmo_module.data = " . json_encode($data);
-        if (!empty($init_method)) $cmds[] = "window.chatbot_jsmo_module.afterRender(chatbot_jsmo_module." . $init_method . ")";
-        ?>
-        <script src="<?= $this->getUrl("assets/jsmo.js", true) ?>"></script>
-        <script>
-            $(function () { <?php echo implode(";\n", $cmds) ?> })
-        </script>
-        <?php
-    }
-
-    public function injectIntegrationUI() {
-        $this->injectJSMO(null);
-        $build_files = $this->generateAssetFiles();
-        foreach ($build_files as $file) {
-            echo $file;
-        }
-        echo '<div id="chatbot_ui_container"></div>';
-        $this->emdebug("injectIntegrationUI() End");
     }
 
     public function generateAssetFiles(): array {

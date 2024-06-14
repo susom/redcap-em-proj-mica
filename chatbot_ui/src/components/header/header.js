@@ -8,14 +8,16 @@ function Header({ changeView }) {
         <Container className="rcchat_header handle">
             <h1>
                 <span className="logo" onClick={() => changeView('splash')}></span>
-                REDCapBot Support
+                MICA AI Chatbot
+            </h1>
+            <div className="buttons">
                 <button onClick={() => changeView('history')} className="archive">
                     <Archive size={20}/>
                 </button>
                 <button onClick={() => changeView('home')} className="chat">
                     <ChatDots size={20}/>
                 </button>
-            </h1>
+            </div>
         </Container>
     );
 }

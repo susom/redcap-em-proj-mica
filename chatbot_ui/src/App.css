@@ -1,113 +1,49 @@
+.container {
+    max-width:initial;
+}
+
 #chatbot_ui_container {
-    position: fixed; /* Cover the entire viewport */
+    position: fixed;
     top: 0;
     left: 0;
     width: 100vw;
     height: 100vh;
     z-index: 9999;
-    pointer-events: none; /* Allow clicks to pass through */
-}
-
-.draggable-container {
-    position: absolute;
-    bottom: 30px; /* Initial position */
-    right: 30px; /* Initial position */
-    pointer-events: auto; /* Make this element interactive */
-    transition: box-shadow 0.2s ease-in-out; /* Smooth transition for shadow */
+    pointer-events: auto; /* Make the entire container interactive */
     display: flex;
     flex-direction: column;
+    background-color:#E6E7ED;
 }
 
-.draggable-container.splash {
-    width: 100px; /* Size of the splash icon */
-    height: 100px;
-    background: none;
-    border: none;
-}
-
-.draggable-container.home,
-.draggable-container.history {
+.full-screen-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
     background: #2C2C2C; /* Assuming you want the same background */
-    border-radius: 10px;
-    border: 1px solid #999;
-    max-height: 80vh; /* Adjust this as necessary */
+}
+
+.full-screen-container.splash {
+    background: none;
     display: flex;
-    flex-direction: column;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Adding shadow for depth */
-}
-
-.handle {
-    cursor: move; /* Indicate draggable area */
-}
-
-.App {
-    width: auto; /* Make .App fill the container */
-    height: auto; /* Adjust height as necessary, or make it auto based on content */
+    justify-content: center;
+    align-items: center;
 }
 
 .content {
     flex: 1;
-    overflow: hidden; /* Prevent overflow from the content */
+    overflow: hidden;
     display: flex;
     flex-direction: column;
-    height: calc(98% - 60px); /* Account for the footer height */
 }
 
 .body {
     flex: 1;
-    overflow-y: auto; /* Allow vertical scrolling */
+    overflow-y: auto;
 }
 
 .messages {
-    height: 100%; /* Full height for messages */
+    height: 100%;
     overflow-y: scroll;
     padding-bottom: 50px;
-}
-
-.react-resizable {
-    transition: width 0.3s ease, height 0.3s ease; /* Adjust the duration and easing as needed */
-}
-
-.react-resizable-box {
-    position: relative;
-}
-
-.react-resizable-handle {
-    width: 20px;
-    height: 20px;
-    position: absolute;
-    bottom: 0;
-    right: 0;
-    cursor: nwse-resize;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(200, 200, 200, 0.5); /* Lighter, more subtle gray */
-    border-radius: 10px 0 10px 0; /* Match the rounded corner */
-}
-
-.react-resizable-handle::before {
-    content: "\f0c9"; /* Font Awesome icon for 'bars' */
-    font-family: "Font Awesome 5 Free";
-    font-weight: 900;
-    font-size: 12px;
-    color: #777;
-    transform: translate(2px, 2px); /* Adjust position */
-}
-
-
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
-}
-
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
 }

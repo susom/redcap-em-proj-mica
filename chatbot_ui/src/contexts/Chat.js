@@ -109,7 +109,7 @@ export const ChatContextProvider = ({ children }) => {
 
     const callAjax = (payload, callback) => {
         if(apiContextRef.current.length === 0){
-            const initial_system_context = window.chatbot_jsmo_module.getInitialSystemContext().pop();
+            const initial_system_context = window.mica_jsmo_module.getInitialSystemContext().pop();
             console.log("initial apiContext, if empty , inject system context before first query", initial_system_context);
             addMessage(initial_system_context);
         }
@@ -120,7 +120,7 @@ export const ChatContextProvider = ({ children }) => {
         const wrappedPayload = [...apiContextRef.current];
         console.log("calling callAI with ", wrappedPayload);
 
-        window.chatbot_jsmo_module.callAI(wrappedPayload, (res) => {
+        window.mica_jsmo_module.callAI(wrappedPayload, (res) => {
             if (res && res.response) {
                 updateMessage(res, userMessageIndex);
                 if (callback) callback();

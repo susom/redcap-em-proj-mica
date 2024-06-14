@@ -34,7 +34,9 @@ function Footer({ changeView }) {
         <Container className={`container footer`}>
             <button onClick={chat_context.clearMessages} className={`clear_chat`}><EraserFill color="#ccc" size={20} /></button>
             <input className={`user_input`} placeholder={inputPH} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} />
-            <button onClick={handleSubmit}><Send color="#ccc" size={20} className={`send ${loading ? "off" : ""}`} /><ArrowClockwise color="#ccc" size={20} className={`sendfill ${loading ? "rotate" : ""}`} /></button>
+            <div className="send-container">
+                <button onClick={handleSubmit}><Send color="#ccc" size={20} className={`send ${loading ? "off" : ""}`} /><ArrowClockwise color="#ccc" size={20} className={`sendfill ${loading ? "rotate" : ""}`} /></button>
+            </div>
         </Container>
     );
 }

@@ -3,11 +3,11 @@
 
     Object.assign(module, {
         InitFunction: function () {
-            console.log("Calling this InitFunction() after load...", window.chatbot_jsmo_module.data);
+            console.log("Calling this InitFunction() after load...", window.mica_jsmo_module.data);
         },
 
         getInitialSystemContext: function() {
-          return  window.chatbot_jsmo_module.data;
+          return  window.mica_jsmo_module.data;
         },
 
         callAI: async (payload, callback, errorCallback) => {

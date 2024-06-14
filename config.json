@@ -1,5 +1,5 @@
 {
-    "name": "MICA",
+    "name": "Project MICA",
 
     "namespace": "Stanford\\MICA",
 
@@ -31,7 +31,12 @@
 
     "links": {
         "project": [
-
+            {
+                "name": "MICA Chatbot",
+                "icon": "gear",
+                "url" : "pages/chatbot.php",
+                "show-header-and-footer": false
+            }
         ],
         "control-center": [
 
