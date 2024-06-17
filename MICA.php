@@ -178,7 +178,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 //                }
 
                 //CALL API ENDPOINT WITH AUGMENTED CHATML
-                $response = $this->getSecureChatInstance()->callAI("gpt-4o",$messages);
+                $response = $this->getSecureChatInstance()->callAI("gpt-4o",array("messages" =>$messages) );
                 $result = $this->formatResponse($response);
 
                 $this->emDebug("calling SecureChatAI.callAI()", $result);
@@ -191,7 +191,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
     private function getEmbedding($text) {
         try {
-            $result = $this->getSecureChatInstance()->callAI("ada-002", $text);
+            $result = $this->getSecureChatInstance()->callAI("ada-002", array("input" => $text) );
             return $result['data'][0]['embedding'];
         } catch (GuzzleException $e) {
             $this->emError("Embedding error: " . $e->getMessage());
