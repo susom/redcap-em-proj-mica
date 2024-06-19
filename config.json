@@ -15,17 +15,12 @@
         },
         {
             "name": "Jordan Schultz",
-            "email": "jmschultz@stanford.edu",
+            "email": "jmschult@stanford.edu",
             "institution": "Stanford University"
         }
     ],
 
-    "framework-version": 9,
-
-    "permissions": [
-        "redcap_every_page_top",
-        "redcap_module_system_enable"
-    ],
+    "framework-version": 14,
 
     "enable-every-page-hooks-on-system-pages": true,
 

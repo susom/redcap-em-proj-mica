@@ -6,21 +6,18 @@ require_once "emLoggerTrait.php";
 use \REDCapEntity\Entity;
 use \REDCapEntity\EntityDB;
 use \REDCapEntity\EntityFactory;
+use Stanford\MICA\Sanitizer;
 
 class MICA extends \ExternalModules\AbstractExternalModule {
 
     use emLoggerTrait;
-    const BUILD_FILE_DIR = 'chatbot_ui/build/static';
-
-    private \Stanford\SecureChatAI\SecureChatAI $secureChatInstance;
-
+    const BUILD_FILE_DIR = 'mica-chatbot/dist/assets';
     const SecureChatInstanceModuleName = 'secure_chat_ai';
 
+    private \Stanford\SecureChatAI\SecureChatAI $secureChatInstance;
     public $system_context_persona;
     public $system_context_steps;
-
     public $system_context_rules;
-
     private $entityFactory;
 
     public function __construct() {
@@ -62,13 +59,13 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     }
 
     // Hook to trigger entity initialization on module enablement
-    public function redcap_module_system_enable($version) {
+//    public function redcap_module_system_enable($version) {
 //        \REDCapEntity\EntityDB::buildSchema($this->PREFIX);
-    }
-
-    public function redcap_every_page_top($project_id) {
-
-    }
+//    }
+//
+//    public function redcap_every_page_top($project_id) {
+//
+//    }
 
     public function generateAssetFiles(): array {
 
@@ -104,7 +101,17 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         return $assets;
     }
 
-    public function sanitizeInput($payload): array|string {
+    /**
+     * @param $data
+     * @return mixed
+     */
+    public function sanitizeInput($data): mixed
+    {
+        $sanitizer = new Sanitizer();
+        return $sanitizer->sanitize($data);
+    }
+
+    public function handleUserInput($payload): array|string {
         $sanitizedPayload = array();
 
         if (is_array($payload)) {
@@ -113,17 +120,14 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     isset($message['role']) && is_string($message['role']) &&
                     isset($message['content']) && is_string($message['content'])
                 ) {
-                    $sanitizedRole = filter_var($message['role'], FILTER_SANITIZE_STRING);
-                    $sanitizedContent = filter_var($message['content'], FILTER_SANITIZE_STRING);
-
+                    $data = $this->sanitizeInput($message);
                     $sanitizedPayload[] = array(
-                        'role' => $sanitizedRole,
-                        'content' => $sanitizedContent
+                        'role' => $data['role'],
+                        'content' => $data['content']
                     );
                 }
             }
         }
-
         return $sanitizedPayload;
     }
 
@@ -168,7 +172,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                                        $survey_hash, $response_id, $survey_queue_hash, $page, $page_full, $user_id, $group_id) {
         switch ($action) {
             case "callAI":
-                $messages = $this->sanitizeInput($payload);
+                $messages = $this->handleUserInput($payload);
 
                 //FIND AND INJECT RAG
 //                $relevantDocs = $this->getRelevantDocuments($messages);
