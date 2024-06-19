@@ -1,0 +1,58 @@
+.footer {
+    background: #fff;
+    border-radius: 0;
+    position: absolute;
+    bottom: 0;
+    width: 100vw; /* Ensure it covers the entire viewport width */
+    display: flex;
+    align-items: center;
+    justify-content: space-between; /* Distribute space between input and buttons */
+    padding: 10px;
+    box-sizing: border-box; /* Include padding and border in the element's total width and height */
+}
+
+.footer button {
+    background: none;
+    border: none;
+}
+
+.footer .user_input {
+    border: none;
+    flex: 1; /* Take up remaining space */
+    padding: 10px 0;
+    text-align: left; /* Ensure text is left-aligned */
+}
+
+.footer .user_input:focus {
+    outline: none;
+}
+
+.footer .send-container {
+    display: flex;
+    align-items: center;
+}
+
+.footer button .sendfill.rotate {
+    display: initial;
+    animation: rotate 2s linear infinite;
+}
+
+.footer button.clear_chat {
+    padding-left: 0;
+    margin-right: 5px;
+    border-right: 1px dotted #ccc;
+}
+
+.footer button .sendfill,
+.footer button .send.off {
+    display: none;
+}
+
+@keyframes rotate {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}

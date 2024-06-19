@@ -1,0 +1,44 @@
+.rcchat_header {
+    position: relative;
+    background: #2C2C2C;
+    padding: 10px;
+    width: 100vw; /* Ensure it covers the entire viewport width */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-sizing: border-box; /* Include padding and border in the element's total width and height */
+}
+
+.rcchat_header h1 {
+    font-size: 122%;
+    margin: 0;
+    height: 30px;
+    line-height: 30px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+}
+
+.rcchat_header .logo {
+    background: url("../../assets/images/mica_logo.png") 0 50% no-repeat;
+    background-size: 30px;
+    display: inline-block;
+    width: 29px;
+    height: 29px;
+    cursor: pointer;
+    margin-right: 6px;
+    vertical-align: bottom;
+    border-radius: 30px;
+}
+
+.rcchat_header .buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.rcchat_header button {
+    border: none;
+    background: none;
+    color: #fff;
+    cursor: pointer;
+}
