@@ -69,32 +69,27 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
     public function generateAssetFiles(): array {
 
-        $assetFolders = ['css', 'js', 'media'];
+//        $assetFolders = ['css', 'js', 'media'];
         $cwd = $this->getModulePath();
         $assets = [];
 
-        foreach ($assetFolders as $folder) {
-            $full_path = $cwd . self::BUILD_FILE_DIR . '/' . $folder;
-            $dir_files = scandir($full_path);
-            if (!$dir_files) {
-                continue;
+        $full_path = $cwd . self::BUILD_FILE_DIR . '/' ;
+//        $dir_files = scandir($full_path);
+        $dir_files = array_diff(scandir($full_path), array('..', '.'));
+        if (!$dir_files) {
+            exit;
+        }
+
+        foreach ($dir_files as $file) {
+            $url = $this->getUrl(self::BUILD_FILE_DIR . '/' . $file);
+            $html = '';
+            if (str_contains($file, '.js')) {
+                $html = "<script type='module' crossorigin src='{$url}'></script>";
+            } elseif (str_contains($file, '.css')) {
+                $html = "<link rel='stylesheet' href='{$url}'>";
             }
-
-            foreach ($dir_files as $file) {
-                if ($file === '.' || $file === '..') {
-                    continue;
-                }
-
-                $url = $this->getUrl(self::BUILD_FILE_DIR . '/' . $folder . '/' . $file);
-                $html = '';
-                if (str_contains($file, '.js')) {
-                    $html = "<script type='module' crossorigin src='{$url}'></script>";
-                } elseif (str_contains($file, '.css')) {
-                    $html = "<link rel='stylesheet' href='{$url}'>";
-                }
-                if ($html !== '') {
-                    $assets[] = $html;
-                }
+            if ($html !== '') {
+                $assets[] = $html;
             }
         }
 
