@@ -1,10 +1,24 @@
 import React, {useState} from "react";
-import {Button, Fieldset, TextInput, Card, Center, Container, Grid, Space, Text, Title, Transition} from '@mantine/core';
-import {CCircle} from "react-bootstrap-icons";
-export function Login({changeView}){
+import {Box, Button, Fieldset, TextInput, Card, Center, Container, Grid, Space, Text, Title} from '@mantine/core';
+import {Carousel} from '@mantine/carousel';
+import {CCircle, Hash} from "react-bootstrap-icons";
+import {useNavigate} from 'react-router-dom';
+
+
+export function Login({changeView}) {
     const [viewLogin, setViewLogin] = useState(false)
-    const onClick = () => {
-        setViewLogin(!viewLogin)
+    const [embla, setEmbla] = useState(null);
+    const handleNext = () => embla?.scrollNext();
+    const navigate = useNavigate();
+
+    const onLogin = () => {
+        console.log('login')
+        handleNext()
+    }
+
+    const onVerify = () => {
+        console.log('verify')
+        navigate('/home')
     }
 
     const disclaimer = () => {
@@ -19,14 +33,19 @@ export function Login({changeView}){
                     rutrum non diam ut, euismod fermentum turpis.
                     Donec nunc ante, facilisis faucibus pellentesque sed, dictum vel nunc. Sed nec enim
                     nibh. Proin auctor orci a gravida pulvinar.
-                    Sed congue, velit sit amet rutrum ultrices, augue ligula pretium eros, et sagittis
-                    nisl nibh in leo. Praesent dui justo, luctus
-                    a turpis non, euismod tristique nisl</Text>
+                </Text>
                 <div>
                     <Center>
-                        <Button mt="md" radius="md" onClick={onClick} variant="filled"
-                                color="rgba( 140, 21, 21)" style={{width: '120px'}}>
-                            Accept
+                        <Button
+                            test="1"
+                            mt="md"
+                            radius="md"
+                            onClick={handleNext}
+                            variant="filled"
+                            color="rgba( 140, 21, 21)"
+                            style={{width: '120px'}}
+                        >
+                            Login
                         </Button>
                     </Center>
                 </div>
@@ -36,28 +55,68 @@ export function Login({changeView}){
 
     const login = () => {
         return (
-                <div>
-                    <Space h="sm"/>
-                    <Fieldset legend="Personal information">
-                        <TextInput label="Your name" placeholder="Your name"/>
-                        <TextInput label="Email" placeholder="Email" mt="md"/>
-                        <Center>
-                            <Button mt="md" radius="md" onClick={onClick} variant="filled"
-                                    color="rgba( 140, 21, 21)" style={{width: '120px'}}>
-                                Login
-                            </Button>
-                        </Center>
-                    </Fieldset>
-                    <Space h="sm"/>
-                </div>
+            <div>
+                <Space h="sm"/>
+                <Fieldset legend="Personal information">
+                    <TextInput label="Your name" placeholder="Your name"/>
+                    <TextInput label="Email" placeholder="Email" mt="md"/>
+                    <Center>
+                        <Button
+                            test="1"
+                            mt="md"
+                            radius="md"
+                            onClick={onLogin}
+                            variant="filled"
+                            color="rgba( 140, 21, 21)"
+                            style={{width: '120px'}}
+                        >
+                            Login
+                        </Button>
+                    </Center>
+                </Fieldset>
+                <Space h="sm"/>
+            </div>
         )
     }
 
-    const transitionWrapper = () => {
+    const twoFactorInput = () => {
         return (
-            <Transition transition="fade" mounted={viewLogin}>
-                {(styles) => <div style={login()}> </div>}
-            </Transition>
+            <div>
+                <Space h="sm"/>
+                <Fieldset legend="Please enter the 6-digit code sent via text message" style={{height: '242px'}}>
+                    <Space h="lg"/>
+                    <Space h="lg"/>
+                    <TextInput
+                        leftSection={<Hash/>}
+                        label="Code"
+                        placeholder="__ __ __ __ __ __ "
+                    />
+                    <Space h="lg"/>
+                    <Space h="lg"/>
+                    <Center>
+                        <Button name="2FA" mt="md" radius="md" onClick={onVerify} variant="filled"
+                                color="rgba( 140, 21, 21)" style={{width: '120px'}}>
+                            Validate
+                        </Button>
+                    </Center>
+                </Fieldset>
+                <Space h="sm"/>
+            </div>
+        )
+    }
+
+    const renderCarousel = () => {
+        return (
+            <Carousel
+                loop
+                withControls={false}
+                draggable={false}
+                getEmblaApi={setEmbla}
+            >
+                <Carousel.Slide>{disclaimer()}</Carousel.Slide>
+                <Carousel.Slide>{login()}</Carousel.Slide>
+                <Carousel.Slide>{twoFactorInput()}</Carousel.Slide>
+            </Carousel>
         )
     }
 
@@ -69,7 +128,7 @@ export function Login({changeView}){
                     <Space h="sm"/>
                     <Grid>
                         <Grid.Col span={7}>
-                            {viewLogin ? login() : disclaimer()}
+                            {renderCarousel()}
                         </Grid.Col>
                         <Grid.Col span={5}>
                             <Center>
@@ -77,15 +136,15 @@ export function Login({changeView}){
                             </Center>
                         </Grid.Col>
                     </Grid>
-                        <Center>
-                            <Text size="xs" c="dimmed">
-                                    <span style={{verticalAlign:'middle'}}>
+                    <Center>
+                        <Text size="xs" c="dimmed">
+                                    <span style={{verticalAlign: 'middle'}}>
                                         <CCircle/> Stanford Medicine
                                     </span>
-                            </Text>
-                        </Center>
-                    </Card>
-                </Container>
+                        </Text>
+                    </Center>
+                </Card>
+            </Container>
         </div>
     );
 }

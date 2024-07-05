@@ -5,6 +5,7 @@ import App from './App.jsx'
 import './index.css'
 import {ChatContextProvider} from "./contexts/Chat.jsx";
 import '@mantine/core/styles.css';
+import '@mantine/carousel/styles.css';
 import { MantineProvider } from '@mantine/core';
 import {AppRouter} from "./components/appRouter/appRouter.jsx";
 
