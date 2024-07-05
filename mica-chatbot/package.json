@@ -10,10 +10,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mantine/carousel": "^7.11.1",
     "@mantine/core": "^7.10.2",
     "@mantine/hooks": "^7.10.2",
     "axios": "^1.7.2",
     "dexie": "^4.0.7",
+    "embla-carousel-react": "^7.1.0",
     "react": "^18.2.0",
     "react-bootstrap": "^2.10.2",
     "react-bootstrap-icons": "^1.11.4",
