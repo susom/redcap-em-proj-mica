@@ -1,19 +1,40 @@
-import React, {useState} from "react";
+import React, {useState, useEffect} from "react";
 import {Box, Button, Fieldset, TextInput, Card, Center, Container, Grid, Space, Text, Title} from '@mantine/core';
 import {Carousel} from '@mantine/carousel';
 import {CCircle, Hash} from "react-bootstrap-icons";
 import {useNavigate} from 'react-router-dom';
-
+import {user_info} from "../../components/database/dexie.js";
+import useAuth from "../../Hooks/useAuth.jsx";
 
 export function Login({changeView}) {
     const [viewLogin, setViewLogin] = useState(false)
+    const [name, setName] = useState('')
+    const [email, setEmail] = useState('')
     const [embla, setEmbla] = useState(null);
     const handleNext = () => embla?.scrollNext();
     const navigate = useNavigate();
+    const { login } = useAuth();
+
+    // useEffect(() => {
+    //
+    // },[])
+
+    const onChange = (e) => {
+        const {name, value} = e.target
+        if (name === 'first') {
+            setName(value);
+        } else if (name === 'email') {
+            setEmail(value);
+        }
+    }
 
     const onLogin = () => {
-        console.log('login')
-        handleNext()
+        login(name, email).then((res) => {
+            handleNext()
+        }).catch((err) => {
+            console.log('user has been rejected ', err)
+        })
+
     }
 
     const onVerify = () => {
@@ -53,13 +74,13 @@ export function Login({changeView}) {
         )
     }
 
-    const login = () => {
+    const loginView = () => {
         return (
             <div>
                 <Space h="sm"/>
                 <Fieldset legend="Personal information">
-                    <TextInput label="Your name" placeholder="Your name"/>
-                    <TextInput label="Email" placeholder="Email" mt="md"/>
+                    <TextInput name="first" onChange={onChange} label="First name" placeholder="Your name"/>
+                    <TextInput name="email" onChange={onChange} label="Email" placeholder="Email" mt="md"/>
                     <Center>
                         <Button
                             test="1"
@@ -114,7 +135,7 @@ export function Login({changeView}) {
                 getEmblaApi={setEmbla}
             >
                 <Carousel.Slide>{disclaimer()}</Carousel.Slide>
-                <Carousel.Slide>{login()}</Carousel.Slide>
+                <Carousel.Slide>{loginView()}</Carousel.Slide>
                 <Carousel.Slide>{twoFactorInput()}</Carousel.Slide>
             </Carousel>
         )

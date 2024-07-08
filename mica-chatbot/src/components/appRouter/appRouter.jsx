@@ -4,21 +4,20 @@ import {Login} from "../../views/Login/login.jsx";
 import {Home} from '../../views/Home/home.jsx';
 import {History} from '../../views/History/history.jsx';
 import {Splash} from '../../views/Splash/splash.jsx';
+import {ProtectedRoute} from "../protectedRoute/ProtectedRoute.jsx";
+import {AuthProvider} from "../../Hooks/useAuth.jsx";
 
 import {
-    createBrowserRouter,
-    RouterProvider
+    createHashRouter,
+    RouterProvider,
+    createRoutesFromElements
 } from "react-router-dom";
 
-
-const router = createBrowserRouter([
+console.log('inside router...')
+const router = createHashRouter([
     {
         path: '/',
         element: <Login />
-    },
-    {
-        path: '/login',
-        element: <Login/>
     },
     {
         path: '/splash',
@@ -26,9 +25,9 @@ const router = createBrowserRouter([
     },
     {
         path: '/home',
-        element: <Home/>
+        element: <ProtectedRoute><Home/></ProtectedRoute>
     }
 ])
 
 
-export const AppRouter = () => <RouterProvider router={router}/>
+export const AppRouter = () => <AuthProvider><RouterProvider router={router}/></AuthProvider>
