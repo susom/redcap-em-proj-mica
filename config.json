@@ -43,7 +43,8 @@
     ],
 
     "auth-ajax-actions": [
-        "callAI"
+        "callAI",
+        "login"
     ],
 
     "no-auth-ajax-actions": [
