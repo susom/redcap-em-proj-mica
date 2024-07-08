@@ -19,26 +19,30 @@
 
         callAI: async (payload, callback, errorCallback) => {
             try {
-                // console.log("calling callAI() with payload:", payload);
                 const res = await module.ajax('callAI', payload);
 
-                let parsedRes;
-                try {
-                    parsedRes = JSON.parse(res);
-                } catch (e) {
-                    console.error("Failed to parse response:", res);
-                    errorCallback(e);
-                    return;
-                }
-
+                let parsedRes = JSON.parse(res);
                 if (parsedRes?.response) {
                     callback(parsedRes);
                 } else {
-                    console.log("No response field in parsed response:", parsedRes);
+                    console.error("Failed to parse response:", res);
+                    errorCallback(e);
                 }
             } catch (err) {
+                console.error("Error in callAI: ", err);
                 errorCallback(err);
             }
+        },
+
+        login: async (payload, callback, errorCallback) => {
+            const res = await module.ajax('login', payload);
+            if('error' in res) {
+                console.error(res['error'])
+                errorCallback(res['error'])
+            } else {
+                callback(res)
+            }
+
         }
     });
 }

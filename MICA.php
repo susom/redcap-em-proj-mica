@@ -165,27 +165,70 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
     public function redcap_module_ajax($action, $payload, $project_id, $record, $instrument, $event_id, $repeat_instance,
                                        $survey_hash, $response_id, $survey_queue_hash, $page, $page_full, $user_id, $group_id) {
-        switch ($action) {
-            case "callAI":
-                $messages = $this->handleUserInput($payload);
 
-                //FIND AND INJECT RAG
+        try {
+            switch ($action) {
+                case "callAI":
+                    $messages = $this->handleUserInput($payload);
+                    //FIND AND INJECT RAG
 //                $relevantDocs = $this->getRelevantDocuments($messages);
 //                if (!empty($relevantDocs)) {
 //                    $ragContext = implode("\n\n", array_column($relevantDocs, 'raw_content'));
 //                    $messages = $this->appendSystemContext($messages, $ragContext);
 //                }
+                    //CALL API ENDPOINT WITH AUGMENTED CHATML
+                    $response = $this->getSecureChatInstance()->callAI("gpt-4o",array("messages" =>$messages) );
+                    $result = $this->formatResponse($response);
 
-                //CALL API ENDPOINT WITH AUGMENTED CHATML
-                $response = $this->getSecureChatInstance()->callAI("gpt-4o",array("messages" =>$messages) );
-                $result = $this->formatResponse($response);
+                    $this->emDebug("calling SecureChatAI.callAI()", $result);
+                    return json_encode($result);
+                case "login":
+                    $data = $this->sanitizeInput($payload);
+                    return $this->loginUser($data);
 
-                $this->emDebug("calling SecureChatAI.callAI()", $result);
-                return json_encode($result);
 
-            default:
-                throw new Exception("Action $action is not defined");
+                default:
+                    throw new Exception("Action $action is not defined");
+
+            }
+        } catch(\Exception $e) {
+            $this->emError($e);
+//            return \ExternalModules\ExternalModules::getAjaxResponse(false, 'payload', '', $e->getMessage());
+            return [
+                "error" => $e->getMessage(),
+                "success" => false
+            ];
         }
+    }
+
+    /**
+     * @param $payload
+     * @return true[]
+     * @throws \Exception
+     */
+    public function loginUser($payload) {
+        if(empty($payload['name']) || empty($payload['email']))
+            throw new \Exception("Error logging in user, either name or email is empty");
+
+        ['name' => $name, 'email' => $email] = $payload;
+
+        // Fetch user information
+        $params = array(
+            "return_format" => "json",
+            "fields" => array("participant_name", "participant_email", "record_id"),
+        );
+
+        // Find user and determine validity
+        $json = json_decode(\REDCap::getData($params), true);
+        if(count($json) > 1)
+            throw new \Exception("Error logging in user, duplicate entries for $name, $email");
+        $check = reset($json);
+
+        if($check['participant_name'] === $name && $check['participant_email'] === $email)
+            return ["success" => true];
+        else
+            throw new \Exception('Invalid Credentials');
+
     }
 
     private function getEmbedding($text) {

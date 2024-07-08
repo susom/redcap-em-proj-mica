@@ -1,9 +1,16 @@
 import Dexie from 'dexie';
 
 export const db_cached_chats = new Dexie('cached_chats');
+export const user_info = new Dexie('userInfo');
+user_info.version(1).stores({
+    current_user: 'suid, name, timestamp'
+});
+
+
 db_cached_chats.version(1).stores({
   chats : 'session_id, timestamp, queries'
 });
+
 
 export async function deleteAllData(){
   await db_cached_chats.chats.clear();
@@ -24,7 +31,7 @@ export async function addSessionQuery(id, newQueries) {
     const document = await db_cached_chats.chats.get(id);
     const query_set = document.queries;
     query_set.push(newQueries);
-      
+
     await db_cached_chats.chats.update(id, { queries: query_set });
     // console.log("Updated queries for document with id:", id);
   } catch (error) {

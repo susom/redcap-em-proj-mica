@@ -9,6 +9,8 @@ import { ChatContext } from "../../contexts/Chat";
 
 import { getAllSessions, deleteSession, deleteAllData } from "../../components/database/dexie";
 import { formatTimestamp, truncateString } from "../../components/utils/utils";
+import Header from "../../components/header/header.jsx";
+import Footer from "../../components/footer/footer.jsx";
 
 export function History({ changeView }) {
     const [sessions, setSessions] = useState([]);
@@ -67,15 +69,21 @@ export function History({ changeView }) {
     }
 
     return (
-        <Container className={`body archive`}>
-            <div className={`box`}>
-                <Row className={`history header`}>
-                    <Col xs={{ span: 4 }} className={`history_date soft_text`}>Date</Col>
-                    <Col xs={{ span: 7 }} className={`history_query soft_text`}>Starting Query</Col>
-                    <Col xs={1} className={`soft_text trashit`} onClick={handleDeleteAll}><Trash color="red" size={20} /></Col>
-                </Row>
-                {displayChats(sessions)}
+        <>
+            <Header />
+            <div className="content">
+                <Container className={`body archive`}>
+                    <div className={`box`}>
+                        <Row className={`history header`}>
+                            <Col xs={{ span: 4 }} className={`history_date soft_text`}>Date</Col>
+                            <Col xs={{ span: 7 }} className={`history_query soft_text`}>Starting Query</Col>
+                            <Col xs={1} className={`soft_text trashit`} onClick={handleDeleteAll}><Trash color="red" size={20} /></Col>
+                        </Row>
+                        {displayChats(sessions)}
+                    </div>
+                </Container>
             </div>
-        </Container>
+            {/*<Footer />*/}
+        </>
     );
 }

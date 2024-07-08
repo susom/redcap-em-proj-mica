@@ -4,7 +4,7 @@ import { Card, Image, Badge, Button, Group, Grid, Title, Text, Space, Center } f
 import { CCircle } from 'react-bootstrap-icons';
 export function Splash({ changeView }) {
     const onClick = () => {
-        changeView('home')
+        changeView('login')
     }
 
     return (
