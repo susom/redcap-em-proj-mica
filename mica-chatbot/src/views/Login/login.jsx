@@ -1,19 +1,22 @@
 import React, {useState, useEffect} from "react";
-import {Box, Button, Fieldset, TextInput, Card, Center, Container, Grid, Space, Text, Title} from '@mantine/core';
+import {Alert, Button, Fieldset, TextInput, Card, Center, Container, Grid, Space, Text, Title} from '@mantine/core';
 import {Carousel} from '@mantine/carousel';
-import {CCircle, Hash} from "react-bootstrap-icons";
+import {InfoCircle, CCircle, Hash} from "react-bootstrap-icons";
 import {useNavigate} from 'react-router-dom';
 import {user_info} from "../../components/database/dexie.js";
 import useAuth from "../../Hooks/useAuth.jsx";
 
 export function Login({changeView}) {
-    const [viewLogin, setViewLogin] = useState(false)
+    const [error, setError] = useState('')
     const [name, setName] = useState('')
+    const [phone, setPhone] = useState('')
     const [email, setEmail] = useState('')
+    const [loading, setLoading] = useState(false)
     const [embla, setEmbla] = useState(null);
-    const handleNext = () => embla?.scrollNext();
     const navigate = useNavigate();
-    const { login } = useAuth();
+    const { login, verifyPhone } = useAuth();
+
+    const handleNext = () => embla?.scrollNext();
 
     // useEffect(() => {
     //
@@ -25,21 +28,37 @@ export function Login({changeView}) {
             setName(value);
         } else if (name === 'email') {
             setEmail(value);
+        } else if (name === '2FA') {
+            setPhone(value)
         }
     }
 
     const onLogin = () => {
+        // handleNext()
+        setLoading(true)
         login(name, email).then((res) => {
+            setLoading(false)
+            setError('')
             handleNext()
         }).catch((err) => {
+            setLoading(false)
+            setError(err)
             console.log('user has been rejected ', err)
         })
 
     }
 
     const onVerify = () => {
-        console.log('verify')
-        navigate('/home')
+        setLoading(true)
+        verifyPhone(phone).then(res => {
+            navigate('/home')
+            console.log('success!')
+        }).catch(err => {
+            setLoading(false)
+            setError(err)
+            console.error('reject verify')
+        })
+        // navigate('/home')
     }
 
     const disclaimer = () => {
@@ -66,7 +85,7 @@ export function Login({changeView}) {
                             color="rgba( 140, 21, 21)"
                             style={{width: '120px'}}
                         >
-                            Login
+                            Accept
                         </Button>
                     </Center>
                 </div>
@@ -77,8 +96,11 @@ export function Login({changeView}) {
     const loginView = () => {
         return (
             <div>
+                {error &&
+                    <Alert variant="light" color="red" radius="md" title="Error">{error}</Alert>
+                }
                 <Space h="sm"/>
-                <Fieldset legend="Personal information">
+                <Fieldset legend="Registration information">
                     <TextInput name="first" onChange={onChange} label="First name" placeholder="Your name"/>
                     <TextInput name="email" onChange={onChange} label="Email" placeholder="Email" mt="md"/>
                     <Center>
@@ -90,6 +112,7 @@ export function Login({changeView}) {
                             variant="filled"
                             color="rgba( 140, 21, 21)"
                             style={{width: '120px'}}
+                            loading={loading}
                         >
                             Login
                         </Button>
@@ -103,6 +126,9 @@ export function Login({changeView}) {
     const twoFactorInput = () => {
         return (
             <div>
+                {error &&
+                    <Alert variant="light" color="red" radius="md" title="Error">{error}</Alert>
+                }
                 <Space h="sm"/>
                 <Fieldset legend="Please enter the 6-digit code sent via text message" style={{height: '242px'}}>
                     <Space h="lg"/>
@@ -111,12 +137,21 @@ export function Login({changeView}) {
                         leftSection={<Hash/>}
                         label="Code"
                         placeholder="__ __ __ __ __ __ "
+                        onChange={onChange}
+                        name="2FA"
                     />
                     <Space h="lg"/>
                     <Space h="lg"/>
                     <Center>
-                        <Button name="2FA" mt="md" radius="md" onClick={onVerify} variant="filled"
-                                color="rgba( 140, 21, 21)" style={{width: '120px'}}>
+                        <Button
+                            loading={loading}
+                            mt="md"
+                            radius="md"
+                            onClick={onVerify}
+                            variant="filled"
+                            color="rgba( 140, 21, 21)"
+                            style={{width: '120px'}}
+                        >
                             Validate
                         </Button>
                     </Center>
