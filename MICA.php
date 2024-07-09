@@ -7,9 +7,11 @@ require_once "classes/Sanitizer.php";
 use \REDCapEntity\Entity;
 use \REDCapEntity\EntityDB;
 use \REDCapEntity\EntityFactory;
+use Twilio\Rest\Client;
+
+require_once "vendor/autoload.php";
 
 class MICA extends \ExternalModules\AbstractExternalModule {
-
     use emLoggerTrait;
     const BUILD_FILE_DIR = 'mica-chatbot/dist/assets';
     const SecureChatInstanceModuleName = 'secureChatAI';
@@ -185,7 +187,9 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 case "login":
                     $data = $this->sanitizeInput($payload);
                     return $this->loginUser($data);
-
+                case "verifyPhone":
+                    $data = $this->sanitizeInput($payload);
+                    return $this->verifyPhone($data);
 
                 default:
                     throw new Exception("Action $action is not defined");
@@ -193,7 +197,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             }
         } catch(\Exception $e) {
             $this->emError($e);
-//            return \ExternalModules\ExternalModules::getAjaxResponse(false, 'payload', '', $e->getMessage());
             return [
                 "error" => $e->getMessage(),
                 "success" => false
@@ -215,7 +218,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         // Fetch user information
         $params = array(
             "return_format" => "json",
-            "fields" => array("participant_name", "participant_email", "record_id"),
+            "fields" => array("participant_name", "participant_email", "record_id", "participant_phone"),
         );
 
         // Find user and determine validity
@@ -224,11 +227,72 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             throw new \Exception("Error logging in user, duplicate entries for $name, $email");
         $check = reset($json);
 
-        if($check['participant_name'] === $name && $check['participant_email'] === $email)
+        if($check['participant_name'] === $name && $check['participant_email'] === $email) { //User Successfully matched
+            $this->generateOneTimePassword($check['record_id'], $check['participant_phone']);
             return ["success" => true];
-        else
+        } else {
             throw new \Exception('Invalid Credentials');
+        }
+    }
 
+    /**
+     * Generates OTP and saves to record
+     * @param $record_id
+     * @param $phone_number
+     * @return void
+     * @throws \Exception
+     */
+    private function generateOneTimePassword($record_id, $phone_number): void
+    {
+        $code = bin2hex(random_bytes(3));
+        $saveData = array(
+            array(
+                "record_id" => $record_id,
+                "two_factor_code" => $code,
+                "two_factor_code_ts" => date("Y-m-d H:i:s"),
+            )
+        );
+
+        $response = \REDCap::saveData('json', json_encode($saveData), 'overwrite');
+
+        if (empty($response['errors'])) {
+            $body = "Your MICA Verification code is: $code";
+            $this->sendSMS($body, $phone_number);
+
+        } else {
+            $this->emError('Save data failure, ', json_encode($response['errors']));
+            throw new \Exception('Save data failure in generating one time password');
+        }
+    }
+
+    /**
+     * @param $payload
+     * @return false[]|true[]
+     * @throws \Exception
+     */
+    private function verifyPhone($payload) {
+        if(empty($payload['code']))
+            throw new \Exception("Error verifying phone number: no number provided");
+
+        ['code' => $code] = $payload;
+
+        // Fetch user information
+        $params = array(
+            "return_format" => "json",
+            "fields" => array("participant_phone", "two_factor_code"),
+            "filterLogic" => "[two_factor_code] = '$code'"
+        );
+
+        // Find user and determine validity
+        $json = json_decode(\REDCap::getData($params), true);
+        if(count($json) > 1)
+            throw new \Exception("Error logging in user, duplicate entries for $code ");
+
+        $check = reset($json);
+        if($check['two_factor_code'] === $code)
+            return ["success" => true];
+        else // In case of invalid number, don't notifiy the user
+            throw new \Exception('Invalid OTP code');
     }
 
     private function getEmbedding($text) {
@@ -252,6 +316,29 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
         return $ids;
     }
+
+ /**
+ * Send SMS with body payload
+ * @param $body
+ * @param $phone_number
+ * @return void
+ */
+public function sendSMS($body, $phone_number): void
+{
+    $sid = $this->getSystemSetting('twilio-sid');
+    $auth = $this->getSystemSetting('twilio-auth-token');
+    $fromNumber = $this->getSystemSetting('twilio-from-number');
+
+    $twilio = new Client($sid, $auth);
+    $twilio->messages
+        ->create(
+            "$phone_number",
+            array(
+                'body' => $body,
+                'from' => $fromNumber
+            )
+        );
+}
 
     // Retrieve relevant documents method
     public function getRelevantDocuments($queryArray) {
