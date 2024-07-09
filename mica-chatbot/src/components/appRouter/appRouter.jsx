@@ -13,7 +13,6 @@ import {
     createRoutesFromElements
 } from "react-router-dom";
 
-console.log('inside router...')
 const router = createHashRouter([
     {
         path: '/',
