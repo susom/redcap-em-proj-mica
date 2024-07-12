@@ -44,6 +44,26 @@ function useAuth() {
                 res();
             });
         },
+        verifyPhone(code) {
+            return new Promise(async (resolve, reject) => {
+                const mica = mica_jsmo_module
+                if(mica) {
+                    let result = await mica_jsmo_module.verifyPhone({
+                        'code': code,
+                    }, () => {
+                        console.log('valid user, logging in...')
+                        setAuthed(true)
+
+                        // Cache user here ...
+
+                        resolve()
+                    }, reject)
+                } else {
+                    console.error('MICA EM is not injected, cannot execute function login')
+                    reject();
+                }
+            })
+        }
     };
 }
 

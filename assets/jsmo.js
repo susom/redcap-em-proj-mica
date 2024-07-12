@@ -1,7 +1,6 @@
 ;{
     const module = ExternalModules.Stanford.MICA;
 
-    console.log("ExternalModules:", window.ExternalModules);
     if (!window.ExternalModules.moduleQueuedAjax) {
         console.error("moduleQueuedAjax is not defined!");
     } else {
@@ -42,7 +41,15 @@
             } else {
                 callback(res)
             }
-
+        },
+        verifyPhone: async (payload, callback, errorCallback) => {
+            const res = await module.ajax('verifyPhone', payload);
+            if('error' in res) {
+                console.error(res['error'])
+                errorCallback(res['error'])
+            } else {
+                callback(res)
+            }
         }
     });
 }
