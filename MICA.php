@@ -70,13 +70,10 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 //    }
 
     public function generateAssetFiles(): array {
-
-//        $assetFolders = ['css', 'js', 'media'];
         $cwd = $this->getModulePath();
         $assets = [];
 
         $full_path = $cwd . self::BUILD_FILE_DIR . '/' ;
-//        $dir_files = scandir($full_path);
         $dir_files = array_diff(scandir($full_path), array('..', '.'));
         if (!$dir_files) {
             exit;
