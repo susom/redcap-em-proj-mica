@@ -3,6 +3,7 @@ namespace Stanford\MICA;
 
 require_once "emLoggerTrait.php";
 require_once "classes/Sanitizer.php";
+require_once "classes/Action.php";
 
 use \REDCapEntity\Entity;
 use \REDCapEntity\EntityDB;
@@ -28,6 +29,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $this->system_context_steps = $this->getProjectSetting('chatbot_system_context_steps',59);
         $this->system_context_rules = $this->getProjectSetting('chatbot_system_context_rules',59);
         $this->entityFactory = new \REDCapEntity\EntityFactory();
+//        $this->addAction(["Hello this is an example response to mica"], 1);
     }
 
     // Define entity types
@@ -175,10 +177,22 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 //                    $ragContext = implode("\n\n", array_column($relevantDocs, 'raw_content'));
 //                    $messages = $this->appendSystemContext($messages, $ragContext);
 //                }
+                    //Save message text first
+
+                    $recent_query = json_encode(array_pop($messages));
+//                    $this->addAction($recent_query, 1);
                     //CALL API ENDPOINT WITH AUGMENTED CHATML
                     $response = $this->getSecureChatInstance()->callAI("gpt-4o",array("messages" =>$messages) );
                     $result = $this->formatResponse($response);
-
+                    /**
+                     * {
+                     *
+                     * keep index ?
+                     *
+                     *
+                     * }
+                     *
+                     */
                     $this->emDebug("calling SecureChatAI.callAI()", $result);
                     return json_encode($result);
                 case "login":
@@ -276,7 +290,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         // Fetch user information
         $params = array(
             "return_format" => "json",
-            "fields" => array("participant_phone", "two_factor_code"),
+            "fields" => array("record_id","participant_phone", "two_factor_code", "participant_name"),
             "filterLogic" => "[two_factor_code] = '$code'"
         );
 
@@ -287,7 +301,13 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
         $check = reset($json);
         if($check['two_factor_code'] === $code)
-            return ["success" => true];
+            return [
+                "success" => true,
+                "user" => [
+                    "record_id" => $check['record_id'] ?? null,
+                    "name" => $check['participant_name'] ?? null
+                ]
+            ];
         else // In case of invalid number, don't notifiy the user
             throw new \Exception('Invalid OTP code');
     }
@@ -299,6 +319,27 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         } catch (GuzzleException $e) {
             $this->emError("Embedding error: " . $e->getMessage());
             return null;
+        }
+    }
+
+    /**
+     * @param $content
+     * @param $session_id
+     * @return void
+     */
+    private function addAction($content, $id){
+        try {
+            if (!isset($content))
+                throw new Exception('No content passed');
+
+            $this->emDebug("Adding action for MICA");
+            $action = new Action($this);
+            $action->setValue('mica_id', $id);
+            $action->setValue('message', json_encode($content));
+            $action->save();
+            $this->emDebug("Added MICA action " . $action->getId());
+        } catch (\Exception $e) {
+
         }
     }
 
