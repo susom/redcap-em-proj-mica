@@ -19,13 +19,12 @@
         callAI: async (payload, callback, errorCallback) => {
             try {
                 const res = await module.ajax('callAI', payload);
-
                 let parsedRes = JSON.parse(res);
                 if (parsedRes?.response) {
                     callback(parsedRes);
                 } else {
                     console.error("Failed to parse response:", res);
-                    errorCallback(e);
+                    errorCallback(res);
                 }
             } catch (err) {
                 console.error("Error in callAI: ", err);
@@ -35,20 +34,25 @@
 
         login: async (payload, callback, errorCallback) => {
             const res = await module.ajax('login', payload);
-            if('error' in res) {
-                console.error(res['error'])
-                errorCallback(res['error'])
+            let parsed = JSON.parse(res)
+
+            if('error' in parsed) {
+                console.error(parsed['error'])
+                errorCallback(parsed['error'])
             } else {
-                callback(res)
+                console.log('resolving!')
+                callback(parsed)
             }
         },
         verifyPhone: async (payload, callback, errorCallback) => {
             const res = await module.ajax('verifyPhone', payload);
-            if('error' in res) {
-                console.error(res['error'])
-                errorCallback(res['error'])
+            let parsed = JSON.parse(res)
+
+            if('error' in parsed) {
+                console.error(parsed['error'])
+                errorCallback(parsed['error'])
             } else {
-                callback(res)
+                callback(parsed)
             }
         }
     });

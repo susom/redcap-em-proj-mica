@@ -15,7 +15,7 @@ require_once "vendor/autoload.php";
 class MICA extends \ExternalModules\AbstractExternalModule {
     use emLoggerTrait;
     const BUILD_FILE_DIR = 'mica-chatbot/dist/assets';
-    const SecureChatInstanceModuleName = 'secure_chat_ai';
+    const SecureChatInstanceModuleName = 'secureChatAI';
 
     private \Stanford\SecureChatAI\SecureChatAI $secureChatInstance;
     public $system_context_persona;
@@ -27,14 +27,13 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
     public function __construct() {
         parent::__construct();
+        $pro                    = new \Project(PROJECT_ID);
         $this->system_context_persona = $this->getProjectSetting('chatbot_system_context_persona',59);
         $this->system_context_steps = $this->getProjectSetting('chatbot_system_context_steps',59);
         $this->system_context_rules = $this->getProjectSetting('chatbot_system_context_rules',59);
         $this->entityFactory = new \REDCapEntity\EntityFactory();
-//        $this->addAction(["Hello this is an example response to mica"], 1);
-
-        $pro                    = new \Project(PROJECT_ID);
         $this->primary_field    = $pro->table_pk;
+//        $this->addAction(["Hello this is an example response to mica"], 1);
     }
 
     // Define entity types
@@ -155,7 +154,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     public function appendSystemContext($chatMlArray, $newContext) {
         $hasSystemContext = false;
         for ($i = 0; $i < count($chatMlArray); $i++) {
-            if ($chatMlArray[$i]['role'] == 'system') {
+            if ($chatMlArray[$i]['role'] == 'system' && !empty($chatMlArray[$i]['content'])) {
                 $chatMlArray[$i]['content'] .= '\n\n ' . $newContext;
                 $hasSystemContext = true;
                 break;
@@ -183,11 +182,11 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 //                    $messages = $this->appendSystemContext($messages, $ragContext);
 //                }
                     //Save message text first
-
-                    $recent_query = json_encode(array_pop($messages));
+                    //Grab the last message sent
+                    $recent_query = json_encode($messages[count($messages) -1]);
 //                    $this->addAction($recent_query, 1);
                     //CALL API ENDPOINT WITH AUGMENTED CHATML
-                    $response = $this->getSecureChatInstance()->callAI("gpt-4o",array("messages" =>$messages) );
+                    $response = $this->getSecureChatInstance()->callAI("gpt-4o", array("messages" => $messages) );
                     $result = $this->formatResponse($response);
                     /**
                      * {
@@ -202,10 +201,10 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     return json_encode($result);
                 case "login":
                     $data = $this->sanitizeInput($payload);
-                    return $this->loginUser($data);
+                    return json_encode($this->loginUser($data));
                 case "verifyPhone":
                     $data = $this->sanitizeInput($payload);
-                    return $this->verifyPhone($data);
+                    return json_encode($this->verifyPhone($data));
 
                 default:
                     throw new Exception("Action $action is not defined");
@@ -213,10 +212,10 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             }
         } catch(\Exception $e) {
             $this->emError($e);
-            return [
+            return json_encode([
                 "error" => $e->getMessage(),
                 "success" => false
-            ];
+            ]);
         }
     }
 
