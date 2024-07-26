@@ -15,13 +15,15 @@ require_once "vendor/autoload.php";
 class MICA extends \ExternalModules\AbstractExternalModule {
     use emLoggerTrait;
     const BUILD_FILE_DIR = 'mica-chatbot/dist/assets';
-    const SecureChatInstanceModuleName = 'secureChatAI';
+    const SecureChatInstanceModuleName = 'secure_chat_ai';
 
     private \Stanford\SecureChatAI\SecureChatAI $secureChatInstance;
     public $system_context_persona;
     public $system_context_steps;
     public $system_context_rules;
     private $entityFactory;
+
+    private $primary_field;
 
     public function __construct() {
         parent::__construct();
@@ -30,6 +32,9 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $this->system_context_rules = $this->getProjectSetting('chatbot_system_context_rules',59);
         $this->entityFactory = new \REDCapEntity\EntityFactory();
 //        $this->addAction(["Hello this is an example response to mica"], 1);
+
+        $pro                    = new \Project(PROJECT_ID);
+        $this->primary_field    = $pro->table_pk;
     }
 
     // Define entity types
@@ -229,7 +234,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         // Fetch user information
         $params = array(
             "return_format" => "json",
-            "fields" => array("participant_name", "participant_email", "record_id", "participant_phone"),
+            "fields" => array($this->primary_field, "participant_name", "participant_email", "participant_phone"),
         );
 
         // Find user and determine validity
@@ -239,7 +244,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $check = reset($json);
 
         if($check['participant_name'] === $name && $check['participant_email'] === $email) { //User Successfully matched
-            $this->generateOneTimePassword($check['record_id'], $check['participant_phone']);
+            $this->generateOneTimePassword($check[$this->primary_field], $check['participant_phone']);
             return ["success" => true];
         } else {
             throw new \Exception('Invalid Credentials');
@@ -258,7 +263,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $code = bin2hex(random_bytes(3));
         $saveData = array(
             array(
-                "record_id" => $record_id,
+                $this->primary_field => $record_id,
                 "two_factor_code" => $code,
                 "two_factor_code_ts" => date("Y-m-d H:i:s"),
             )
@@ -290,7 +295,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         // Fetch user information
         $params = array(
             "return_format" => "json",
-            "fields" => array("record_id","participant_phone", "two_factor_code", "participant_name"),
+            "fields" => array($this->primary_field,"participant_phone", "two_factor_code", "participant_name"),
             "filterLogic" => "[two_factor_code] = '$code'"
         );
 
@@ -304,7 +309,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             return [
                 "success" => true,
                 "user" => [
-                    "record_id" => $check['record_id'] ?? null,
+                    $this->primary_field => $check[$this->primary_field] ?? null,
                     "name" => $check['participant_name'] ?? null
                 ]
             ];
