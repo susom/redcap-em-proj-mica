@@ -27,7 +27,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
     public function __construct() {
         parent::__construct();
-        $this->entityFactory = new \REDCapEntity\EntityFactory();
+//        $this->entityFactory = new \REDCapEntity\EntityFactory();
 //        $this->addAction(["Hello this is an example response to mica"], 1);
     }
 
