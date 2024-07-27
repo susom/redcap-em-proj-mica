@@ -1,5 +1,5 @@
 import * as React from "react";
-import {user_info} from "../components/database/dexie.js";
+import {db_cached_chats, user_info} from "../components/database/dexie.js";
 
 const authContext = React.createContext();
 
@@ -8,6 +8,22 @@ function useAuth() {
 
     const checkUserCache = async (key) => {
         return await user_info.current_user.get(key) ?? null;
+    }
+
+    const cacheUser = async (payload) => {
+        let {participant_id, name} = payload?.user
+        let timestamp = Date.now()
+        if(participant_id && name){
+            let data = {
+                id: parseInt(participant_id),
+                name: name,
+                timestamp: Date.now()
+            }
+            await user_info.current_user.put(data);
+        } else {
+            console.log('unable to cache user... skipping')
+        }
+
     }
 
     return {
@@ -50,12 +66,10 @@ function useAuth() {
                 if(mica) {
                     let result = await mica_jsmo_module.verifyPhone({
                         'code': code,
-                    }, () => {
+                    }, (res) => {
                         console.log('valid user, logging in...')
                         setAuthed(true)
-
-                        // Cache user here ...
-
+                        cacheUser(res);
                         resolve()
                     }, reject)
                 } else {

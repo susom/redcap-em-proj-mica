@@ -33,9 +33,7 @@ $build_files = $module->generateAssetFiles();
         "window.mica_jsmo_module = " . $module->getJavascriptModuleObjectName()
     ];
 
-    $initial_system_context = $module->appendSystemContext([], $module->system_context_persona);
-    $initial_system_context = $module->appendSystemContext($initial_system_context, $module->system_context_steps);
-    $initial_system_context = $module->appendSystemContext($initial_system_context, $module->system_context_rules);
+    $initial_system_context = $module->initSystemContexts();
 
     $data = !empty($initial_system_context) ? $initial_system_context : null;
     if ($data !== null) {
