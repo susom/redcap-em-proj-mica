@@ -15,7 +15,7 @@ require_once "vendor/autoload.php";
 class MICA extends \ExternalModules\AbstractExternalModule {
     use emLoggerTrait;
     const BUILD_FILE_DIR = 'mica-chatbot/dist/assets';
-    const SecureChatInstanceModuleName = 'secure_chat_ai';
+    const SecureChatInstanceModuleName = 'SecureChatAI';
 
     private \Stanford\SecureChatAI\SecureChatAI $secureChatInstance;
     public $system_context_persona;
