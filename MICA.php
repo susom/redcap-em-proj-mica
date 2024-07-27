@@ -15,7 +15,7 @@ require_once "vendor/autoload.php";
 class MICA extends \ExternalModules\AbstractExternalModule {
     use emLoggerTrait;
     const BUILD_FILE_DIR = 'mica-chatbot/dist/assets';
-    const SecureChatInstanceModuleName = 'secureChatAI';
+    const SecureChatInstanceModuleName = 'secure_chat_ai';
 
     private \Stanford\SecureChatAI\SecureChatAI $secureChatInstance;
     public $system_context_persona;
@@ -27,13 +27,21 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
     public function __construct() {
         parent::__construct();
-        $pro                    = new \Project(PROJECT_ID);
-        $this->system_context_persona = $this->getProjectSetting('chatbot_system_context_persona',59);
-        $this->system_context_steps = $this->getProjectSetting('chatbot_system_context_steps',59);
-        $this->system_context_rules = $this->getProjectSetting('chatbot_system_context_rules',59);
         $this->entityFactory = new \REDCapEntity\EntityFactory();
-        $this->primary_field    = $pro->table_pk;
 //        $this->addAction(["Hello this is an example response to mica"], 1);
+    }
+
+    public function initSystemContexts(){
+        //TODO CLEAN THIS UP
+        $this->system_context_persona = $this->getProjectSetting('chatbot_system_context_persona');
+        $this->system_context_steps = $this->getProjectSetting('chatbot_system_context_steps');
+        $this->system_context_rules = $this->getProjectSetting('chatbot_system_context_rules');
+
+        $initial_system_context = $this->appendSystemContext([], $this->system_context_persona);
+        $initial_system_context = $this->appendSystemContext($initial_system_context, $this->system_context_steps);
+        $initial_system_context = $this->appendSystemContext($initial_system_context, $this->system_context_rules);
+
+        return $initial_system_context;
     }
 
     // Define entity types
@@ -182,11 +190,30 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 //                    $messages = $this->appendSystemContext($messages, $ragContext);
 //                }
                     //Save message text first
-                    //Grab the last message sent
-                    $recent_query = json_encode($messages[count($messages) -1]);
+
+                    $this->emDebug("chatml Messages array to API", $messages);
+//                    $recent_query = json_encode(array_pop($messages));
 //                    $this->addAction($recent_query, 1);
                     //CALL API ENDPOINT WITH AUGMENTED CHATML
-                    $response = $this->getSecureChatInstance()->callAI("gpt-4o", array("messages" => $messages) );
+                    $model  = "gpt-4o";
+                    $params = array("messages" =>$messages);
+                    if($this->getProjectSetting("gpt-temperature")){
+                        $params["temperature"] = floatval($this->getProjectSetting("gpt-temperature"));
+                    }
+                    if($this->getProjectSetting("gpt-top-p")){
+                        $params["top_p"] = floatval($this->getProjectSetting("gpt-top-p"));
+                    }
+                    if($this->getProjectSetting("gpt-frequency-penalty")){
+                        $params["frequency_penalty"] = floatval($this->getProjectSetting("gpt-frequency-penalty"));
+                    }
+                    if($this->getProjectSetting("presence_penalty")){
+                        $params["presence_penalty"] = floatval($this->getProjectSetting("presence_penalty"));
+                    }
+                    if($this->getProjectSetting("gpt-max-tokens")){
+                        $params["max_tokens"] = intval($this->getProjectSetting("gpt-max-tokens"));
+                    }
+
+                    $response = $this->getSecureChatInstance()->callAI($model, $params, PROJECT_ID );
                     $result = $this->formatResponse($response);
                     /**
                      * {
@@ -219,12 +246,19 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         }
     }
 
+    public function getPrimaryField(){
+        //TODO CLEAN THIS UP
+        $pro                    = new \Project(PROJECT_ID);
+        $this->primary_field    = $pro->table_pk;
+        return $this->primary_field;
+    }
     /**
      * @param $payload
      * @return true[]
      * @throws \Exception
      */
     public function loginUser($payload) {
+        $primary_field = $this->getPrimaryField();
         if(empty($payload['name']) || empty($payload['email']))
             throw new \Exception("Error logging in user, either name or email is empty");
 
@@ -233,7 +267,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         // Fetch user information
         $params = array(
             "return_format" => "json",
-            "fields" => array($this->primary_field, "participant_name", "participant_email", "participant_phone"),
+            "fields" => array($primary_field, "participant_name", "participant_email", "participant_phone"),
         );
 
         // Find user and determine validity
@@ -243,7 +277,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $check = reset($json);
 
         if($check['participant_name'] === $name && $check['participant_email'] === $email) { //User Successfully matched
-            $this->generateOneTimePassword($check[$this->primary_field], $check['participant_phone']);
+            $this->generateOneTimePassword($check[$primary_field], $check['participant_phone']);
             return ["success" => true];
         } else {
             throw new \Exception('Invalid Credentials');
@@ -259,10 +293,12 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      */
     private function generateOneTimePassword($record_id, $phone_number): void
     {
+        $primary_field = $this->getPrimaryField();
+
         $code = bin2hex(random_bytes(3));
         $saveData = array(
             array(
-                $this->primary_field => $record_id,
+                $primary_field => $record_id,
                 "two_factor_code" => $code,
                 "two_factor_code_ts" => date("Y-m-d H:i:s"),
             )
@@ -286,6 +322,8 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * @throws \Exception
      */
     private function verifyPhone($payload) {
+        $primary_field = $this->getPrimaryField();
+
         if(empty($payload['code']))
             throw new \Exception("Error verifying phone number: no number provided");
 
@@ -294,7 +332,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         // Fetch user information
         $params = array(
             "return_format" => "json",
-            "fields" => array($this->primary_field,"participant_phone", "two_factor_code", "participant_name"),
+            "fields" => array($primary_field,"participant_phone", "two_factor_code", "participant_name"),
             "filterLogic" => "[two_factor_code] = '$code'"
         );
 
@@ -308,7 +346,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             return [
                 "success" => true,
                 "user" => [
-                    $this->primary_field => $check[$this->primary_field] ?? null,
+                    $primary_field => $check[$primary_field] ?? null,
                     "name" => $check['participant_name'] ?? null
                 ]
             ];

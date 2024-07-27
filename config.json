@@ -76,6 +76,48 @@
             "name": "<b>Enable Debug Logging</b><br><i>(optional)</i> Requires installation and configuration of emLogger",
             "required": false,
             "type": "checkbox"
+        },
+        {
+            "key": "gpt-model",
+            "name": "GPT Model",
+            "required": false,
+            "type": "text",
+            "default": "gpt-4o"
+        },
+        {
+            "key": "gpt-temperature",
+            "name": "GPT Temperature",
+            "required": false,
+            "type": "number",
+            "default": 0.7
+        },
+        {
+            "key": "gpt-top-p",
+            "name": "GPT Top P",
+            "required": false,
+            "type": "number",
+            "default": 0.9
+        },
+        {
+            "key": "gpt-frequency-penalty",
+            "name": "GPT Frequency Penalty",
+            "required": false,
+            "type": "number",
+            "default": 0.5
+        },
+        {
+            "key": "gpt-presence-penalty",
+            "name": "GPT Presence Penalty",
+            "required": false,
+            "type": "number",
+            "default": 0
+        },
+        {
+            "key": "gpt-max-tokens",
+            "name": "GPT Max Tokens",
+            "required": false,
+            "type": "number",
+            "default": 800
         }
     ],
 
