@@ -87,11 +87,16 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $cwd = $this->getModulePath();
         $assets = [];
 
-        $full_path = $cwd . self::BUILD_FILE_DIR . '/' ;
-        $dir_files = array_diff(scandir($full_path), array('..', '.'));
-        if (!$dir_files) {
-            exit;
+        $full_path = $cwd . self::BUILD_FILE_DIR . '/';
+        $dir_files = scandir($full_path);
+
+        // Check if scandir failed
+        if ($dir_files === false) {
+            $this->emError("Failed to open directory: $full_path");
+            return $assets; // Return an empty array or handle the error as needed
         }
+
+        $dir_files = array_diff($dir_files, array('..', '.'));
 
         foreach ($dir_files as $file) {
             $url = $this->getUrl(self::BUILD_FILE_DIR . '/' . $file);
@@ -108,6 +113,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
         return $assets;
     }
+
 
     /**
      * @param $data
