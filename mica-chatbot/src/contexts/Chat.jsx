@@ -1,5 +1,5 @@
 import React, { createContext, useState, useRef, useEffect } from 'react';
-import { saveNewSession, updateSession, getSession, deleteSession } from '../components/database/dexie';
+import {saveNewSession, updateSession, getSession, deleteSession, getCurrentUser} from '../components/database/dexie';
 
 export const ChatContext = createContext();
 
@@ -43,27 +43,31 @@ export const ChatContextProvider = ({ children }) => {
         }
     };
 
-    const addMessage = (message) => {
-        const index = chatContextRef.current.length;
-        const updatedApiContext = [
-            ...apiContextRef.current,
-            { role: message.role, content: message.content, index },
-        ];
-        updateApiContext(updatedApiContext);
+    const addMessage = async (message) => {
+        const user = await getCurrentUser()
+        if(user[0]?.id) {
+            const index = chatContextRef.current.length;
+            const updatedApiContext = [
+                ...apiContextRef.current,
+                { role: message.role, content: message.content, index, id: user[0].id },
+            ];
+            updateApiContext(updatedApiContext);
 
-        if(message.role == "system"){
-            return;
+            if(message.role == "system"){
+                return;
+            }
+
+            const newChatContext = [
+                ...chatContextRef.current,
+                {
+                    user_content: message.role === 'user' ? message.content : null,
+                    assistant_content: message.role === 'assistant' ? message.content : null,
+                    timestamp: new Date().getTime(),
+                },
+            ];
+            updateChatContext(newChatContext);
         }
 
-        const newChatContext = [
-            ...chatContextRef.current,
-            {
-                user_content: message.role === 'user' ? message.content : null,
-                assistant_content: message.role === 'assistant' ? message.content : null,
-                timestamp: new Date().getTime(),
-            },
-        ];
-        updateChatContext(newChatContext);
     };
 
     const updateMessage = async (response, index) => {
@@ -110,14 +114,14 @@ export const ChatContextProvider = ({ children }) => {
         updateChatContext(session.queries, false);
     };
 
-    const callAjax = (payload, callback) => {
+    const callAjax = async (payload, callback) => {
         if(apiContextRef.current.length === 0){
             const initial_system_context = window.mica_jsmo_module.getInitialSystemContext().pop();
             console.log("initial apiContext, if empty , inject system context before first query", initial_system_context);
-            addMessage(initial_system_context);
+            await addMessage(initial_system_context);
         }
 
-        addMessage({ role: 'user', content: payload.content });
+        await addMessage({ role: 'user', content: payload.content });
 
         const userMessageIndex = chatContextRef.current.length - 1;
         const wrappedPayload = [...apiContextRef.current];

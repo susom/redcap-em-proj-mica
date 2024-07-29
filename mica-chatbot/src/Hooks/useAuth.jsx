@@ -19,6 +19,8 @@ function useAuth() {
                 name: name,
                 timestamp: Date.now()
             }
+
+            await user_info.current_user.clear(); //There should only ever be one cached user in a browser
             await user_info.current_user.put(data);
         } else {
             console.log('unable to cache user... skipping')

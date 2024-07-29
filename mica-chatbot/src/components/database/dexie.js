@@ -1,15 +1,19 @@
 import Dexie from 'dexie';
 
 export const db_cached_chats = new Dexie('cached_chats');
-export const user_info = new Dexie('userInfo');
+export const user_info = new Dexie('user_info');
 user_info.version(1).stores({
-    current_user: 'suid, name, timestamp'
+    current_user: 'id, name, timestamp'
 });
 
 
 db_cached_chats.version(1).stores({
   chats : 'session_id, timestamp, queries'
 });
+
+export async function getCurrentUser() {
+    return user_info.current_user.toArray()
+}
 
 
 export async function deleteAllData(){
