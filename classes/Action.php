@@ -78,14 +78,12 @@ class Action extends ASEMLO
      * @return array Action
      * @throws \Exception
      */
-    public static function getActionsAfter($module, $project_id, $action_id = null, $session_id)
+    public static function getActionsFor($module, $project_id, $mica_id)
     {
-        if (empty($action_id))
-            $action_id = 0;
 
-        $filter_clause = "project_id = ? and log_id > ? and session_id = ? order by log_id asc";
+        $filter_clause = "project_id = ? and mica_id = ? order by log_id asc";
         $objs = self::queryObjects(
-            $module, $filter_clause, [$project_id, $action_id, $session_id]
+            $module, $filter_clause, [$project_id, $mica_id]
         );
 
         $count = count($objs);

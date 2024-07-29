@@ -40,7 +40,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $initial_system_context = $this->appendSystemContext([], $this->system_context_persona);
         $initial_system_context = $this->appendSystemContext($initial_system_context, $this->system_context_steps);
         $initial_system_context = $this->appendSystemContext($initial_system_context, $this->system_context_rules);
-
+//        $test = Action::getActionsFor($this,52,2);
         return $initial_system_context;
     }
 
@@ -137,7 +137,8 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     $data = $this->sanitizeInput($message);
                     $sanitizedPayload[] = array(
                         'role' => $data['role'],
-                        'content' => $data['content']
+                        'content' => $data['content'],
+                        'id' => $data['id']
                     );
                 }
             }
@@ -198,8 +199,8 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     //Save message text first
 
                     $this->emDebug("chatml Messages array to API", $messages);
-//                    $recent_query = json_encode(array_pop($messages));
-//                    $this->addAction($recent_query, 1);
+                    $recent_query = $messages[sizeof($messages) - 1];
+                    $this->addAction(json_encode($recent_query), $recent_query['id']);
                     //CALL API ENDPOINT WITH AUGMENTED CHATML
                     $model  = "gpt-4o";
                     $params = array("messages" =>$messages);
@@ -221,6 +222,9 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
                     $response = $this->getSecureChatInstance()->callAI($model, $params, PROJECT_ID );
                     $result = $this->formatResponse($response);
+                    if($result)
+                        $this->addAction(json_encode($result), $recent_query['id']);
+
                     /**
                      * {
                      *
@@ -376,19 +380,15 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * @return void
      */
     private function addAction($content, $id){
-        try {
-            if (!isset($content))
-                throw new Exception('No content passed');
+        if (!isset($content) || !isset($id))
+            throw new \Exception('No content passed to addAction, unable to save message');
 
-            $this->emDebug("Adding action for MICA");
-            $action = new Action($this);
-            $action->setValue('mica_id', $id);
-            $action->setValue('message', json_encode($content));
-            $action->save();
-            $this->emDebug("Added MICA action " . $action->getId());
-        } catch (\Exception $e) {
-
-        }
+        $this->emDebug("Adding action for MICA");
+        $action = new Action($this);
+        $action->setValue('mica_id', $id);
+        $action->setValue('message', json_encode($content));
+        $action->save();
+        $this->emDebug("Added MICA action " . $action->getId());
     }
 
     private function getAllEntityIds($entityType) {
