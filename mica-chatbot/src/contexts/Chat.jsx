@@ -49,7 +49,7 @@ export const ChatContextProvider = ({ children }) => {
             const index = chatContextRef.current.length;
             const updatedApiContext = [
                 ...apiContextRef.current,
-                { role: message.role, content: message.content, index, id: user[0].id },
+                { role: message.role, content: message.content, index, user_id: user[0].id },
             ];
             updateApiContext(updatedApiContext);
 

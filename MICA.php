@@ -138,7 +138,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     $sanitizedPayload[] = array(
                         'role' => $data['role'],
                         'content' => $data['content'],
-                        'id' => $data['id']
+                        'user_id' => $data['user_id']
                     );
                 }
             }
@@ -220,7 +220,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
                     // Add most recent message to database
                     $recent_query = $messages[sizeof($messages) - 1];
-                    $this->addAction(json_encode($recent_query), $recent_query['id']);
+//                    $this->addAction(json_encode($recent_query), $recent_query['id']);
 
                     //CALL API ENDPOINT WITH AUGMENTED CHATML
                     $model  = "gpt-4o";
@@ -232,9 +232,15 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     $response = $this->getSecureChatInstance()->callAI($model, $params, PROJECT_ID );
                     $result = $this->formatResponse($response);
 
+                    if(isset($recent_query['user_id'])) {
+                        $result['user_id'] = $recent_query['user_id'];
+                        unset($recent_query['user_id']);
+                        $result['query'] = $recent_query;
+                    }
+
                     // Add response to database
                     if($result)
-                        $this->addAction(json_encode($result), $recent_query['id']);
+                        $this->addAction(json_encode($result), $result['user_id']);
 
                     $this->emDebug("Result of SecureChatAI.callAI()", $result);
                     return json_encode($result);
