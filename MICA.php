@@ -183,9 +183,29 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         return $chatMlArray;
     }
 
+    /**
+     * Set em config parameters for model usage
+     * @param $params
+     * @return void
+     */
+    private function setModelParameters(&$params){
+        $settings = [
+            "temperature" => "gpt-temperature",
+            "top_p" => "gpt-top-p",
+            "frequency_penalty" => "gpt-frequency-penalty",
+            "presence_penalty" => "presence_penalty",
+            "max_tokens" => "gpt-max-tokens"
+        ];
+
+        foreach ($settings as $key => $setting) {
+            if ($value = $this->getProjectSetting($setting)) {
+                $params[$key] = is_numeric($value) ? (float) $value : intval($value);
+            }
+        }
+    }
+
     public function redcap_module_ajax($action, $payload, $project_id, $record, $instrument, $event_id, $repeat_instance,
                                        $survey_hash, $response_id, $survey_queue_hash, $page, $page_full, $user_id, $group_id) {
-
         try {
             switch ($action) {
                 case "callAI":
@@ -196,45 +216,27 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 //                    $ragContext = implode("\n\n", array_column($relevantDocs, 'raw_content'));
 //                    $messages = $this->appendSystemContext($messages, $ragContext);
 //                }
-                    //Save message text first
-
                     $this->emDebug("chatml Messages array to API", $messages);
+
+                    // Add most recent message to database
                     $recent_query = $messages[sizeof($messages) - 1];
                     $this->addAction(json_encode($recent_query), $recent_query['id']);
+
                     //CALL API ENDPOINT WITH AUGMENTED CHATML
                     $model  = "gpt-4o";
-                    $params = array("messages" =>$messages);
-                    if($this->getProjectSetting("gpt-temperature")){
-                        $params["temperature"] = floatval($this->getProjectSetting("gpt-temperature"));
-                    }
-                    if($this->getProjectSetting("gpt-top-p")){
-                        $params["top_p"] = floatval($this->getProjectSetting("gpt-top-p"));
-                    }
-                    if($this->getProjectSetting("gpt-frequency-penalty")){
-                        $params["frequency_penalty"] = floatval($this->getProjectSetting("gpt-frequency-penalty"));
-                    }
-                    if($this->getProjectSetting("presence_penalty")){
-                        $params["presence_penalty"] = floatval($this->getProjectSetting("presence_penalty"));
-                    }
-                    if($this->getProjectSetting("gpt-max-tokens")){
-                        $params["max_tokens"] = intval($this->getProjectSetting("gpt-max-tokens"));
-                    }
+                    $params = array("messages" => $messages);
+
+                    // Alter model parameters if set by user
+                    $this->setModelParameters($params);
 
                     $response = $this->getSecureChatInstance()->callAI($model, $params, PROJECT_ID );
                     $result = $this->formatResponse($response);
+
+                    // Add response to database
                     if($result)
                         $this->addAction(json_encode($result), $recent_query['id']);
 
-                    /**
-                     * {
-                     *
-                     * keep index ?
-                     *
-                     *
-                     * }
-                     *
-                     */
-                    $this->emDebug("calling SecureChatAI.callAI()", $result);
+                    $this->emDebug("Result of SecureChatAI.callAI()", $result);
                     return json_encode($result);
                 case "login":
                     $data = $this->sanitizeInput($payload);
