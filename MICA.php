@@ -32,7 +32,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     }
 
     public function initSystemContexts(){
-        //TODO CLEAN THIS UP
         $this->system_context_persona = $this->getProjectSetting('chatbot_system_context_persona');
         $this->system_context_steps = $this->getProjectSetting('chatbot_system_context_steps');
         $this->system_context_rules = $this->getProjectSetting('chatbot_system_context_rules');
@@ -285,6 +284,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         // Fetch user information
         $params = array(
             "return_format" => "json",
+            "filterLogic" => "[participant_name] = '$name' AND [participant_email] = '$email'",
             "fields" => array($primary_field, "participant_name", "participant_email", "participant_phone"),
         );
 
@@ -295,7 +295,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $check = reset($json);
 
         if($check['participant_name'] === $name && $check['participant_email'] === $email) { //User Successfully matched
-            $this->generateOneTimePassword($check[$primary_field], $check['participant_phone']);
+            $this->generateOneTimePassword($check[$primary_field], $check['participant_email']);
             return ["success" => true];
         } else {
             throw new \Exception('Invalid Credentials');
@@ -305,11 +305,11 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     /**
      * Generates OTP and saves to record
      * @param $record_id
-     * @param $phone_number
+     * @param $email
      * @return void
      * @throws \Exception
      */
-    private function generateOneTimePassword($record_id, $phone_number): void
+    private function generateOneTimePassword($record_id, $email): void
     {
         $primary_field = $this->getPrimaryField();
 
@@ -325,8 +325,13 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $response = \REDCap::saveData('json', json_encode($saveData), 'overwrite');
 
         if (empty($response['errors'])) {
-            $body = "Your MICA Verification code is: $code";
-            $this->sendSMS($body, $phone_number);
+            $body = "<html><p>Your MICA Verification code is: <strong>$code</strong></p></html>";
+//            $body = "Your MICA Verification code is $code";
+            $res = \REDCap::email($email, 'redcap@stanford.edu', 'Your MICA verification code', $body);
+            if(!$res){
+                $this->emError('Email hook failure');
+                throw new \Exception('Verification email could not be sent, please contact your administrator');
+            }
 
         } else {
             $this->emError('Save data failure, ', json_encode($response['errors']));
@@ -417,22 +422,22 @@ class MICA extends \ExternalModules\AbstractExternalModule {
  * @param $phone_number
  * @return void
  */
-public function sendSMS($body, $phone_number): void
-{
-    $sid = $this->getSystemSetting('twilio-sid');
-    $auth = $this->getSystemSetting('twilio-auth-token');
-    $fromNumber = $this->getSystemSetting('twilio-from-number');
-
-    $twilio = new Client($sid, $auth);
-    $twilio->messages
-        ->create(
-            "$phone_number",
-            array(
-                'body' => $body,
-                'from' => $fromNumber
-            )
-        );
-}
+//public function sendSMS($body, $phone_number): void
+//{
+//    $sid = $this->getSystemSetting('twilio-sid');
+//    $auth = $this->getSystemSetting('twilio-auth-token');
+//    $fromNumber = $this->getSystemSetting('twilio-from-number');
+//
+//    $twilio = new Client($sid, $auth);
+//    $twilio->messages
+//        ->create(
+//            "$phone_number",
+//            array(
+//                'body' => $body,
+//                'from' => $fromNumber
+//            )
+//        );
+//}
 
     // Retrieve relevant documents method
     public function getRelevantDocuments($queryArray) {
