@@ -39,7 +39,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $initial_system_context = $this->appendSystemContext([], $this->system_context_persona);
         $initial_system_context = $this->appendSystemContext($initial_system_context, $this->system_context_steps);
         $initial_system_context = $this->appendSystemContext($initial_system_context, $this->system_context_rules);
-//        $test = Action::getActionsFor($this,52,2);
+        $test = Action::getActionsFor($this,52,1);
         return $initial_system_context;
     }
 
@@ -249,7 +249,9 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 case "verifyPhone":
                     $data = $this->sanitizeInput($payload);
                     return json_encode($this->verifyPhone($data));
-
+                case "fetchSavedQueries":
+                    $data = $this->sanitizeInput($payload);
+                    return json_encode($this->fetchSavedQueries($data));
                 default:
                     throw new Exception("Action $action is not defined");
 
@@ -261,6 +263,20 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 "success" => false
             ]);
         }
+    }
+
+    /**
+     * @param $payload
+     * @return void
+     * @throws \Exception
+     */
+    public function fetchSavedQueries($payload) {
+        if(empty($payload['mica_id']) || empty($payload('name')))
+            throw new \Exception("MICA ID / name combination not provided");
+
+        ['name' => $name, 'mica_id' => $mica_id] = $payload;
+
+        $return = Action::getActionsFor($this,52, intval($mica_id));
     }
 
     public function getPrimaryField(){
