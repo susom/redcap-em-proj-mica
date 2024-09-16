@@ -39,7 +39,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $initial_system_context = $this->appendSystemContext([], $this->system_context_persona);
         $initial_system_context = $this->appendSystemContext($initial_system_context, $this->system_context_steps);
         $initial_system_context = $this->appendSystemContext($initial_system_context, $this->system_context_rules);
-        $test = Action::getActionsFor($this,52,1);
+//        $test = Action::getActionsFor($this,52,1);
         return $initial_system_context;
     }
 
