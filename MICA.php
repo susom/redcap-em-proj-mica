@@ -3,7 +3,7 @@ namespace Stanford\MICA;
 
 require_once "emLoggerTrait.php";
 require_once "classes/Sanitizer.php";
-require_once "classes/Action.php";
+require_once "classes/MICAQuery.php";
 
 use \REDCapEntity\Entity;
 use \REDCapEntity\EntityDB;
@@ -39,7 +39,8 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $initial_system_context = $this->appendSystemContext([], $this->system_context_persona);
         $initial_system_context = $this->appendSystemContext($initial_system_context, $this->system_context_steps);
         $initial_system_context = $this->appendSystemContext($initial_system_context, $this->system_context_rules);
-//        $test = Action::getActionsFor($this,52,1);
+//        $test = Action::getActionsFor($this,52,2);
+//        $test = $this->fetchSavedQueries(['name'=> 'jordan_test', 'mica_id' => '2']);
         return $initial_system_context;
     }
 
@@ -219,7 +220,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
                     // Add most recent message to database
                     $recent_query = $messages[sizeof($messages) - 1];
-//                    $this->addAction(json_encode($recent_query), $recent_query['id']);
+                    $this->logMICAQuery(json_encode($recent_query), $recent_query['user_id']);
 
                     //CALL API ENDPOINT WITH AUGMENTED CHATML
                     $model  = "gpt-4o";
@@ -239,7 +240,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
                     // Add response to database
                     if($result)
-                        $this->addAction(json_encode($result), $result['user_id']);
+                        $this->logMICAQuery(json_encode($result), $result['user_id']);
 
                     $this->emDebug("Result of SecureChatAI.callAI()", $result);
                     return json_encode($result);
@@ -254,7 +255,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     return json_encode($this->fetchSavedQueries($data));
                 default:
                     throw new Exception("Action $action is not defined");
-
             }
         } catch(\Exception $e) {
             $this->emError($e);
@@ -267,16 +267,24 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
     /**
      * @param $payload
-     * @return void
+     * @return array
      * @throws \Exception
      */
     public function fetchSavedQueries($payload) {
-        if(empty($payload['mica_id']) || empty($payload('name')))
+        $a = $payload['mica_id'];
+        if(empty($payload['mica_id']) || empty($payload['name']))
             throw new \Exception("MICA ID / name combination not provided");
 
         ['name' => $name, 'mica_id' => $mica_id] = $payload;
 
-        $return = Action::getActionsFor($this,52, intval($mica_id));
+        $actions = MICAQuery::getLogsFor($this,52, $mica_id);
+        $return = [];
+        if(sizeof($actions)) {
+            foreach($actions as $k)
+                $return[] = $k->getMICAQuery();
+        }
+        return $return;
+
     }
 
     public function getPrimaryField(){
@@ -408,16 +416,16 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * @param $session_id
      * @return void
      */
-    private function addAction($content, $id){
+    private function logMICAQuery($content, $id){
         if (!isset($content) || !isset($id))
             throw new \Exception('No content passed to addAction, unable to save message');
 
         $this->emDebug("Adding action for MICA");
-        $action = new Action($this);
+        $action = new MICAQuery($this);
         $action->setValue('mica_id', $id);
-        $action->setValue('message', json_encode($content));
+        $action->setValue('message', $content);
         $action->save();
-        $this->emDebug("Added MICA action " . $action->getId());
+        $this->emDebug("Added MICA query " . $action->getId());
     }
 
     private function getAllEntityIds($entityType) {

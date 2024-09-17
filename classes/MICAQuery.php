@@ -8,10 +8,9 @@ require_once "ASEMLO.php";
  * The Conversation State extends the Simple EM Log Object to provide a data store for all conversations
  *
  */
-class Action extends ASEMLO
+class MICAQuery extends ASEMLO
 {
     /** @var MICA $this ->module */
-
 
     /**
      * @param $module
@@ -40,7 +39,7 @@ class Action extends ASEMLO
 
     }
 
-    public function getAction()
+    public function getMICAQuery()
     {
         $message = $this->getValue('message');
         $decoded = json_decode($message, true);
@@ -51,21 +50,6 @@ class Action extends ASEMLO
 
 
     /** SETTERS */
-
-    /**
-     * Add a note
-     * @param $note
-     * @return void
-     */
-    public function addNote($note)
-    {
-        $note = $this->getValue('note') ?? '';
-        $prefix = empty($note) ? "" : "\n----\n";
-        $this->setValue('note',
-            $prefix . "[" . date("Y-m-d H:i:s") . "] " .
-            $note
-        );
-    }
 
 
     /** STATIC METHODS */
@@ -78,7 +62,7 @@ class Action extends ASEMLO
      * @return array Action
      * @throws \Exception
      */
-    public static function getActionsFor($module, $project_id, $mica_id)
+    public static function getLogsFor($module, $project_id, $mica_id)
     {
 
         $filter_clause = "project_id = ? and mica_id = ? order by log_id asc";
@@ -90,7 +74,9 @@ class Action extends ASEMLO
         if ($count > 0) {
             $module->emDebug("Loaded $count CS in need of action");
         }
-
+//        return [
+//            "data" => $results
+//        ];
         return $count === 0 ? [] : $objs;
     }
 
