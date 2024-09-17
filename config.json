@@ -46,6 +46,7 @@
         "callAI",
         "login",
         "verifyPhone",
+        "endSession",
         "fetchSavedQueries"
     ],
 

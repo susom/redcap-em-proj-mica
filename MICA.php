@@ -208,11 +208,15 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     if(!empty($existing_chat)){
                         $return_payload["current_session"] = $existing_chat;
                     }
-
                     return json_encode($return_payload);
-                case "fetchSavedQueries":
+                    break;
+
+                case "endSession":
                     $data = $this->sanitizeInput($payload);
-                    return json_encode($this->fetchSavedQueries($data));
+                    $this->emDebug("endSession", $data);
+                    $something = array("success" => 1);
+                    return json_encode($something);
+
                 default:
                     throw new Exception("Action $action is not defined");
             }
