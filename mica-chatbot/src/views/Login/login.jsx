@@ -6,7 +6,7 @@ import {useNavigate} from 'react-router-dom';
 import {user_info} from "../../components/database/dexie.js";
 import useAuth from "../../Hooks/useAuth.jsx";
 
-export function Login({changeView}) {
+export function Login() {
     const [error, setError] = useState('')
     const [name, setName] = useState('')
     const [phone, setPhone] = useState('')

@@ -1,16 +1,13 @@
 import React from "react";
-import App from "../../App.jsx";
-import {Login} from "../../views/Login/login.jsx";
-import {Home} from '../../views/Home/home.jsx';
-import {History} from '../../views/History/history.jsx';
-import {Splash} from '../../views/Splash/splash.jsx';
-import {ProtectedRoute} from "../protectedRoute/ProtectedRoute.jsx";
-import {AuthProvider} from "../../Hooks/useAuth.jsx";
+import { Login } from "../../views/Login/login.jsx";
+import { Home } from '../../views/Home/home.jsx';
+import { Splash } from '../../views/Splash/splash.jsx';
+import { ProtectedRoute } from "../protectedRoute/ProtectedRoute.jsx";
+import { AuthProvider } from "../../Hooks/useAuth.jsx";
 
 import {
     createHashRouter,
     RouterProvider,
-    createRoutesFromElements
 } from "react-router-dom";
 
 const router = createHashRouter([
@@ -20,13 +17,20 @@ const router = createHashRouter([
     },
     {
         path: '/splash',
-        element: <Splash/>
+        element: <Splash />
     },
     {
         path: '/home',
-        element: <ProtectedRoute><Home/></ProtectedRoute>
+        element: (
+            <ProtectedRoute>
+                <Home />
+            </ProtectedRoute>
+        )
     }
-])
+]);
 
-
-export const AppRouter = () => <AuthProvider><RouterProvider router={router}/></AuthProvider>
+export const AppRouter = () => (
+    <AuthProvider>
+        <RouterProvider router={router} />
+    </AuthProvider>
+);

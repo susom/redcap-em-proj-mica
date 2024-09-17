@@ -5,11 +5,6 @@ require_once "emLoggerTrait.php";
 require_once "classes/Sanitizer.php";
 require_once "classes/MICAQuery.php";
 
-use \REDCapEntity\Entity;
-use \REDCapEntity\EntityDB;
-use \REDCapEntity\EntityFactory;
-use Twilio\Rest\Client;
-
 require_once "vendor/autoload.php";
 
 class MICA extends \ExternalModules\AbstractExternalModule {
@@ -21,13 +16,11 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     public $system_context_persona;
     public $system_context_steps;
     public $system_context_rules;
-    private $entityFactory;
 
     private $primary_field;
 
     public function __construct() {
         parent::__construct();
-//        $this->entityFactory = new \REDCapEntity\EntityFactory();
 //        $this->addAction(["Hello this is an example response to mica"], 1);
     }
 
@@ -39,49 +32,8 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $initial_system_context = $this->appendSystemContext([], $this->system_context_persona);
         $initial_system_context = $this->appendSystemContext($initial_system_context, $this->system_context_steps);
         $initial_system_context = $this->appendSystemContext($initial_system_context, $this->system_context_rules);
-//        $test = Action::getActionsFor($this,52,2);
-//        $test = $this->fetchSavedQueries(['name'=> 'jordan_test', 'mica_id' => '2']);
         return $initial_system_context;
     }
-
-    // Define entity types
-    public function redcap_entity_types() {
-        $types = [];
-
-        $types['mica_contextdb'] = [
-            'label' => 'MICA Chatbot Context',
-            'label_plural' => 'MICA Chatbot Contexts',
-            'icon' => 'file',
-            'properties' => [
-                'title' => [
-                    'name' => 'Title',
-                    'type' => 'text',
-                    'required' => true,
-                ],
-                'raw_content' => [
-                    'name' => 'Raw Content',
-                    'type' => 'long_text',
-                    'required' => true,
-                ],
-                'embedding_vector' => [
-                    'name' => 'Embedding Vector',
-                    'type' => 'long_text',
-                    'required' => true,
-                ],
-            ],
-        ];
-
-        return $types;
-    }
-
-    // Hook to trigger entity initialization on module enablement
-//    public function redcap_module_system_enable($version) {
-//        \REDCapEntity\EntityDB::buildSchema($this->PREFIX);
-//    }
-//
-//    public function redcap_every_page_top($project_id) {
-//
-//    }
 
     public function generateAssetFiles(): array {
         $cwd = $this->getModulePath();
@@ -113,7 +65,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
         return $assets;
     }
-
 
     /**
      * @param $data
@@ -401,16 +352,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             throw new \Exception('Invalid OTP code');
     }
 
-    private function getEmbedding($text) {
-        try {
-            $result = $this->getSecureChatInstance()->callAI("ada-002", array("input" => $text) );
-            return $result['data'][0]['embedding'];
-        } catch (GuzzleException $e) {
-            $this->emError("Embedding error: " . $e->getMessage());
-            return null;
-        }
-    }
-
     /**
      * @param $content
      * @param $session_id
@@ -426,18 +367,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $action->setValue('message', $content);
         $action->save();
         $this->emDebug("Added MICA query " . $action->getId());
-    }
-
-    private function getAllEntityIds($entityType) {
-        $ids = [];
-        $sql = 'SELECT id FROM `redcap_entity_' . db_escape($entityType) . '`';
-        $result = db_query($sql);
-
-        while ($row = db_fetch_assoc($result)) {
-            $ids[] = $row['id'];
-        }
-
-        return $ids;
     }
 
  /**
@@ -462,91 +391,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 //            )
 //        );
 //}
-
-    // Retrieve relevant documents method
-    public function getRelevantDocuments($queryArray) {
-        if (!is_array($queryArray) || empty($queryArray)) {
-            return null;
-        }
-
-        $lastElement = end($queryArray);
-
-        if (!isset($lastElement['role']) || $lastElement['role'] !== 'user' || !isset($lastElement['content'])) {
-            return null;
-        }
-
-        $query = $lastElement['content'];
-        $queryEmbedding = $this->getEmbedding($query);
-
-        if (!$queryEmbedding) {
-            return null;
-        }
-
-        $entities = $this->entityFactory->loadInstances('mica_contextdb', $this->getAllEntityIds('chatbot_contextdb'));
-        $documents = [];
-
-        foreach ($entities as $entity) {
-            $docEmbedding = json_decode($entity->getData()['embedding_vector'], true);
-            $similarity = $this->cosineSimilarity($queryEmbedding, $docEmbedding);
-
-            $documents[] = [
-                'id' => $entity->getId(),
-                'title' => $entity->getData()['title'],
-                'raw_content' => $entity->getData()['raw_content'],
-                'similarity' => $similarity
-            ];
-        }
-
-        usort($documents, function($a, $b) {
-            return $b['similarity'] <=> $a['similarity'];
-        });
-
-        return array_slice($documents, 0, 3);
-    }
-
-    // Store document method
-    public function storeDocument($title, $content) {
-        // Get the embedding for the content
-        $embedding = $this->getEmbedding($content);
-        $serialized_embedding = json_encode($embedding);
-
-        // Store the new document with its embedding vector
-        $entity = new \REDCapEntity\Entity($this->entityFactory, 'mica_contextdb');
-
-        $entity->setData([
-            'title' => $title,
-            'raw_content' => $content,
-            'embedding_vector' => $serialized_embedding
-        ]);
-
-        $entity->save();
-    }
-
-    // Cosine similarity calculation method
-    private function cosineSimilarity($vec1, $vec2) {
-        $dotProduct = 0;
-        $normVec1 = 0;
-        $normVec2 = 0;
-
-        foreach ($vec1 as $key => $value) {
-            $dotProduct += $value * ($vec2[$key] ?? 0);
-            $normVec1 += $value ** 2;
-        }
-
-        foreach ($vec2 as $value) {
-            $normVec2 += $value ** 2;
-        }
-
-        $normVec1 = sqrt($normVec1);
-        $normVec2 = sqrt($normVec2);
-
-        if ($normVec1 == 0 || $normVec2 == 0) {
-            return 0; // Return zero if either vector norm is zero
-        }
-
-        return $dotProduct / ($normVec1 * $normVec2);
-    }
-
 
     /**
      * @return \Stanford\SecureChatAI\SecureChatAI
