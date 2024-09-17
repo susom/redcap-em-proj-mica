@@ -72,7 +72,7 @@ function useAuth() {
                         console.log('valid user, logging in...')
                         setAuthed(true)
                         cacheUser(res);
-                        resolve()
+                        resolve(res);
                     }, reject)
                 } else {
                     console.error('MICA EM is not injected, cannot execute function login')

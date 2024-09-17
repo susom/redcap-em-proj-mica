@@ -1,10 +1,10 @@
-import React, {useState, useEffect} from "react";
+import React, {useState, useContext} from "react";
 import {Alert, Button, Fieldset, TextInput, Card, Center, Container, Grid, Space, Text, Title} from '@mantine/core';
 import {Carousel} from '@mantine/carousel';
 import {InfoCircle, CCircle, Hash} from "react-bootstrap-icons";
 import {useNavigate} from 'react-router-dom';
-import {user_info} from "../../components/database/dexie.js";
 import useAuth from "../../Hooks/useAuth.jsx";
+import { ChatContext } from '../../contexts/Chat';
 
 export function Login() {
     const [error, setError] = useState('')
@@ -14,6 +14,7 @@ export function Login() {
     const [loading, setLoading] = useState(false)
     const [embla, setEmbla] = useState(null);
     const navigate = useNavigate();
+    const { replaceSession } = useContext(ChatContext);
     const { login, verifyPhone } = useAuth();
 
     const handleNext = () => embla?.scrollNext();
@@ -51,6 +52,14 @@ export function Login() {
     const onVerify = () => {
         setLoading(true)
         verifyPhone(phone).then(res => {
+            if (res.current_session && res.current_session.length > 0) {
+                const sessionData = {
+                    session_id: Date.now().toString(), // Or use an ID from res if available
+                    queries: res.current_session, // Ensure this matches the expected format
+                };
+                replaceSession(sessionData);
+            }
+            setLoading(false);
             navigate('/home')
             console.log("success!")
         }).catch(err => {

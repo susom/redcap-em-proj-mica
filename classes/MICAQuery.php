@@ -70,14 +70,55 @@ class MICAQuery extends ASEMLO
             $module, $filter_clause, [$project_id, $mica_id]
         );
 
-        $count = count($objs);
-        if ($count > 0) {
-            $module->emDebug("Loaded $count CS in need of action");
-        }
-//        return [
-//            "data" => $results
-//        ];
-        return $count === 0 ? [] : $objs;
-    }
+        $chatSession = [];
 
+        foreach ($objs as $action) {
+            $messageJson = $action->getValue('message');
+            $timestamp = $action->getValue('timestamp');
+            
+            // Decode the JSON message
+            $messageData = json_decode($messageJson, true);
+
+            // Handle potential double encoding
+            if (is_string($messageData)) {
+                $messageData = json_decode($messageData, true);
+            }
+
+            // Check for JSON decoding errors
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                $module->emDebug('JSON decoding error: ' . json_last_error_msg(), $messageJson);
+                continue; // Skip this iteration if decoding failed
+            }
+
+            // Extract data
+            $assistantContent = $messageData['response']['content'] ?? null;
+            $userContent = $messageData['query']['content'] ?? null;
+
+            if (empty($assistantContent)) {
+//                $module->emDebug("only return for completed Q + A");
+                continue; // Skip this iteration
+            }
+
+            $id = $messageData['id'] ?? null;
+            $model = $messageData['model'] ?? null;
+            $usage = $messageData['usage'] ?? [];
+            $inputTokens = $usage['prompt_tokens'] ?? null;
+            $outputTokens = $usage['completion_tokens'] ?? null;
+
+            // Build the chat session entry
+            $chatSession[] = [
+                'assistant_content' => $assistantContent,
+                'user_content'      => $userContent,
+                'id'                => $id,
+                'model'             => $model,
+                'input_tokens'      => $inputTokens,
+                'output_tokens'     => $outputTokens,
+                'input_cost'        => null, // Or calculate if available
+                'output_cost'       => null, // Or calculate if available
+                'timestamp'         => strtotime($timestamp) * 1000, // Convert timestamp to milliseconds
+            ];
+        }
+
+        return $chatSession;
+    }
 }

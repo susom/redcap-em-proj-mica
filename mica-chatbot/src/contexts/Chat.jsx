@@ -111,7 +111,7 @@ export const ChatContextProvider = ({ children }) => {
         setSessionId(session.session_id);
         setMessages(session.queries);
         setMsgCount(session.queries.length);
-        updateChatContext(session.queries, false);
+        updateChatContext(session.queries);
     };
 
     const callAjax = async (payload, callback) => {

@@ -200,7 +200,16 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     return json_encode($this->loginUser($data));
                 case "verifyPhone":
                     $data = $this->sanitizeInput($payload);
-                    return json_encode($this->verifyPhone($data));
+                    $verify_phone_data = $this->verifyPhone($data);
+                    $existing_chat = $this->fetchSavedQueries($verify_phone_data["user"]);
+
+                    $return_payload = $verify_phone_data;
+                    $return_payload["current_session"] = [];
+                    if(!empty($existing_chat)){
+                        $return_payload["current_session"] = $existing_chat;
+                    }
+
+                    return json_encode($return_payload);
                 case "fetchSavedQueries":
                     $data = $this->sanitizeInput($payload);
                     return json_encode($this->fetchSavedQueries($data));
@@ -222,20 +231,17 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * @throws \Exception
      */
     public function fetchSavedQueries($payload) {
-        $a = $payload['mica_id'];
-        if(empty($payload['mica_id']) || empty($payload['name']))
-            throw new \Exception("MICA ID / name combination not provided");
 
-        ['name' => $name, 'mica_id' => $mica_id] = $payload;
-
-        $actions = MICAQuery::getLogsFor($this,52, $mica_id);
-        $return = [];
-        if(sizeof($actions)) {
-            foreach($actions as $k)
-                $return[] = $k->getMICAQuery();
+        // Correct the typo in the if statement
+        if (empty($payload['participant_id']) || empty($payload['name'])) {
+            throw new \Exception("Participant ID / name combination not provided");
         }
-        return $return;
 
+        ['name' => $name, 'participant_id' => $participant_id] = $payload;
+
+        // Ensure participant_id is an integer
+        $mica_id = intval($participant_id);
+        return MICAQuery::getLogsFor($this, PROJECT_ID, $mica_id);
     }
 
     public function getPrimaryField(){
