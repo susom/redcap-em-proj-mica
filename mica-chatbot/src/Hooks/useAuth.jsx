@@ -12,7 +12,7 @@ function useAuth() {
 
     const cacheUser = async (payload) => {
         let {participant_id, name} = payload?.user
-        let timestamp = Date.now()
+
         if(participant_id && name){
             let data = {
                 id: parseInt(participant_id),
@@ -33,10 +33,26 @@ function useAuth() {
         login(name, email) {
             return new Promise(async (resolve, reject) => {
                 try {
+                    console.log('inside login hook')
                     const user = await checkUserCache(1)
+                    console.log(user)
                     if(user){
-                        setAuthed(true);
-                        resolve();
+                        let timeDifferential = Date.now() - user.timestamp
+                        let isWithin30min = timeDifferential <= 30 * 60 * 1000
+                        console.log(isWithin30min)
+                        if(user.name === name && isWithin30min){
+                            setAuthed(true);
+                            resolve();
+                        } else {
+                            const mica = mica_jsmo_module
+                            if(mica) {
+                                let result = await mica_jsmo_module.login({
+                                    'name': name,
+                                    'email': email
+                                }, resolve, reject)
+                            }
+                        }
+
                     } else { //Attempt logging in user via REST
                         const mica = mica_jsmo_module
                         if(mica) {
@@ -62,11 +78,11 @@ function useAuth() {
                 res();
             });
         },
-        verifyPhone(code) {
+        verifyEmail(code) {
             return new Promise(async (resolve, reject) => {
                 const mica = mica_jsmo_module
                 if(mica) {
-                    let result = await mica_jsmo_module.verifyPhone({
+                    let result = await mica_jsmo_module.verifyEmail({
                         'code': code,
                     }, (res) => {
                         console.log('valid user, logging in...')

@@ -15,7 +15,7 @@ export function Login() {
     const [embla, setEmbla] = useState(null);
     const navigate = useNavigate();
     const { replaceSession } = useContext(ChatContext);
-    const { login, verifyPhone } = useAuth();
+    const { login, verifyEmail } = useAuth();
 
     const handleNext = () => embla?.scrollNext();
 
@@ -51,7 +51,7 @@ export function Login() {
 
     const onVerify = () => {
         setLoading(true)
-        verifyPhone(phone).then(res => {
+        verifyEmail(phone).then(res => {
             if (res.current_session && res.current_session.length > 0) {
                 const sessionData = {
                     session_id: Date.now().toString(), // Or use an ID from res if available

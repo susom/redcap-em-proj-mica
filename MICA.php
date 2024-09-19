@@ -198,9 +198,9 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 case "login":
                     $data = $this->sanitizeInput($payload);
                     return json_encode($this->loginUser($data));
-                case "verifyPhone":
+                case "verifyEmail":
                     $data = $this->sanitizeInput($payload);
-                    $verify_phone_data = $this->verifyPhone($data);
+                    $verify_phone_data = $this->verifyEmail($data);
                     $existing_chat = $this->fetchSavedQueries($verify_phone_data["user"]);
 
                     $return_payload = $verify_phone_data;
@@ -329,18 +329,18 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * @return false[]|true[]
      * @throws \Exception
      */
-    private function verifyPhone($payload) {
+    private function verifyEmail($payload) {
         $primary_field = $this->getPrimaryField();
 
         if(empty($payload['code']))
-            throw new \Exception("Error verifying phone number: no number provided");
+            throw new \Exception("Error verifying email, no code provided");
 
         ['code' => $code] = $payload;
 
         // Fetch user information
         $params = array(
             "return_format" => "json",
-            "fields" => array($primary_field,"participant_phone", "two_factor_code", "participant_name"),
+            "fields" => array($primary_field, "two_factor_code", "participant_name"),
             "filterLogic" => "[two_factor_code] = '$code'"
         );
 
