@@ -44,8 +44,8 @@
                 callback(parsed)
             }
         },
-        verifyPhone: async (payload, callback, errorCallback) => {
-            const res = await module.ajax('verifyPhone', payload);
+        verifyEmail: async (payload, callback, errorCallback) => {
+            const res = await module.ajax('verifyEmail', payload);
             let parsed = JSON.parse(res)
 
             if('error' in parsed) {
