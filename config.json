@@ -46,7 +46,7 @@
         "callAI",
         "login",
         "verifyEmail",
-        "endSession",
+        "completeSession",
         "fetchSavedQueries"
     ],
 

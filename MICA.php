@@ -208,13 +208,10 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                         $return_payload["current_session"] = $existing_chat;
                     }
                     return json_encode($return_payload);
-                    break;
 
-                case "endSession":
+                case "completeSession":
                     $data = $this->sanitizeInput($payload);
-                    $this->emDebug("endSession", $data);
-                    $something = array("success" => 1);
-                    return json_encode($something);
+                    return json_encode($this->completeSession($payload));
 
                 default:
                     throw new Exception("Action $action is not defined");
@@ -233,7 +230,8 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * @return array
      * @throws \Exception
      */
-    public function fetchSavedQueries($payload) {
+    public function fetchSavedQueries($payload): array
+    {
         ['name' => $name, 'participant_id' => $participant_id] = $payload;
 
         // Correct the typo in the if statement
@@ -269,7 +267,8 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * @return true[]
      * @throws \Exception
      */
-    public function loginUser($payload) {
+    public function loginUser($payload): array
+    {
         $primary_field = $this->getPrimaryField();
         if(empty($payload['name']) || empty($payload['email']))
             throw new \Exception("Error logging in user, either name or email is empty");
@@ -412,7 +411,50 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 //        );
 //}
 
+    /**
+     * @param $payload
+     * @return true[]|void
+     * @throws \Exception
+     */
     public function completeSession($payload) {
+        ['participant_id' => $participant_id] = $payload;
+
+        // Correct the typo in the if statement
+        if (empty($participant_id)) {
+            throw new \Exception("Error with completing session: No participant ID provided");
+        }
+
+        $primary_field = $this->getPrimaryField();
+        $params = array(
+            "return_format" => "json",
+            "filterLogic" => "[$primary_field] = '$participant_id'",
+        );
+
+        // Find user and determine validity
+        $current_data = json_decode(\REDCap::getData($params), true);
+
+        $check = reset($current_data);
+        $logs = MICAQuery::getLogsFor($this, PROJECT_ID, $participant_id);
+
+        if(sizeof($logs)){
+            $saveData = array(
+                array(
+                    "record_id" => $payload['record_id'],
+                    "ts_whiteboard" => $payload['ts_whiteboard'],
+                )
+            );
+            $save = array(
+                "user_complete" => "2",
+                "raw_chat_logs" => json_encode($logs)
+            );
+            $save = array(array_merge($check, $save));
+            $response = \REDCap::saveData('json', json_encode($save), 'overwrite');
+            if(! $response['errors']) {
+                return ["success" => true];
+            } else {
+                throw new \Exception(implode(',', $response['errors']));
+            }
+        }
 
     }
 

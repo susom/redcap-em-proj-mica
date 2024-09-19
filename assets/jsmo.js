@@ -55,8 +55,8 @@
                 callback(parsed)
             }
         },
-        endSession: async (payload, callback, errorCallback) => {
-            const res = await module.ajax('endSession', payload);
+        completeSession: async (payload, callback, errorCallback) => {
+            const res = await module.ajax('completeSession', payload);
             let parsed = JSON.parse(res)
             callback(parsed);
         },
