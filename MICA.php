@@ -21,7 +21,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
     public function __construct() {
         parent::__construct();
-//        $this->addAction(["Hello this is an example response to mica"], 1);
     }
 
     public function initSystemContexts(){
@@ -235,17 +234,28 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * @throws \Exception
      */
     public function fetchSavedQueries($payload) {
-
-        // Correct the typo in the if statement
-        if (empty($payload['participant_id']) || empty($payload['name'])) {
-            throw new \Exception("Participant ID / name combination not provided");
-        }
-
         ['name' => $name, 'participant_id' => $participant_id] = $payload;
 
-        // Ensure participant_id is an integer
-        $mica_id = intval($participant_id);
-        return MICAQuery::getLogsFor($this, PROJECT_ID, $mica_id);
+        // Correct the typo in the if statement
+        if (empty($participant_id) || empty($name)) {
+            throw new \Exception("Error with fetching queries: Participant ID / name combination not provided");
+        }
+
+        $primary_field = $this->getPrimaryField();
+        $params = array(
+            "return_format" => "json",
+            "filterLogic" => "[$primary_field] = '$participant_id'",
+            "fields" => array($primary_field, "participant_name"),
+        );
+
+        // Find user and determine validity
+        $json = json_decode(\REDCap::getData($params), true);
+        $check = reset($json);
+
+        // Check across participant name and id
+        if($check['participant_id'] === $participant_id && $check['participant_name'] === $name) {
+            return MICAQuery::getLogsFor($this, PROJECT_ID, $participant_id);
+        }
     }
 
     public function getPrimaryField(){
@@ -401,6 +411,10 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 //            )
 //        );
 //}
+
+    public function completeSession($payload) {
+
+    }
 
     /**
      * @return \Stanford\SecureChatAI\SecureChatAI
