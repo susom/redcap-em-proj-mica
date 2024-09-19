@@ -40,7 +40,13 @@ export function Login() {
         login(name, email).then((res) => {
             setLoading(false)
             setError('')
-            handleNext()
+
+            // user has been cached within 30 minutes, allow entry without verification step
+            if(res === 'pass'){
+                navigate('/home')
+            } else {
+                handleNext()
+            }
         }).catch((err) => {
             setLoading(false)
             setError(err)

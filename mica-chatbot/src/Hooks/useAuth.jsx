@@ -6,13 +6,18 @@ const authContext = React.createContext();
 function useAuth() {
     const [authed, setAuthed] = React.useState(false);
 
-    const checkUserCache = async (key) => {
-        return await user_info.current_user.get(key) ?? null;
+    const checkUserCache = async () => {
+        try {
+            const firstEntry = await user_info.table('current_user').toArray();
+            return firstEntry.length ? firstEntry[0] : null;
+        } catch (error) {
+            console.error('Failed to retrieve user from cache:', error);
+            return null;
+        }
     }
 
     const cacheUser = async (payload) => {
         let {participant_id, name} = payload?.user
-
         if(participant_id && name){
             let data = {
                 id: parseInt(participant_id),
@@ -34,7 +39,7 @@ function useAuth() {
             return new Promise(async (resolve, reject) => {
                 try {
                     console.log('inside login hook')
-                    const user = await checkUserCache(1)
+                    const user = await checkUserCache()
                     console.log(user)
                     if(user){
                         let timeDifferential = Date.now() - user.timestamp
@@ -42,7 +47,7 @@ function useAuth() {
                         console.log(isWithin30min)
                         if(user.name === name && isWithin30min){
                             setAuthed(true);
-                            resolve();
+                            resolve('pass');
                         } else {
                             const mica = mica_jsmo_module
                             if(mica) {
@@ -86,8 +91,8 @@ function useAuth() {
                         'code': code,
                     }, (res) => {
                         console.log('valid user, logging in...')
-                        setAuthed(true)
                         cacheUser(res);
+                        setAuthed(true)
                         resolve(res);
                     }, reject)
                 } else {
