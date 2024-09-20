@@ -23,7 +23,7 @@ export default function Header() {
             const users = await user_info.current_user.toArray();
             if (users.length > 0) {
                 const { id, name } = users[0]; // Get participant_id and username
-                mica_jsmo_module.endSession(
+                mica_jsmo_module.completeSession(
                     {
                         participant_id: id
                     },

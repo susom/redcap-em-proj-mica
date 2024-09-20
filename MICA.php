@@ -262,6 +262,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         if($check['participant_id'] === $participant_id && $check['participant_name'] === $name) {
             return MICAQuery::getLogsFor($this, PROJECT_ID, $participant_id);
         }
+        return [];
     }
 
     public function getPrimaryField(){
@@ -453,6 +454,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             );
             $save = array(
                 "user_complete" => "2",
+                "completion_timestamp" => date("Y-m-d H:i:s"),
                 "raw_chat_logs" => json_encode($logs)
             );
             $save = array(array_merge($check, $save));
