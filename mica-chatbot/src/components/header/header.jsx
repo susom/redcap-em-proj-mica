@@ -5,14 +5,17 @@ import { useNavigate } from 'react-router-dom';
 import "./header.css";
 import { user_info } from '../database/dexie';
 import { ChatContext } from '../../contexts/Chat';
+import useAuth from '../../Hooks/useAuth.jsx';
 
 export default function Header() {
     const navigate = useNavigate();
     const { clearMessages } = useContext(ChatContext);
+    const { logout } = useAuth();
 
     const handleSignOut = async () => {
         await user_info.current_user.clear();
         await clearMessages(); // Clear chat context
+        await logout()
         navigate('/'); // Navigate to login route
     };
 
