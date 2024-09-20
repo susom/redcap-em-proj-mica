@@ -38,13 +38,10 @@ function useAuth() {
         login(name, email) {
             return new Promise(async (resolve, reject) => {
                 try {
-                    console.log('inside login hook')
                     const user = await checkUserCache()
-                    console.log(user)
                     if(user){
                         let timeDifferential = Date.now() - user.timestamp
                         let isWithin30min = timeDifferential <= 30 * 60 * 1000
-                        console.log(isWithin30min)
                         if(user.name === name && isWithin30min){
                             setAuthed(true);
                             resolve('pass');

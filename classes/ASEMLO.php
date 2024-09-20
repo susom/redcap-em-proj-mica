@@ -453,7 +453,7 @@ class ASEMLO
 
         $sql = "select log_id where " . static::NAME_COLUMN . "= ?" . (empty($filter_clause) ? "" : " and " . $filter_clause);
         $params = array_merge([self::getObjectName()], $parameters);
-        $module->emDebug($sql, $params);
+        // $module->emDebug($sql, $params);
 
         $result = $framework->queryLogs($sql,$params);
         $ids = [];

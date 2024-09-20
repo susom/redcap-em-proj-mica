@@ -197,19 +197,27 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 case "login":
                     $data = $this->sanitizeInput($payload);
                     return json_encode($this->loginUser($data));
+
                 case "verifyEmail":
                     $data = $this->sanitizeInput($payload);
                     $verify_phone_data = $this->verifyEmail($data);
-                    $existing_chat = $this->fetchSavedQueries($verify_phone_data["user"]);
 
                     $return_payload = $verify_phone_data;
                     $return_payload["current_session"] = [];
+                    return json_encode($return_payload);
+
+                case "fetchSavedQueries":
+                    $data = $this->sanitizeInput($payload);
+                    $return_payload = [];
+                    $return_payload["current_session"] = [];
+                    $existing_chat = $this->fetchSavedQueries($data);
                     if(!empty($existing_chat)){
                         $return_payload["current_session"] = $existing_chat;
                     }
                     return json_encode($return_payload);
 
                 case "completeSession":
+                    // expecting {participant_id : participant_id}
                     $data = $this->sanitizeInput($payload);
                     return json_encode($this->completeSession($payload));
 

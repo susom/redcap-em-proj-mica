@@ -25,8 +25,7 @@ export default function Header() {
                 const { id, name } = users[0]; // Get participant_id and username
                 mica_jsmo_module.endSession(
                     {
-                        participant_id: id,
-                        username: name,
+                        participant_id: id
                     },
                     async (res) => {
                         console.log('Session ended successfully.');
