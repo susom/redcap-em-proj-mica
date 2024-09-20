@@ -288,15 +288,23 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $params = array(
             "return_format" => "json",
             "filterLogic" => "[participant_name] = '$name' AND [participant_email] = '$email'",
-            "fields" => array($primary_field, "participant_name", "participant_email", "participant_phone"),
+            "fields" => array($primary_field, "participant_name", "participant_email", "participant_phone", "user_complete", "completion_timestamp"),
         );
 
         // Find user and determine validity
         $json = json_decode(\REDCap::getData($params), true);
         if(count($json) > 1)
             throw new \Exception("Error logging in user, duplicate entries for $name, $email");
+
         $check = reset($json);
 
+        // Ensure completed users cannot login again
+        if ($check['user_complete'] !== "0") {
+            $time_completed = $check['completion_timestamp'];
+            throw new \Exception("Your MICA session was completed on $time_completed, thank you for participating");
+        }
+
+        // Otherwise, login regularly
         if($check['participant_name'] === $name && $check['participant_email'] === $email) { //User Successfully matched
             $this->generateOneTimePassword($check[$primary_field], $check['participant_email']);
             return ["success" => true];
