@@ -18,11 +18,6 @@ export const ChatContextProvider = ({ children }) => {
         console.log("apiContext updated: ", apiContext);
     }, [apiContext]);
 
-    useEffect(() => {
-        // Fetch saved session once on load
-        fetchSavedSession();
-    }, []);
-
     const fetchSavedSession = async () => {
         const user = await getCurrentUser();
         if (user.length > 0 && user[0] && user[0]?.id) {
@@ -198,7 +193,7 @@ export const ChatContextProvider = ({ children }) => {
     };
 
     return (
-        <ChatContext.Provider value={{ messages, addMessage, clearMessages, replaceSession, showRatingPO, setShowRatingPO, msgCount, setMsgCount, sessionId, setSessionId, callAjax, chatContext, updateChatContext, updateVote, deleteInteraction }}>
+        <ChatContext.Provider value={{ messages, addMessage, clearMessages, replaceSession, showRatingPO, setShowRatingPO, msgCount, setMsgCount, sessionId, setSessionId, callAjax, chatContext, updateChatContext, updateVote, deleteInteraction, fetchSavedSession }}>
             {children}
         </ChatContext.Provider>
     );

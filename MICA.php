@@ -299,7 +299,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $check = reset($json);
 
         // Ensure completed users cannot login again
-        if ($check['user_complete'] !== "0") {
+        if (isset($check["user_complete"]) && $check['user_complete'] !== "2") {
             $time_completed = $check['completion_timestamp'];
             throw new \Exception("Your MICA session was completed on $time_completed, thank you for participating");
         }
