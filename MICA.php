@@ -467,10 +467,12 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             );
             $save = array(array_merge($check, $save));
             $response = \REDCap::saveData('json', json_encode($save), 'overwrite');
+
+
             if(! $response['errors']) {
                 return ["success" => true];
             } else {
-                throw new \Exception(implode(',', $response['errors']));
+                throw new \Exception($response['errors']);
             }
         }
 
