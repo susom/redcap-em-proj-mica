@@ -13,7 +13,7 @@
     "@mantine/carousel": "^7.11.1",
     "@mantine/core": "^7.10.2",
     "@mantine/hooks": "^7.10.2",
-    "axios": "^1.7.2",
+    "axios": "^1.7.4",
     "dexie": "^4.0.7",
     "embla-carousel-react": "^7.1.0",
     "react": "^18.2.0",
