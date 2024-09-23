@@ -12,7 +12,7 @@ use ExternalModules\ExternalModules;
  */
 class ASEMLO
 {
-    const OBJECT_NAME     = null;     // Object name (defaults to class name) - can be overwritten by parent object
+    const OBJECT_NAME     = "MICAQuery";     // Object name (defaults to class name) - can be overwritten by parent object
     const NAME_COLUMN     = 'record'; // typically 'message' or 'record' - recommend using record unless you need
                                       // the built-in record logging functionality
     const LOG_OBJECT_NAME = null;     // Will default to class name+'_LOG' unless set in parent class
@@ -453,7 +453,7 @@ class ASEMLO
 
         $sql = "select log_id where " . static::NAME_COLUMN . "= ?" . (empty($filter_clause) ? "" : " and " . $filter_clause);
         $params = array_merge([self::getObjectName()], $parameters);
-        $module->emDebug($sql, $params);
+        // $module->emDebug($sql, $params);
 
         $result = $framework->queryLogs($sql,$params);
         $ids = [];

@@ -3,12 +3,7 @@ namespace Stanford\MICA;
 
 require_once "emLoggerTrait.php";
 require_once "classes/Sanitizer.php";
-require_once "classes/Action.php";
-
-use \REDCapEntity\Entity;
-use \REDCapEntity\EntityDB;
-use \REDCapEntity\EntityFactory;
-use Twilio\Rest\Client;
+require_once "classes/MICAQuery.php";
 
 require_once "vendor/autoload.php";
 
@@ -21,18 +16,14 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     public $system_context_persona;
     public $system_context_steps;
     public $system_context_rules;
-    private $entityFactory;
 
     private $primary_field;
 
     public function __construct() {
         parent::__construct();
-//        $this->entityFactory = new \REDCapEntity\EntityFactory();
-//        $this->addAction(["Hello this is an example response to mica"], 1);
     }
 
     public function initSystemContexts(){
-        //TODO CLEAN THIS UP
         $this->system_context_persona = $this->getProjectSetting('chatbot_system_context_persona');
         $this->system_context_steps = $this->getProjectSetting('chatbot_system_context_steps');
         $this->system_context_rules = $this->getProjectSetting('chatbot_system_context_rules');
@@ -40,48 +31,8 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $initial_system_context = $this->appendSystemContext([], $this->system_context_persona);
         $initial_system_context = $this->appendSystemContext($initial_system_context, $this->system_context_steps);
         $initial_system_context = $this->appendSystemContext($initial_system_context, $this->system_context_rules);
-
         return $initial_system_context;
     }
-
-    // Define entity types
-    public function redcap_entity_types() {
-        $types = [];
-
-        $types['mica_contextdb'] = [
-            'label' => 'MICA Chatbot Context',
-            'label_plural' => 'MICA Chatbot Contexts',
-            'icon' => 'file',
-            'properties' => [
-                'title' => [
-                    'name' => 'Title',
-                    'type' => 'text',
-                    'required' => true,
-                ],
-                'raw_content' => [
-                    'name' => 'Raw Content',
-                    'type' => 'long_text',
-                    'required' => true,
-                ],
-                'embedding_vector' => [
-                    'name' => 'Embedding Vector',
-                    'type' => 'long_text',
-                    'required' => true,
-                ],
-            ],
-        ];
-
-        return $types;
-    }
-
-    // Hook to trigger entity initialization on module enablement
-//    public function redcap_module_system_enable($version) {
-//        \REDCapEntity\EntityDB::buildSchema($this->PREFIX);
-//    }
-//
-//    public function redcap_every_page_top($project_id) {
-//
-//    }
 
     public function generateAssetFiles(): array {
         $cwd = $this->getModulePath();
@@ -114,7 +65,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         return $assets;
     }
 
-
     /**
      * @param $data
      * @return mixed
@@ -137,7 +87,8 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     $data = $this->sanitizeInput($message);
                     $sanitizedPayload[] = array(
                         'role' => $data['role'],
-                        'content' => $data['content']
+                        'content' => $data['content'],
+                        'user_id' => $data['user_id']
                     );
                 }
             }
@@ -182,9 +133,29 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         return $chatMlArray;
     }
 
+    /**
+     * Set em config parameters for model usage
+     * @param $params
+     * @return void
+     */
+    private function setModelParameters(&$params){
+        $settings = [
+            "temperature" => "gpt-temperature",
+            "top_p" => "gpt-top-p",
+            "frequency_penalty" => "gpt-frequency-penalty",
+            "presence_penalty" => "presence_penalty",
+            "max_tokens" => "gpt-max-tokens"
+        ];
+
+        foreach ($settings as $key => $setting) {
+            if ($value = $this->getProjectSetting($setting)) {
+                $params[$key] = is_numeric($value) ? (float) $value : intval($value);
+            }
+        }
+    }
+
     public function redcap_module_ajax($action, $payload, $project_id, $record, $instrument, $event_id, $repeat_instance,
                                        $survey_hash, $response_id, $survey_queue_hash, $page, $page_full, $user_id, $group_id) {
-
         try {
             switch ($action) {
                 case "callAI":
@@ -195,53 +166,63 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 //                    $ragContext = implode("\n\n", array_column($relevantDocs, 'raw_content'));
 //                    $messages = $this->appendSystemContext($messages, $ragContext);
 //                }
-                    //Save message text first
-
                     $this->emDebug("chatml Messages array to API", $messages);
-//                    $recent_query = json_encode(array_pop($messages));
-//                    $this->addAction($recent_query, 1);
+
+                    // Add most recent message to database
+                    $recent_query = $messages[sizeof($messages) - 1];
+                    $this->logMICAQuery(json_encode($recent_query), $recent_query['user_id']);
+
                     //CALL API ENDPOINT WITH AUGMENTED CHATML
                     $model  = "gpt-4o";
-                    $params = array("messages" =>$messages);
-                    if($this->getProjectSetting("gpt-temperature")){
-                        $params["temperature"] = floatval($this->getProjectSetting("gpt-temperature"));
-                    }
-                    if($this->getProjectSetting("gpt-top-p")){
-                        $params["top_p"] = floatval($this->getProjectSetting("gpt-top-p"));
-                    }
-                    if($this->getProjectSetting("gpt-frequency-penalty")){
-                        $params["frequency_penalty"] = floatval($this->getProjectSetting("gpt-frequency-penalty"));
-                    }
-                    if($this->getProjectSetting("presence_penalty")){
-                        $params["presence_penalty"] = floatval($this->getProjectSetting("presence_penalty"));
-                    }
-                    if($this->getProjectSetting("gpt-max-tokens")){
-                        $params["max_tokens"] = intval($this->getProjectSetting("gpt-max-tokens"));
-                    }
+                    $params = array("messages" => $messages);
+
+                    // Alter model parameters if set by user
+                    $this->setModelParameters($params);
 
                     $response = $this->getSecureChatInstance()->callAI($model, $params, PROJECT_ID );
                     $result = $this->formatResponse($response);
-                    /**
-                     * {
-                     *
-                     * keep index ?
-                     *
-                     *
-                     * }
-                     *
-                     */
-                    $this->emDebug("calling SecureChatAI.callAI()", $result);
+
+                    if(isset($recent_query['user_id'])) {
+                        $result['user_id'] = $recent_query['user_id'];
+                        unset($recent_query['user_id']);
+                        $result['query'] = $recent_query;
+                    }
+
+                    // Add response to database
+                    if($result)
+                        $this->logMICAQuery(json_encode($result), $result['user_id']);
+
+                    $this->emDebug("Result of SecureChatAI.callAI()", $result);
                     return json_encode($result);
                 case "login":
                     $data = $this->sanitizeInput($payload);
                     return json_encode($this->loginUser($data));
-                case "verifyPhone":
+
+                case "verifyEmail":
                     $data = $this->sanitizeInput($payload);
-                    return json_encode($this->verifyPhone($data));
+                    $verify_phone_data = $this->verifyEmail($data);
+
+                    $return_payload = $verify_phone_data;
+                    $return_payload["current_session"] = [];
+                    return json_encode($return_payload);
+
+                case "fetchSavedQueries":
+                    $data = $this->sanitizeInput($payload);
+                    $return_payload = [];
+                    $return_payload["current_session"] = [];
+                    $existing_chat = $this->fetchSavedQueries($data);
+                    if(!empty($existing_chat)){
+                        $return_payload["current_session"] = $existing_chat;
+                    }
+                    return json_encode($return_payload);
+
+                case "completeSession":
+                    // expecting {participant_id : participant_id}
+                    $data = $this->sanitizeInput($payload);
+                    return json_encode($this->completeSession($payload));
 
                 default:
                     throw new Exception("Action $action is not defined");
-
             }
         } catch(\Exception $e) {
             $this->emError($e);
@@ -250,6 +231,38 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 "success" => false
             ]);
         }
+    }
+
+    /**
+     * @param $payload
+     * @return array
+     * @throws \Exception
+     */
+    public function fetchSavedQueries($payload): array
+    {
+        ['name' => $name, 'participant_id' => $participant_id] = $payload;
+
+        // Correct the typo in the if statement
+        if (empty($participant_id) || empty($name)) {
+            throw new \Exception("Error with fetching queries: Participant ID / name combination not provided");
+        }
+
+        $primary_field = $this->getPrimaryField();
+        $params = array(
+            "return_format" => "json",
+            "filterLogic" => "[$primary_field] = '$participant_id'",
+            "fields" => array($primary_field, "participant_name"),
+        );
+
+        // Find user and determine validity
+        $json = json_decode(\REDCap::getData($params), true);
+        $check = reset($json);
+
+        // Check across participant name and id
+        if($check['participant_id'] === $participant_id && $check['participant_name'] === $name) {
+            return MICAQuery::getLogsFor($this, PROJECT_ID, $participant_id);
+        }
+        return [];
     }
 
     public function getPrimaryField(){
@@ -263,7 +276,8 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * @return true[]
      * @throws \Exception
      */
-    public function loginUser($payload) {
+    public function loginUser($payload): array
+    {
         $primary_field = $this->getPrimaryField();
         if(empty($payload['name']) || empty($payload['email']))
             throw new \Exception("Error logging in user, either name or email is empty");
@@ -273,17 +287,26 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         // Fetch user information
         $params = array(
             "return_format" => "json",
-            "fields" => array($primary_field, "participant_name", "participant_email", "participant_phone"),
+            "filterLogic" => "[participant_name] = '$name' AND [participant_email] = '$email'",
+            "fields" => array($primary_field, "participant_name", "participant_email", "participant_phone", "user_complete", "completion_timestamp"),
         );
 
         // Find user and determine validity
         $json = json_decode(\REDCap::getData($params), true);
         if(count($json) > 1)
             throw new \Exception("Error logging in user, duplicate entries for $name, $email");
+
         $check = reset($json);
 
+        // Ensure completed users cannot login again
+        if (isset($check["user_complete"]) && $check['user_complete'] !== "2") {
+            $time_completed = $check['completion_timestamp'];
+            throw new \Exception("Your MICA session was completed on $time_completed, thank you for participating");
+        }
+
+        // Otherwise, login regularly
         if($check['participant_name'] === $name && $check['participant_email'] === $email) { //User Successfully matched
-            $this->generateOneTimePassword($check[$primary_field], $check['participant_phone']);
+            $this->generateOneTimePassword($check[$primary_field], $check['participant_email']);
             return ["success" => true];
         } else {
             throw new \Exception('Invalid Credentials');
@@ -293,11 +316,11 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     /**
      * Generates OTP and saves to record
      * @param $record_id
-     * @param $phone_number
+     * @param $email
      * @return void
      * @throws \Exception
      */
-    private function generateOneTimePassword($record_id, $phone_number): void
+    private function generateOneTimePassword($record_id, $email): void
     {
         $primary_field = $this->getPrimaryField();
 
@@ -313,8 +336,13 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $response = \REDCap::saveData('json', json_encode($saveData), 'overwrite');
 
         if (empty($response['errors'])) {
-            $body = "Your MICA Verification code is: $code";
-            $this->sendSMS($body, $phone_number);
+            $body = "<html><p>Your MICA Verification code is: <strong>$code</strong></p></html>";
+//            $body = "Your MICA Verification code is $code";
+            $res = \REDCap::email($email, 'redcap@stanford.edu', 'Your MICA verification code', $body);
+            if(!$res){
+                $this->emError('Email hook failure');
+                throw new \Exception('Verification email could not be sent, please contact your administrator');
+            }
 
         } else {
             $this->emError('Save data failure, ', json_encode($response['errors']));
@@ -327,18 +355,18 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * @return false[]|true[]
      * @throws \Exception
      */
-    private function verifyPhone($payload) {
+    private function verifyEmail($payload) {
         $primary_field = $this->getPrimaryField();
 
         if(empty($payload['code']))
-            throw new \Exception("Error verifying phone number: no number provided");
+            throw new \Exception("Error verifying email, no code provided");
 
         ['code' => $code] = $payload;
 
         // Fetch user information
         $params = array(
             "return_format" => "json",
-            "fields" => array($primary_field,"participant_phone", "two_factor_code", "participant_name"),
+            "fields" => array($primary_field, "two_factor_code", "participant_name"),
             "filterLogic" => "[two_factor_code] = '$code'"
         );
 
@@ -360,47 +388,21 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             throw new \Exception('Invalid OTP code');
     }
 
-    private function getEmbedding($text) {
-        try {
-            $result = $this->getSecureChatInstance()->callAI("ada-002", array("input" => $text) );
-            return $result['data'][0]['embedding'];
-        } catch (GuzzleException $e) {
-            $this->emError("Embedding error: " . $e->getMessage());
-            return null;
-        }
-    }
-
     /**
      * @param $content
      * @param $session_id
      * @return void
      */
-    private function addAction($content, $id){
-        try {
-            if (!isset($content))
-                throw new Exception('No content passed');
+    private function logMICAQuery($content, $id){
+        if (!isset($content) || !isset($id))
+            throw new \Exception('No content passed to addAction, unable to save message');
 
-            $this->emDebug("Adding action for MICA");
-            $action = new Action($this);
-            $action->setValue('mica_id', $id);
-            $action->setValue('message', json_encode($content));
-            $action->save();
-            $this->emDebug("Added MICA action " . $action->getId());
-        } catch (\Exception $e) {
-
-        }
-    }
-
-    private function getAllEntityIds($entityType) {
-        $ids = [];
-        $sql = 'SELECT id FROM `redcap_entity_' . db_escape($entityType) . '`';
-        $result = db_query($sql);
-
-        while ($row = db_fetch_assoc($result)) {
-            $ids[] = $row['id'];
-        }
-
-        return $ids;
+        $this->emDebug("Adding action for MICA");
+        $action = new MICAQuery($this);
+        $action->setValue('mica_id', $id);
+        $action->setValue('message', $content);
+        $action->save();
+        $this->emDebug("Added MICA query " . $action->getId());
     }
 
  /**
@@ -409,107 +411,72 @@ class MICA extends \ExternalModules\AbstractExternalModule {
  * @param $phone_number
  * @return void
  */
-public function sendSMS($body, $phone_number): void
-{
-    $sid = $this->getSystemSetting('twilio-sid');
-    $auth = $this->getSystemSetting('twilio-auth-token');
-    $fromNumber = $this->getSystemSetting('twilio-from-number');
+//public function sendSMS($body, $phone_number): void
+//{
+//    $sid = $this->getSystemSetting('twilio-sid');
+//    $auth = $this->getSystemSetting('twilio-auth-token');
+//    $fromNumber = $this->getSystemSetting('twilio-from-number');
+//
+//    $twilio = new Client($sid, $auth);
+//    $twilio->messages
+//        ->create(
+//            "$phone_number",
+//            array(
+//                'body' => $body,
+//                'from' => $fromNumber
+//            )
+//        );
+//}
 
-    $twilio = new Client($sid, $auth);
-    $twilio->messages
-        ->create(
-            "$phone_number",
-            array(
-                'body' => $body,
-                'from' => $fromNumber
-            )
+    /**
+     * @param $payload
+     * @return true[]|void
+     * @throws \Exception
+     */
+    public function completeSession($payload) {
+        ['participant_id' => $participant_id] = $payload;
+
+        // Correct the typo in the if statement
+        if (empty($participant_id)) {
+            throw new \Exception("Error with completing session: No participant ID provided");
+        }
+
+        $primary_field = $this->getPrimaryField();
+        $params = array(
+            "return_format" => "json",
+            "filterLogic" => "[$primary_field] = '$participant_id'",
         );
-}
 
-    // Retrieve relevant documents method
-    public function getRelevantDocuments($queryArray) {
-        if (!is_array($queryArray) || empty($queryArray)) {
-            return null;
+        // Find user and determine validity
+        $current_data = json_decode(\REDCap::getData($params), true);
+
+        $check = reset($current_data);
+        $logs = MICAQuery::getLogsFor($this, PROJECT_ID, $participant_id);
+
+        if(sizeof($logs)){
+            $saveData = array(
+                array(
+                    "record_id" => $payload['record_id'],
+                    "ts_whiteboard" => $payload['ts_whiteboard'],
+                )
+            );
+            $save = array(
+                "user_complete" => "2",
+                "completion_timestamp" => date("Y-m-d H:i:s"),
+                "raw_chat_logs" => json_encode($logs)
+            );
+            $save = array(array_merge($check, $save));
+            $response = \REDCap::saveData('json', json_encode($save), 'overwrite');
+
+
+            if(! $response['errors']) {
+                return ["success" => true];
+            } else {
+                throw new \Exception($response['errors']);
+            }
         }
 
-        $lastElement = end($queryArray);
-
-        if (!isset($lastElement['role']) || $lastElement['role'] !== 'user' || !isset($lastElement['content'])) {
-            return null;
-        }
-
-        $query = $lastElement['content'];
-        $queryEmbedding = $this->getEmbedding($query);
-
-        if (!$queryEmbedding) {
-            return null;
-        }
-
-        $entities = $this->entityFactory->loadInstances('mica_contextdb', $this->getAllEntityIds('chatbot_contextdb'));
-        $documents = [];
-
-        foreach ($entities as $entity) {
-            $docEmbedding = json_decode($entity->getData()['embedding_vector'], true);
-            $similarity = $this->cosineSimilarity($queryEmbedding, $docEmbedding);
-
-            $documents[] = [
-                'id' => $entity->getId(),
-                'title' => $entity->getData()['title'],
-                'raw_content' => $entity->getData()['raw_content'],
-                'similarity' => $similarity
-            ];
-        }
-
-        usort($documents, function($a, $b) {
-            return $b['similarity'] <=> $a['similarity'];
-        });
-
-        return array_slice($documents, 0, 3);
     }
-
-    // Store document method
-    public function storeDocument($title, $content) {
-        // Get the embedding for the content
-        $embedding = $this->getEmbedding($content);
-        $serialized_embedding = json_encode($embedding);
-
-        // Store the new document with its embedding vector
-        $entity = new \REDCapEntity\Entity($this->entityFactory, 'mica_contextdb');
-
-        $entity->setData([
-            'title' => $title,
-            'raw_content' => $content,
-            'embedding_vector' => $serialized_embedding
-        ]);
-
-        $entity->save();
-    }
-
-    // Cosine similarity calculation method
-    private function cosineSimilarity($vec1, $vec2) {
-        $dotProduct = 0;
-        $normVec1 = 0;
-        $normVec2 = 0;
-
-        foreach ($vec1 as $key => $value) {
-            $dotProduct += $value * ($vec2[$key] ?? 0);
-            $normVec1 += $value ** 2;
-        }
-
-        foreach ($vec2 as $value) {
-            $normVec2 += $value ** 2;
-        }
-
-        $normVec1 = sqrt($normVec1);
-        $normVec2 = sqrt($normVec2);
-
-        if ($normVec1 == 0 || $normVec2 == 0) {
-            return 0; // Return zero if either vector norm is zero
-        }
-
-        return $dotProduct / ($normVec1 * $normVec2);
-    }
-
 
     /**
      * @return \Stanford\SecureChatAI\SecureChatAI

@@ -1,12 +1,12 @@
-import React, {useState, useEffect} from "react";
+import React, {useState, useContext} from "react";
 import {Alert, Button, Fieldset, TextInput, Card, Center, Container, Grid, Space, Text, Title} from '@mantine/core';
 import {Carousel} from '@mantine/carousel';
 import {InfoCircle, CCircle, Hash} from "react-bootstrap-icons";
 import {useNavigate} from 'react-router-dom';
-import {user_info} from "../../components/database/dexie.js";
 import useAuth from "../../Hooks/useAuth.jsx";
+import { ChatContext } from '../../contexts/Chat';
 
-export function Login({changeView}) {
+export function Login() {
     const [error, setError] = useState('')
     const [name, setName] = useState('')
     const [phone, setPhone] = useState('')
@@ -14,7 +14,8 @@ export function Login({changeView}) {
     const [loading, setLoading] = useState(false)
     const [embla, setEmbla] = useState(null);
     const navigate = useNavigate();
-    const { login, verifyPhone } = useAuth();
+    const { replaceSession } = useContext(ChatContext);
+    const { login, verifyEmail } = useAuth();
 
     const handleNext = () => embla?.scrollNext();
 
@@ -39,7 +40,13 @@ export function Login({changeView}) {
         login(name, email).then((res) => {
             setLoading(false)
             setError('')
-            handleNext()
+
+            // user has been cached within 30 minutes, allow entry without verification step
+            if(res === 'pass'){
+                navigate('/home')
+            } else {
+                handleNext()
+            }
         }).catch((err) => {
             setLoading(false)
             setError(err)
@@ -50,9 +57,17 @@ export function Login({changeView}) {
 
     const onVerify = () => {
         setLoading(true)
-        verifyPhone(phone).then(res => {
+        verifyEmail(phone).then(res => {
+            if (res.current_session && res.current_session.length > 0) {
+                const sessionData = {
+                    session_id: Date.now().toString(), // Or use an ID from res if available
+                    queries: res.current_session, // Ensure this matches the expected format
+                };
+                replaceSession(sessionData);
+            }
+            setLoading(false);
             navigate('/home')
-            console.log('success!')
+            console.log("success!")
         }).catch(err => {
             setLoading(false)
             setError(err)
@@ -65,14 +80,10 @@ export function Login({changeView}) {
         return (
             <div>
                 <Text fw={500} c="dimmed">Terms of Usage</Text>
-                <Title order={2}>Welcome</Title>
                 <Space h="sm"/>
-                <Text size="sm">Lorem ipsum dolor sit amet, consectetur adipiscing elit. Mauris in dui
-                    elit. Aenean a nisl ultrices, convallis ipsum quis,
-                    ornare enim. Sed ac scelerisque turpis, et pellentesque nibh. Donec ligula augue,
-                    rutrum non diam ut, euismod fermentum turpis.
-                    Donec nunc ante, facilisis faucibus pellentesque sed, dictum vel nunc. Sed nec enim
-                    nibh. Proin auctor orci a gravida pulvinar.
+                <Text size="sm"> Before we get started, it's important to let you know that this is a chatbot session. While our chatbot is designed to provide helpful and supportive responses, please remember that there is no human monitoring this data in real-time. If you are experiencing any acute issues or need immediate assistance, we strongly encourage you to reach out to your nearest health center or emergency services.
+                    Your experience and opinions are incredibly valuable to us. By participating in this session, you're helping to shape the future of alcohol counseling and improve support systems for others. Your feedback will contribute to enhancing the effectiveness of these tools, making them even more responsive to the needs of individuals seeking help.
+                    Thank you for your time and contribution. Let's get started!
                 </Text>
                 <div>
                     <Center>
@@ -85,7 +96,7 @@ export function Login({changeView}) {
                             color="rgba( 140, 21, 21)"
                             style={{width: '120px'}}
                         >
-                            Accept
+                            Continue
                         </Button>
                     </Center>
                 </div>
@@ -130,7 +141,7 @@ export function Login({changeView}) {
                     <Alert variant="light" color="red" radius="md" title="Error">{error}</Alert>
                 }
                 <Space h="sm"/>
-                <Fieldset legend="Please enter the 6-digit code sent via text message" style={{height: '242px'}}>
+                <Fieldset legend="Please enter the 6-digit code sent via email" style={{height: '242px'}}>
                     <Space h="lg"/>
                     <Space h="lg"/>
                     <TextInput
@@ -167,6 +178,7 @@ export function Login({changeView}) {
                 loop
                 withControls={false}
                 draggable={false}
+                withKeyboardEvents={false}
                 getEmblaApi={setEmbla}
             >
                 <Carousel.Slide>{disclaimer()}</Carousel.Slide>
@@ -180,7 +192,7 @@ export function Login({changeView}) {
         <div style={{justifyContent: 'center'}} className="content">
             <Container>
                 <Card shadow="lg" padding="lg" radius="md" withBorder style={{minWidth: '800px'}}>
-                    <Title order={3}>Welcome to MICA</Title>
+                    <Title order={3}>Welcome to MICA!</Title>
                     <Space h="sm"/>
                     <Grid>
                         <Grid.Col span={7}>

@@ -6,19 +6,26 @@ const authContext = React.createContext();
 function useAuth() {
     const [authed, setAuthed] = React.useState(false);
 
-    const checkUserCache = async (key) => {
-        return await user_info.current_user.get(key) ?? null;
+    const checkUserCache = async () => {
+        try {
+            const firstEntry = await user_info.table('current_user').toArray();
+            return firstEntry.length ? firstEntry[0] : null;
+        } catch (error) {
+            console.error('Failed to retrieve user from cache:', error);
+            return null;
+        }
     }
 
     const cacheUser = async (payload) => {
         let {participant_id, name} = payload?.user
-        let timestamp = Date.now()
         if(participant_id && name){
             let data = {
                 id: parseInt(participant_id),
                 name: name,
                 timestamp: Date.now()
             }
+
+            await user_info.current_user.clear(); //There should only ever be one cached user in a browser
             await user_info.current_user.put(data);
         } else {
             console.log('unable to cache user... skipping')
@@ -31,10 +38,23 @@ function useAuth() {
         login(name, email) {
             return new Promise(async (resolve, reject) => {
                 try {
-                    const user = await checkUserCache(1)
+                    const user = await checkUserCache()
                     if(user){
-                        setAuthed(true);
-                        resolve();
+                        let timeDifferential = Date.now() - user.timestamp
+                        let isWithin30min = timeDifferential <= 30 * 60 * 1000
+                        if(user.name === name && isWithin30min){
+                            setAuthed(true);
+                            resolve('pass');
+                        } else {
+                            const mica = mica_jsmo_module
+                            if(mica) {
+                                let result = await mica_jsmo_module.login({
+                                    'name': name,
+                                    'email': email
+                                }, resolve, reject)
+                            }
+                        }
+
                     } else { //Attempt logging in user via REST
                         const mica = mica_jsmo_module
                         if(mica) {
@@ -60,17 +80,17 @@ function useAuth() {
                 res();
             });
         },
-        verifyPhone(code) {
+        verifyEmail(code) {
             return new Promise(async (resolve, reject) => {
                 const mica = mica_jsmo_module
                 if(mica) {
-                    let result = await mica_jsmo_module.verifyPhone({
+                    let result = await mica_jsmo_module.verifyEmail({
                         'code': code,
                     }, (res) => {
                         console.log('valid user, logging in...')
-                        setAuthed(true)
                         cacheUser(res);
-                        resolve()
+                        setAuthed(true)
+                        resolve(res);
                     }, reject)
                 } else {
                     console.error('MICA EM is not injected, cannot execute function login')

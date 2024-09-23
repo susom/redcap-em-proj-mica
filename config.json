@@ -45,7 +45,9 @@
     "auth-ajax-actions": [
         "callAI",
         "login",
-        "verifyPhone"
+        "verifyEmail",
+        "completeSession",
+        "fetchSavedQueries"
     ],
 
     "no-auth-ajax-actions": [

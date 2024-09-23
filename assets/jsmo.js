@@ -44,8 +44,9 @@
                 callback(parsed)
             }
         },
-        verifyPhone: async (payload, callback, errorCallback) => {
-            const res = await module.ajax('verifyPhone', payload);
+
+        verifyEmail: async (payload, callback, errorCallback) => {
+            const res = await module.ajax('verifyEmail', payload);
             let parsed = JSON.parse(res)
 
             if('error' in parsed) {
@@ -54,6 +55,24 @@
             } else {
                 callback(parsed)
             }
-        }
+        },
+
+        fetchSavedQueries: async (payload, callback, errorCallback) => {
+            const res = await module.ajax('fetchSavedQueries', payload);
+            let parsed = JSON.parse(res)
+
+            if('error' in parsed) {
+                console.error(parsed['error'])
+                errorCallback(parsed['error'])
+            } else {
+                callback(parsed)
+            }
+        },
+
+        completeSession: async (payload, callback, errorCallback) => {
+            const res = await module.ajax('completeSession', payload);
+            let parsed = JSON.parse(res)
+            callback(parsed);
+        },
     });
 }

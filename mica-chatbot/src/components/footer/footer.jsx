@@ -4,7 +4,7 @@ import { Container } from 'react-bootstrap';
 import { Send, ArrowClockwise, EraserFill } from 'react-bootstrap-icons';
 import "./footer.css";
 
-export function Footer({ changeView }) {
+export function Footer() {
     const chat_context = useContext(ChatContext);
     const [inputPH, setInputPH] = useState("Ask a question...");
     const [input, setInput] = useState("");
