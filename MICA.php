@@ -34,6 +34,10 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         return $initial_system_context;
     }
 
+    public function getIntroText(){
+        return $this->getProjectSetting('chatbot_intro_text');
+    }
+
     public function generateAssetFiles(): array {
         $cwd = $this->getModulePath();
         $assets = [];

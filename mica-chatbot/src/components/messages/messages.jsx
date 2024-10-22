@@ -8,6 +8,7 @@ import "./messages.css";
 export const Messages = () => {
     const chat_context = useContext(ChatContext);
     const newQaRef = useRef(null);
+    const intro_text = window.mica_jsmo_module.intro_text || "Hi I am MICA!";
 
     const handleClick = (vote, index) => {
         chat_context.updateVote(index, vote);
@@ -78,7 +79,7 @@ export const Messages = () => {
                             </React.Fragment>
                         ))
                     )
-                    : (<p className={`empty`}><em className={`soft_text`}>Hi, I'm Mica, an AI trained to help with alcohol choices. Let's explore if you'd like to change your health habits and how I can assist. To start, can you share what you enjoy about drinking?</em></p>)
+                    : (<p className={`empty`}><em className={`soft_text`}>{intro_text}</em></p>)
             }
         </div>
     );

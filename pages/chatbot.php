@@ -34,10 +34,17 @@ $build_files = $module->generateAssetFiles();
     ];
 
     $initial_system_context = $module->initSystemContexts();
+    $intro_text = $module->getIntroText();
 
     $data = !empty($initial_system_context) ? $initial_system_context : null;
+
+
     if ($data !== null) {
         $cmds[] = "window.mica_jsmo_module.data = " . json_encode($data);
+    }
+
+    if(!is_null($intro_text)){
+        $cmds[] = "window.mica_jsmo_module.intro_text = " . json_encode($intro_text);
     }
 
     if (!empty($init_method)) {
