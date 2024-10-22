@@ -4,11 +4,13 @@ namespace Stanford\MICA;
 require_once "emLoggerTrait.php";
 require_once "classes/Sanitizer.php";
 require_once "classes/MICAQuery.php";
-
 require_once "vendor/autoload.php";
+use Exception;
+use UserRights;
 
 class MICA extends \ExternalModules\AbstractExternalModule {
     use emLoggerTrait;
+
     const BUILD_FILE_DIR = 'mica-chatbot/dist/assets';
     const SecureChatInstanceModuleName = 'secure_chat_ai';
 
@@ -67,6 +69,20 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         }
 
         return $assets;
+    }
+
+    /**
+     * @param $project_id
+     * @param $link
+     * @return mixed|null
+     */
+    function redcap_module_link_check_display($project_id, $link)
+    {
+        //Replace web link on sidebar with direct noauth link
+        if (isset($link) && array_key_exists('url', $link) && str_contains($link['url'], 'chatbot')) {
+            $link['url'] = $link['url'] . '&NOAUTH';
+        }
+        return $link;
     }
 
     /**
@@ -308,6 +324,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             throw new \Exception("Your MICA session was completed on $time_completed, thank you for participating");
         }
 
+        // TODO Change user complete to form name
         // Otherwise, login regularly
         if($check['participant_name'] === $name && $check['participant_email'] === $email) { //User Successfully matched
             $this->generateOneTimePassword($check[$primary_field], $check['participant_email']);
@@ -479,6 +496,49 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 throw new \Exception($response['errors']);
             }
         }
+
+    }
+
+    /**
+     * @return bool
+     */
+    public function validatePermissions() {
+        $test = current(UserRights::getPrivileges(PROJECT_ID)[PROJECT_ID]);
+        if($test['user_rights'] === '1')
+            return true;
+        return false;
+    }
+
+    /**
+     * @return string
+     */
+    public function fetchIncompleteSessions() {
+        try {
+            if(!$this->validatePermissions())
+                throw new \Exception("You do not have permissions to view this page");
+
+            $params = array(
+                "return_format" => "json",
+                "filterLogic" => "[user_complete] != '2'",
+            );
+
+            // Find user and determine validity
+            $json = json_decode(\REDCap::getData($params), true);
+            $ind = $json ? reset($json) : [];
+
+            return json_encode([
+                "sessions" => $ind,
+                "success" => true
+            ]);
+
+        } catch (\Exception $e) {
+            $this->emError($e);
+            return json_encode([
+                "error" => $e->getMessage(),
+                "success" => false
+            ]);
+        }
+
 
     }
 

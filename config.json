@@ -22,7 +22,9 @@
 
     "framework-version": 14,
 
-    "enable-every-page-hooks-on-system-pages": true,
+    "enable-every-page-hooks-on-system-pages": false,
+
+    "enable-no-auth-logging": true,
 
     "links": {
         "project": [
@@ -31,6 +33,12 @@
                 "icon": "gear",
                 "url" : "pages/chatbot.php",
                 "show-header-and-footer": false
+            },
+            {
+                "name": "Session Selector",
+                "icon": "gear",
+                "url" : "pages/sessionSelector.php",
+                "show-header-and-footer": true
             }
         ],
         "control-center": [
@@ -42,16 +50,13 @@
         "pages/chatbot"
     ],
 
-    "auth-ajax-actions": [
+
+    "no-auth-ajax-actions": [
         "callAI",
         "login",
         "verifyEmail",
         "completeSession",
         "fetchSavedQueries"
-    ],
-
-    "no-auth-ajax-actions": [
-        "callAI"
     ],
 
     "project-settings": [
