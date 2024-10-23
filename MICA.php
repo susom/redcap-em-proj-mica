@@ -475,28 +475,21 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $logs = MICAQuery::getLogsFor($this, PROJECT_ID, $participant_id);
         $this->emDebug("completeSessions" , $logs, $current_data);
 
-        if(sizeof($logs)){
-            $saveData = array(
-                array(
-                    "record_id" => $payload['record_id'],
-                    "ts_whiteboard" => $payload['ts_whiteboard'],
-                )
-            );
-            $save = array(
-                "user_complete" => "2",
-                "completion_timestamp" => date("Y-m-d H:i:s"),
-                "raw_chat_logs" => json_encode($logs)
-            );
-            $this->emDebug("completeSessions!", $save);
-            $save = array(array_merge($check, $save));
-            $response = \REDCap::saveData('json', json_encode($save), 'overwrite');
 
+        $save = array(
+            "user_complete" => "2",
+            "completion_timestamp" => date("Y-m-d H:i:s"),
+            "raw_chat_logs" => json_encode($logs)
+        );
 
-            if(! $response['errors']) {
-                return ["success" => true];
-            } else {
-                throw new \Exception($response['errors']);
-            }
+        $this->emDebug("completeSessions!", $save);
+        $save = array(array_merge($check, $save));
+        $response = \REDCap::saveData('json', json_encode($save), 'overwrite');
+
+        if(! $response['errors']) {
+            return ["success" => true];
+        } else {
+            throw new \Exception($response['errors']);
         }
 
     }
