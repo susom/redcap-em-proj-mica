@@ -473,6 +473,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
         $check = reset($current_data);
         $logs = MICAQuery::getLogsFor($this, PROJECT_ID, $participant_id);
+        $this->emDebug("completeSessions" , $logs, $current_data);
 
         if(sizeof($logs)){
             $saveData = array(
@@ -486,6 +487,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 "completion_timestamp" => date("Y-m-d H:i:s"),
                 "raw_chat_logs" => json_encode($logs)
             );
+            $this->emDebug("completeSessions!", $save);
             $save = array(array_merge($check, $save));
             $response = \REDCap::saveData('json', json_encode($save), 'overwrite');
 
@@ -524,7 +526,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
             // Find user and determine validity
             $json = json_decode(\REDCap::getData($params), true);
-            $ind = $json ? reset($json) : [];
+            $ind = $json ?? [];
 
             return json_encode([
                 "sessions" => $ind,

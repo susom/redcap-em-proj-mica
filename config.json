@@ -35,7 +35,7 @@
                 "show-header-and-footer": false
             },
             {
-                "name": "Session Selector",
+                "name": "Mica Session Admin",
                 "icon": "gear",
                 "url" : "pages/sessionSelector.php",
                 "show-header-and-footer": true
