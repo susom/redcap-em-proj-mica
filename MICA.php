@@ -180,17 +180,18 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             switch ($action) {
                 case "callAI":
                     $messages = $this->handleUserInput($payload);
-                    //FIND AND INJECT RAG
-//                $relevantDocs = $this->getRelevantDocuments($messages);
-//                if (!empty($relevantDocs)) {
-//                    $ragContext = implode("\n\n", array_column($relevantDocs, 'raw_content'));
-//                    $messages = $this->appendSystemContext($messages, $ragContext);
-//                }
-                    $this->emDebug("chatml Messages array to API", $messages);
 
                     // Add most recent message to database
                     $recent_query = $messages[sizeof($messages) - 1];
                     $this->logMICAQuery(json_encode($recent_query), $recent_query['user_id']);
+
+                    // Add user baseline AFTER logging to leave it out of the logs
+                    $participant_id = current($payload)["user_id"];
+                    $formattedBaseline = $this->getFormattedBaselineData($participant_id);
+                    if (!empty($formattedBaseline)) {
+                        $messages = $this->appendSystemContext($messages, $formattedBaseline);
+                    }
+                    $this->emDebug("chatml Messages array to API", $messages);
 
                     //CALL API ENDPOINT WITH AUGMENTED CHATML
                     $model  = "gpt-4o";
@@ -212,7 +213,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     if($result)
                         $this->logMICAQuery(json_encode($result), $result['user_id']);
 
-                    $this->emDebug("Result of SecureChatAI.callAI()", $result);
+//                    $this->emDebug("Result of SecureChatAI.callAI()", $result);
                     return json_encode($result);
                 case "login":
                     $data = $this->sanitizeInput($payload);
@@ -251,6 +252,61 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 "success" => false
             ]);
         }
+    }
+
+    /**
+     * Fetch and format the baseline data for a participant.
+     *
+     * @param string $participant_id The record_id of the participant.
+     * @return string|null A formatted string of baseline data or null if no data exists.
+     */
+    private function getFormattedBaselineData($participant_id) {
+        // Fetch all baseline fields dynamically
+        $baselineFields = \REDCap::getFieldNames("baseline");
+
+        // Fetch the participant's baseline data
+        $record = \REDCap::getData([
+            'records' => $participant_id,
+            'fields' => $baselineFields,
+            'return_format' => 'json'
+        ]);
+
+        $record = current(json_decode($record, true));
+
+        // If no data found, return null
+        if (empty($record)) {
+            return null;
+        }
+
+        // Format the baseline data
+        $metadata = \REDCap::getDataDictionary('array');
+
+        //helper function to decode enumerated values
+        $decodeChoice = function ($field, $value) use ($metadata) {
+            $choices = $metadata[$field]['select_choices_or_calculations'] ?? null;
+            if ($choices) {
+                $choiceArray = array_map('trim', explode('|', $choices));
+                foreach ($choiceArray as $choice) {
+                    list($code, $label) = array_map('trim', explode(',', $choice, 2));
+                    if ((string)$code === (string)$value) {
+                        return $label;
+                    }
+                }
+            }
+            return $value; // Return the original value if no match is found
+        };
+
+        $formattedBaseline = "## Participant Baseline Info\n\n";
+        foreach ($record as $field => $value) {
+            $fieldLabel = $metadata[$field]['field_label'] ?? $field;
+            $decodedValue = $decodeChoice($field, $value);
+            if (!empty($decodedValue)) {
+                $formattedBaseline .= "{$fieldLabel}: {$decodedValue}\n";
+            }
+        }
+
+        // $this->emDebug("formattedBaseline", $formattedBaseline);
+        return $formattedBaseline ?: null;
     }
 
     /**
@@ -418,12 +474,12 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         if (!isset($content) || !isset($id))
             throw new \Exception('No content passed to addAction, unable to save message');
 
-        $this->emDebug("Adding action for MICA");
+//        $this->emDebug("Adding action for MICA");
         $action = new MICAQuery($this);
         $action->setValue('mica_id', $id);
         $action->setValue('message', $content);
         $action->save();
-        $this->emDebug("Added MICA query " . $action->getId());
+//        $this->emDebug("Added MICA query " . $action->getId());
     }
 
  /**
