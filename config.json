@@ -67,6 +67,12 @@
             "type": "textarea"
         },
         {
+            "key": "chatbot_end_session_text",
+            "name": "Raw text to show in the UI to remind participant to 'end session'",
+            "required": true,
+            "type": "textarea"
+        },
+        {
             "key": "chatbot_system_context_persona",
             "name": "Raw text to inject into system context to tune the chatbot's persona",
             "required": true,

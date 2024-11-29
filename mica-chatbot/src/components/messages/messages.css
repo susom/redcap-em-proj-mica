@@ -4,6 +4,21 @@
     padding-bottom:100px;
 }
 
+/* Floating message */
+.floating-message {
+    text-align: center; /* Center the text */
+    margin-top: 20px; /* Add space after the last message */
+    font-size: 12px; /* Keep it subtle */
+    width: 100%; /* Ensure it spans across for proper centering */
+}
+
+.floating-message.soft_text dd {
+    background: none;
+    color: #A0A5C6;
+    text-align: center;
+    font-style: italic;
+}
+
 .messages .empty {
     color: cyan;
 }

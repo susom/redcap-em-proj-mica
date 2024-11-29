@@ -9,6 +9,7 @@ export const Messages = () => {
     const chat_context = useContext(ChatContext);
     const newQaRef = useRef(null);
     const intro_text = window.mica_jsmo_module.intro_text || "Hi I am MICA!";
+    const end_session_text = window.mica_jsmo_module.end_session_text || 'Please click "End Session" to ensure compensation for your participation.';
 
     const handleClick = (vote, index) => {
         chat_context.updateVote(index, vote);
@@ -52,7 +53,7 @@ export const Messages = () => {
                                 <dl ref={index === chat_context.chatContext.length - 1 ? newQaRef : null}>
                                     <dt>
                                         {message.user_content}
-                                        <XCircleFill className="delete-icon" onClick={() => handleDelete(index)} />
+                                        <XCircleFill className="delete-icon" onClick={() => handleDelete(index)}/>
                                     </dt>
                                     {message.assistant_content && (
                                         <dd>
@@ -75,12 +76,16 @@ export const Messages = () => {
                                         </dd>
                                     )}
                                 </dl>
-                                {index < chat_context.chatContext.length - 1 && <hr className="divider" />}
+                                {index < chat_context.chatContext.length - 1 && <hr className="divider"/>}
                             </React.Fragment>
                         ))
                     )
                     : (<p className={`empty`}><em className={`soft_text`}>{intro_text}</em></p>)
             }
+            {chat_context.chatContext && chat_context.chatContext.length > 0 && (
+            <dl className="soft_text floating-message">
+                <dd>{end_session_text}</dd>
+            </dl>)}
         </div>
     );
 };

@@ -35,6 +35,7 @@ $build_files = $module->generateAssetFiles();
 
     $initial_system_context = $module->initSystemContexts();
     $intro_text = $module->getIntroText();
+    $end_session_text = $module->getEndSessionText();
 
     $data = !empty($initial_system_context) ? $initial_system_context : null;
 
@@ -45,6 +46,10 @@ $build_files = $module->generateAssetFiles();
 
     if(!is_null($intro_text)){
         $cmds[] = "window.mica_jsmo_module.intro_text = " . json_encode($intro_text);
+    }
+
+    if(!is_null($end_session_text)){
+        $cmds[] = "window.mica_jsmo_module.end_session_text = " . json_encode($end_session_text);
     }
 
     if (!empty($init_method)) {
