@@ -244,7 +244,8 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 case "completeSession":
                     // expecting {participant_id : participant_id}
                     $data = $this->sanitizeInput($payload);
-                    return json_encode($this->completeSession($payload));
+                    return json_encode($this->completeSession($data));
+                    break;
 
                 default:
                     throw new Exception("Action $action is not defined");
@@ -517,41 +518,42 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     public function completeSession($payload) {
         ['participant_id' => $participant_id] = $payload;
 
-        // Correct the typo in the if statement
         if (empty($participant_id)) {
             throw new \Exception("Error with completing session: No participant ID provided");
         }
 
         $primary_field = $this->getPrimaryField();
-        $params = array(
+        $params = [
             "return_format" => "json",
             "filterLogic" => "[$primary_field] = '$participant_id'",
-        );
+        ];
 
-        // Find user and determine validity
+        // Retrieve participant data
         $current_data = json_decode(\REDCap::getData($params), true);
-
         $check = reset($current_data);
         $logs = MICAQuery::getLogsFor($this, PROJECT_ID, $participant_id);
-        $this->emDebug("completeSessions" , $logs, $current_data);
 
+        // Prepare data to save
+        $save = [
+            "participant_info_complete" => "2",
+            "participant_info_timestamp" => date("Y-m-d H:i:s"),
+            "raw_chat_logs" => json_encode($logs),
+        ];
 
-        $save = array(
-            "user_complete" => "2",
-            "completion_timestamp" => date("Y-m-d H:i:s"),
-            "raw_chat_logs" => json_encode($logs)
-        );
-
-        $this->emDebug("completeSessions!", $save);
-        $save = array(array_merge($check, $save));
+        // Merge and save data
+        $save = [array_merge($check, $save)];
         $response = \REDCap::saveData('json', json_encode($save), 'overwrite');
 
-        if(! $response['errors']) {
-            return ["success" => true];
+        if (!$response['errors']) {
+            // Dynamically get the survey link for the posttest instrument
+            $survey_link = \REDCap::getSurveyLink($participant_id, "posttest");
+            return [
+                "success" => true,
+                "survey_link" => $survey_link, // Return the dynamic survey link
+            ];
         } else {
             throw new \Exception($response['errors']);
         }
-
     }
 
     /**

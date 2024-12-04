@@ -2,6 +2,7 @@ import React from "react";
 import { Login } from "../../views/Login/login.jsx";
 import { Home } from '../../views/Home/home.jsx';
 import { Splash } from '../../views/Splash/splash.jsx';
+import { PostSession } from '../../views/PostSession/postsession.jsx';
 import { ProtectedRoute } from "../protectedRoute/ProtectedRoute.jsx";
 import { AuthProvider } from "../../Hooks/useAuth.jsx";
 
@@ -24,6 +25,14 @@ const router = createHashRouter([
         element: (
             <ProtectedRoute>
                 <Home />
+            </ProtectedRoute>
+        )
+    },
+    {
+        path: '/postsession',
+        element: (
+            <ProtectedRoute>
+                <PostSession />
             </ProtectedRoute>
         )
     }

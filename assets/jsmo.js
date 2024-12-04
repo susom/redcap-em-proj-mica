@@ -70,9 +70,21 @@
         },
 
         completeSession: async (payload, callback, errorCallback) => {
-            const res = await module.ajax('completeSession', payload);
-            let parsed = JSON.parse(res)
-            callback(parsed);
+            try {
+                const res = await module.ajax('completeSession', payload);
+                let parsed = JSON.parse(res);
+
+                console.log("in jsmo completeSession", payload, parsed);
+
+                if (parsed?.success) {
+                    callback(parsed); // Ensure response contains `survey_link` if needed
+                } else {
+                    errorCallback("Unexpected response: " + res);
+                }
+            } catch (err) {
+                console.error("Error in completeSession: ", err);
+                errorCallback(err);
+            }
         },
     });
 }

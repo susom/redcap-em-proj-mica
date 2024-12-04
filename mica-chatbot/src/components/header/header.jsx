@@ -22,37 +22,41 @@ export default function Header() {
     const endSession = async () => {
         const mica = mica_jsmo_module;
         if (mica) {
-            // Get user data from IndexedDB
-            const users = await user_info.current_user.toArray();
-            if (users.length > 0) {
-                const { id, name } = users[0]; // Get participant_id and username
-                mica_jsmo_module.completeSession(
-                    {
-                        participant_id: id
-                    },
-                    async (res) => {
-                        console.log('Session ended successfully.');
-                        // Now sign out the user
-                        handleSignOut();
-                    },
-                    (err) => {
-                        console.error('Error ending session:', err);
-                        // Optionally, you might still sign out the user even if ending the session fails
-                        handleSignOut();
-                    }
-                );
-            } else {
-                console.error('No user data found in IndexedDB');
-                // Since there's no user data, proceed to sign out
+            try {
+                // Get user data from IndexedDB
+                const users = await user_info.current_user.toArray();
+                if (users.length > 0) {
+                    const { id } = users[0];
+                    mica_jsmo_module.completeSession(
+                        { participant_id: id },
+                        async (res) => {
+                            console.log('Session ended successfully.');
+                            if (res?.success) {
+                                // Redirect to post-session survey link
+                                navigate('/postsession', { state: { surveyLink: res.survey_link } });
+                            } else {
+                                console.error('Session ended, but no survey link found.');
+                            }
+                        },
+                        (err) => {
+                            console.error('Error ending session:', err);
+                            // Handle sign out even if session ending fails
+                            handleSignOut();
+                        }
+                    );
+                } else {
+                    console.error('No user data found in IndexedDB');
+                    handleSignOut();
+                }
+            } catch (error) {
+                console.error('Unexpected error:', error);
                 handleSignOut();
             }
         } else {
             console.error('MICA EM is not injected, cannot execute endSession');
-            // Since MICA EM is not available, proceed to sign out
             handleSignOut();
         }
     };
-
 
     return (
         <Container className="rcchat_header handle">

@@ -6,7 +6,7 @@ import "./footer.css";
 
 export function Footer() {
     const chat_context = useContext(ChatContext);
-    const [inputPH, setInputPH] = useState("Ask a question...");
+    const [inputPH, setInputPH] = useState("type your message here...");
     const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
 
