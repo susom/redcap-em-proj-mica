@@ -189,30 +189,30 @@ export function Login() {
     }
 
     return (
-        <div style={{justifyContent: 'center'}} className="content">
-            <Container>
-                <Card shadow="lg" padding="lg" radius="md" withBorder style={{minWidth: '800px'}}>
-                    <Title order={3}>Welcome to MICA!</Title>
-                    <Space h="sm"/>
-                    <Grid>
-                        <Grid.Col span={7}>
-                            {renderCarousel()}
-                        </Grid.Col>
-                        <Grid.Col span={5}>
-                            <Center>
-                                <div className="Splash"></div>
-                            </Center>
-                        </Grid.Col>
-                    </Grid>
-                    <Center>
-                        <Text size="xs" c="dimmed">
-                                    <span style={{verticalAlign: 'middle'}}>
-                                        <CCircle/> Stanford Medicine
-                                    </span>
-                        </Text>
-                    </Center>
-                </Card>
-            </Container>
+        <div className="login-container">
+            <div className="login-card">
+                <Title order={3} align="center">
+                    Welcome to MICA!
+                </Title>
+                <Space h="sm" />
+
+                <div className="login-grid">
+                    <div className="login-grid-text">
+                        {renderCarousel()}
+                    </div>
+                    <div className="login-grid-image">
+                        <div className="Splash"></div>
+                    </div>
+                </div>
+
+                <Center>
+                    <Text size="xs" c="dimmed">
+                        <span style={{ verticalAlign: 'middle' }}>
+                            <CCircle /> Stanford Medicine
+                        </span>
+                    </Text>
+                </Center>
+            </div>
         </div>
     );
 }
