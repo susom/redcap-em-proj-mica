@@ -198,7 +198,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     $this->emDebug("chatml Messages array to API", $messages);
 
                     //CALL API ENDPOINT WITH AUGMENTED CHATML
-                    $model  = "gpt-4o";
+                    $model  = $this->getProjectSetting("llm-model");
                     $params = array("messages" => $messages);
 
                     // Alter model parameters if set by user

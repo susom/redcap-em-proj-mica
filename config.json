@@ -97,10 +97,24 @@
             "type": "checkbox"
         },
         {
-            "key": "gpt-model",
-            "name": "GPT Model",
+            "key": "llm-model",
+            "name": "LLM Model",
             "required": false,
-            "type": "text",
+            "type": "dropdown",
+            "choices": [
+                {
+                    "value": "gpt-4o",
+                    "name": "GPT-4o"
+                },
+                {
+                    "value": "claude",
+                    "name": "Claude 3.5 Sonnet"
+                },
+                {
+                    "value": "o1-mini",
+                    "name": "GPT o1-mini"
+                }
+            ],
             "default": "gpt-4o"
         },
         {
