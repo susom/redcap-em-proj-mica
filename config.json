@@ -109,10 +109,6 @@
                 {
                     "value": "claude",
                     "name": "Claude 3.5 Sonnet"
-                },
-                {
-                    "value": "o1-mini",
-                    "name": "GPT o1-mini"
                 }
             ],
             "default": "gpt-4o"

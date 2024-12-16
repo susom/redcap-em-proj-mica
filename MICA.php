@@ -121,12 +121,22 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     }
 
     public function formatResponse($response) {
-        $content = $this->getSecureChatInstance()->extractResponseText($response);
-        $role = $response['choices'][0]['message']['role'] ?? 'assistant';
+        // Check if the response is normalized (has `content`)
+        if (isset($response['content'])) {
+            $content = $response['content'];
+            $role = $response['role'] ?? 'assistant';
+        } else {
+            // Handle raw responses (e.g., GPT-4o, Ada-002 pass-through)
+            $content = $this->getSecureChatInstance()->extractResponseText($response);
+            $role = $response['choices'][0]['message']['role'] ?? 'assistant';
+        }
+
+        // Common fields
         $id = $response['id'] ?? null;
         $model = $response['model'] ?? null;
         $usage = $response['usage'] ?? null;
 
+        // Return in required structure
         $formattedResponse = [
             'response' => [
                 'role' => $role,
@@ -139,6 +149,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
         return $formattedResponse;
     }
+
 
     public function appendSystemContext($chatMlArray, $newContext) {
         $hasSystemContext = false;
