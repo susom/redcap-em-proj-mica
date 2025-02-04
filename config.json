@@ -73,6 +73,12 @@
             "type": "textarea"
         },
         {
+            "key": "chatbot_redcap_inject",
+            "name": "Comma delimited list of instruments to inject into the Chat Context",
+            "required": false,
+            "type": "textarea"
+        },
+        {
             "key": "chatbot_system_context_persona",
             "name": "Raw text to inject into system context to tune the chatbot's persona",
             "required": true,

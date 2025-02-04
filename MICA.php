@@ -270,34 +270,25 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         }
     }
 
+
     /**
-     * Fetch and format the baseline data for a participant.
+     * Fetch and format REDCap instrument data for a participant based on config.
      *
      * @param string $participant_id The record_id of the participant.
-     * @return string|null A formatted string of baseline data or null if no data exists.
+     * @return string|null A concatenated formatted string or null if no data exists.
      */
     private function getFormattedBaselineData($participant_id) {
-        // Fetch all baseline fields dynamically
-        $baselineFields = \REDCap::getFieldNames("baseline");
-
-        // Fetch the participant's baseline data
-        $record = \REDCap::getData([
-            'records' => $participant_id,
-            'fields' => $baselineFields,
-            'return_format' => 'json'
-        ]);
-
-        $record = current(json_decode($record, true));
-
-        // If no data found, return null
-        if (empty($record)) {
+        // Get comma-delimited instruments from project settings
+        $instrumentsString = $this->getProjectSetting("chatbot_redcap_inject");
+        if (empty($instrumentsString)) {
             return null;
         }
+        $instruments = array_map('trim', explode(',', $instrumentsString));
 
-        // Format the baseline data
+        // Get metadata once
         $metadata = \REDCap::getDataDictionary('array');
 
-        //helper function to decode enumerated values
+        // Helper to decode enumerated values
         $decodeChoice = function ($field, $value) use ($metadata) {
             $choices = $metadata[$field]['select_choices_or_calculations'] ?? null;
             if ($choices) {
@@ -309,21 +300,36 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     }
                 }
             }
-            return $value; // Return the original value if no match is found
+            return $value;
         };
 
-        $formattedBaseline = "## Participant Baseline Info\n\n";
-        foreach ($record as $field => $value) {
-            $fieldLabel = $metadata[$field]['field_label'] ?? $field;
-            $decodedValue = $decodeChoice($field, $value);
-            if (!empty($decodedValue)) {
-                $formattedBaseline .= "{$fieldLabel}: {$decodedValue}\n";
+        $finalFormatted = "";
+        foreach ($instruments as $instrument) {
+            // Fetch field names and participant's data for the instrument
+            $fields = \REDCap::getFieldNames($instrument);
+            $recordData = \REDCap::getData([
+                'records' => $participant_id,
+                'fields' => $fields,
+                'return_format' => 'json'
+            ]);
+            $record = current(json_decode($recordData, true));
+            if (empty($record)) {
+                continue;
             }
+            // Start with a header indicating the instrument name
+            $formatted = "## " . ucfirst($instrument) . " Data\n\n";
+            foreach ($record as $field => $value) {
+                $fieldLabel = $metadata[$field]['field_label'] ?? $field;
+                $decodedValue = $decodeChoice($field, $value);
+                if (!empty($decodedValue)) {
+                    $formatted .= "{$fieldLabel}: {$decodedValue}\n";
+                }
+            }
+            $finalFormatted .= $formatted . "\n";
         }
-
-        // $this->emDebug("formattedBaseline", $formattedBaseline);
-        return $formattedBaseline ?: null;
+        return empty($finalFormatted) ? null : $finalFormatted;
     }
+
 
     /**
      * @param $payload
