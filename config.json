@@ -169,6 +169,27 @@
             "required": false,
             "type": "number",
             "default": 800
+        },
+        {
+            "key": "reasoning-effort",
+            "name": "<b>Reasoning Effort</b>  <br>(only applicable to o1, o3-mini reasoning models)",
+            "required": false,
+            "type": "dropdown",
+            "choices": [
+                {
+                    "value": "low",
+                    "name": "low"
+                },
+                {
+                    "value": "medium",
+                    "name": "medium"
+                },
+                {
+                    "value": "high",
+                    "name": "high"
+                }
+            ],
+            "default": "medium"
         }
     ],
 

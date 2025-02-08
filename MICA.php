@@ -179,12 +179,18 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             "top_p" => "gpt-top-p",
             "frequency_penalty" => "gpt-frequency-penalty",
             "presence_penalty" => "presence_penalty",
-            "max_tokens" => "gpt-max-tokens"
+            "max_tokens" => "gpt-max-tokens",
+            "reasoning_effort" => "reasoning-effort"
         ];
 
         foreach ($settings as $key => $setting) {
-            if ($value = $this->getProjectSetting($setting)) {
-                $params[$key] = is_numeric($value) ? (float) $value : intval($value);
+            $value = $this->getProjectSetting($setting);
+            if ($value !== null) { // Ensure the value exists
+                if (is_numeric($value)) {
+                    $params[$key] = strpos($value, '.') !== false ? (float) $value : (int) $value; // Keep floats as float
+                } else {
+                    $params[$key] = $value; // Preserve non-numeric strings
+                }
             }
         }
     }
