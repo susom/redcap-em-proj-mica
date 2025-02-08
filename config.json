@@ -113,6 +113,14 @@
                     "name": "GPT-4o"
                 },
                 {
+                    "value": "o1",
+                    "name": "GPT-o1"
+                },
+                {
+                    "value": "o3-mini",
+                    "name": "GPT-o3-mini"
+                },
+                {
                     "value": "claude",
                     "name": "Claude 3.5 Sonnet"
                 }
