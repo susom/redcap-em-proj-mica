@@ -123,6 +123,10 @@
                 {
                     "value": "claude",
                     "name": "Claude 3.5 Sonnet"
+                },
+                {
+                    "value": "llama3370b",
+                    "name": "Llama 3.3 70b"
                 }
             ],
             "default": "gpt-4o"
