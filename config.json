@@ -127,6 +127,10 @@
                 {
                     "value": "llama3370b",
                     "name": "Llama 3.3 70b"
+                },
+                {
+                    "value": "gemini15pro",
+                    "name": "Gemini 1.5 Pro"
                 }
             ],
             "default": "gpt-4o"
