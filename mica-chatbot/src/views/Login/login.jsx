@@ -81,10 +81,7 @@ export function Login() {
             <div>
                 <Text fw={500} c="dimmed">Terms of Usage</Text>
                 <Space h="sm"/>
-                <Text size="sm"> Before we get started, it's important to let you know that this is a chatbot session. While our chatbot is designed to provide helpful and supportive responses, please remember that there is no human monitoring this data in real-time. If you are experiencing any acute issues or need immediate assistance, we strongly encourage you to reach out to your nearest health center or emergency services.
-                    Your experience and opinions are incredibly valuable to us. By participating in this session, you're helping to shape the future of alcohol counseling and improve support systems for others. Your feedback will contribute to enhancing the effectiveness of these tools, making them even more responsive to the needs of individuals seeking help.
-                    Thank you for your time and contribution. Let's get started!
-                </Text>
+                <Text size="sm"> Before we get started, it's important to let you know that this is a chatbot session. The intent of the chatbot is to not to diagnose, treat, mitigate, or prevent a disease or condition. While our chatbot is designed to provide helpful and supportive responses, please remember that there is no human monitoring this data in real-time.  If you are experiencing any acute issues or need immediate assistance, we strongly encourage you to reach out to your nearest health center or emergency services. Thank you for your time and contribution. Let's get started! </Text>
                 <div>
                     <Center>
                         <Button
