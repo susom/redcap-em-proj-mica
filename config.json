@@ -113,6 +113,10 @@
                     "name": "GPT-4o"
                 },
                 {
+                    "value": "gpt-4.1",
+                    "name": "GPT-4.1"
+                },
+                {
                     "value": "o1",
                     "name": "GPT-o1"
                 },
@@ -122,15 +126,15 @@
                 },
                 {
                     "value": "claude",
-                    "name": "Claude 3.5 Sonnet"
+                    "name": "Claude 3.7 Sonnet"
                 },
                 {
-                    "value": "llama3370b",
-                    "name": "Llama 3.3 70b"
+                    "value": "gemini20flash",
+                    "name": "Gemini 2.0 Flash"
                 },
                 {
-                    "value": "gemini15pro",
-                    "name": "Gemini 1.5 Pro"
+                    "value": "llama-Maverick",
+                    "name": "Llama 4 Maverick"
                 }
             ],
             "default": "gpt-4o"
