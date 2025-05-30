@@ -61,6 +61,12 @@
 
     "project-settings": [
         {
+            "key": "chatbot_end_session_url_override",
+            "name": "Optional URL Override for Redirect URL when 'End Session' is clicked",
+            "required": true,
+            "type": "text"
+        },
+        {
             "key": "chatbot_intro_text",
             "name": "Raw text to show in the UI on session start",
             "required": true,

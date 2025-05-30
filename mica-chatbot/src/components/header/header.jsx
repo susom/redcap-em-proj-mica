@@ -33,9 +33,10 @@ export default function Header() {
                             console.log('Session ended successfully.');
                             if (res?.success) {
                                 // Redirect to post-session survey link
-                                navigate('/postsession', { state: { surveyLink: res.survey_link } });
+                                window.location.href = res.survey_link;
                             } else {
                                 console.error('Session ended, but no survey link found.');
+                                handleSignOut();
                             }
                         },
                         (err) => {
@@ -68,11 +69,6 @@ export default function Header() {
                 <button onClick={endSession}>
                     End Session
                 </button>
-                <button onClick={handleSignOut}>
-                    <BoxArrowRight size={20}/>
-                </button>
-
-
             </div>
         </Container>
     );

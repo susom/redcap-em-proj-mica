@@ -568,15 +568,15 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $response = \REDCap::saveData('json', json_encode($save), 'overwrite');
 
         if (!$response['errors']) {
-            // Dynamically get the survey link for the posttest instrument
-            $survey_link = \REDCap::getSurveyLink($participant_id, "posttest");
+            $survey_link = $this->getProjectSetting('chatbot_end_session_url_override') ?: \REDCap::getSurveyLink($participant_id, "posttest");
             return [
                 "success" => true,
-                "survey_link" => $survey_link, // Return the dynamic survey link
+                "survey_link" => $survey_link,
             ];
         } else {
             throw new \Exception($response['errors']);
         }
+        
     }
 
     /**

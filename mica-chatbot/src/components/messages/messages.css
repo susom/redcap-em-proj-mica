@@ -66,6 +66,13 @@
     position: relative;
 }
 
+.messages dt.empty-dt{
+    visibility: hidden;
+    height: 1px;
+    min-height: 1px;
+    padding: 0;
+}
+
 .messages dd {
     float: left;
     width: 90%;
