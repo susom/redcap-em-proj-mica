@@ -24,16 +24,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         parent::__construct();
     }
 
-    public function initSystemContexts($session_key = 'baseline') {
-
-        $setting_key = "chatbot_system_context_" . $session_key;
-        $this->system_context_global =  $this->getProjectSetting("chatbot_system_context_general");
-        $this->system_context_session = $this->getProjectSetting($setting_key);
-
-        $general_system_context =  $this->appendSystemContext([], $this->system_context_global);
-        return $this->appendSystemContext($general_system_context, $this->system_context_session);
-    }
-
     public function getIntroText(){
         return $this->getProjectSetting('chatbot_intro_text');
     }
@@ -148,23 +138,32 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         return $formattedResponse;
     }
 
-
     public function appendSystemContext($chatMlArray, $newContext) {
-        $hasSystemContext = false;
-        for ($i = 0; $i < count($chatMlArray); $i++) {
-            if ($chatMlArray[$i]['role'] == 'system' && !empty($chatMlArray[$i]['content'])) {
-                $chatMlArray[$i]['content'] .= '\n\n ' . $newContext;
-                $hasSystemContext = true;
-                break;
+        // Normalize to array of system messages
+        if (isset($newContext['role']) && isset($newContext['content'])) {
+            $newContext = [ $newContext ];
+        } elseif (!is_array($newContext)) {
+            $newContext = [ [ 'role' => 'system', 'content' => (string)$newContext ] ];
+        }
+    
+        foreach ($newContext as $ctx) {
+            $hasSystemContext = false;
+            for ($i = 0; $i < count($chatMlArray); $i++) {
+                if ($chatMlArray[$i]['role'] == 'system' && !empty($chatMlArray[$i]['content'])) {
+                    $chatMlArray[$i]['content'] .= "\n\n" . $ctx['content'];
+                    $hasSystemContext = true;
+                    break;
+                }
+            }
+    
+            if (!$hasSystemContext) {
+                array_unshift($chatMlArray, $ctx);
             }
         }
-
-        if (!$hasSystemContext) {
-            array_unshift($chatMlArray, array("role" => "system", "content" => $newContext));
-        }
-
+    
         return $chatMlArray;
     }
+    
 
     /**
      * Set em config parameters for model usage
@@ -553,7 +552,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             : "session_{$sessionNum}";
     
         $currentSession = $sessionNum === 0 ? 'baseline' : $sessionNum;
-        $sys_ctx = $this->initSystemContexts($contextKey);
+        $sys_ctx = $this->initSystemContexts($recordId, $contextKey, 3);
 
         // check is session already complete
         $eventName = ($currentSession === 'baseline')
@@ -586,6 +585,64 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         ];
     }
     
+    public function initSystemContexts($record_id, $session_key = 'baseline', $backN= 1) {
+
+        $setting_key = "chatbot_system_context_" . $session_key;
+        $this->system_context_global =  $this->getProjectSetting("chatbot_system_context_general");
+        $this->system_context_session = $this->getProjectSetting($setting_key);
+
+        $general_system_context =  $this->appendSystemContext([], $this->system_context_global);
+
+        if (preg_match('/session_(\d+)/', $session_key, $matches)) {
+            $currentSession = (int) $matches[1];
+            if ($currentSession >= 1) {
+                $catchup = $this->summarizeCatchUp($record_id, $currentSession, $backN); 
+                $general_system_context = $this->appendSystemContext($general_system_context, $catchup);
+            }
+        }
+        return $this->appendSystemContext($general_system_context, $this->system_context_session);
+    }
+
+    public function summarizeCatchUp($recordId, $currentSession, $backN = 1) {
+        $primary_field = $this->getPrimaryField();
+        $logs = [];
+    
+        for ($i = max(0, $currentSession - $backN); $i < $currentSession; $i++) {
+            if ($i === 1) continue; // skip session_1_arm_1 (doesn't exist)
+        
+            $event = $i === 0 ? 'baseline_arm_1' : "session_{$i}_arm_1";
+        
+            $eventId = \REDCap::getEventIdFromUniqueEvent($event);
+            $data = \REDCap::getData([
+                'project_id' => $this->getProjectId(),
+                'records' => [$recordId],
+                'fields' => ['raw_chat_logs'],
+                'events' => [$event],
+                'return_format' => 'json'
+            ]);
+        
+            $data = json_decode($data, true);
+            $data = current($data);
+            $logStr = $data["raw_chat_logs"];
+
+            if (!empty($logStr)) {
+                $log = is_string($logStr) ? json_decode($logStr, true) : $logStr;
+                if (is_array($log)) {
+                    foreach ($log as $msg) {
+                        $text = trim(($msg['user_content'] ?? '') . ' ' . ($msg['assistant_content'] ?? ''));
+                        if ($text !== '') {
+                            $logs[] = $text;
+                        }
+                    }
+                }
+            }
+        }
+
+        
+        $summaryText = implode("\n", $logs);
+        $flat_context = ['role' => 'system', 'content' => "Previous session summaries:\n" . $summaryText];
+        return [$flat_context];
+    }
     
 
  /**
