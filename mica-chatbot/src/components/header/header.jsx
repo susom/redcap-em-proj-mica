@@ -30,7 +30,7 @@ export default function Header() {
                     mica_jsmo_module.completeSession(
                         { 
                             participant_id: id ,
-                            session: window.mica_jsmo_module.session_start_time.this_session,
+                            session: window.mica_jsmo_module.this_session,
                             session_start_time: users[0].session_start_time
                         },
                         async (res) => {

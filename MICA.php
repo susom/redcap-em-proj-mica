@@ -542,10 +542,11 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             ]);
             return null;
         }
-        $sessionNum = (int) min(7, floor($days / 14));
+        $session_length_days = 14;
+        $sessionNum = (int) min(7, floor($days / $session_length_days));
         
         $sessionStart = clone $consentDate;
-        $sessionStart->modify("+".($sessionNum * 14)." days");
+        $sessionStart->modify("+".($sessionNum * $session_length_days)." days");
 
         $contextKey = $sessionNum === 0
             ? 'baseline'
@@ -553,6 +554,30 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     
         $currentSession = $sessionNum === 0 ? 'baseline' : $sessionNum;
         $sys_ctx = $this->initSystemContexts($contextKey);
+
+        // check is session already complete
+        $eventName = ($currentSession === 'baseline')
+            ? 'baseline_arm_1'
+            : "session_{$currentSession}_arm_1";
+
+        $completionData = \REDCap::getData([
+            'project_id' => $this->getProjectId(),
+            'records' => [$recordId],
+            'fields' => ['session_info_complete'],
+            'events' => [$eventName],
+            'return_format' => 'array'
+        ]);
+        
+        $eventId = array_search($eventName, $events); // gives you the key '100' in your debug
+        $sessionComplete = $completionData[$recordId][$eventId]['session_info_complete'] ?? null;
+            
+        if ((int)$sessionComplete === 2) {
+            $nextSessionStart = clone $sessionStart;
+            $nextSessionStart->modify("+$session_length_days days");
+            $today = new \DateTime();
+            $daysUntilNext = max(0, $today->diff($nextSessionStart)->days);
+            throw new \Exception("Session already completed. Return in $daysUntilNext day(s) for your next session!");
+        }
 
         return [
             'system_context' => $sys_ctx,
@@ -603,8 +628,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $primary_field = $this->getPrimaryField();
         $logs = MICAQuery::getLogsFor($this, PROJECT_ID, $participant_id, $sessionStart);
     
-        $this->emDebug("save these logs", $sessionStart, $logs);
-
         // Target uniform field names
         $logField = 'raw_chat_logs';
         $timestampField = 'session_timestamp';
