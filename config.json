@@ -85,20 +85,50 @@
             "type": "textarea"
         },
         {
-            "key": "chatbot_system_context_persona",
-            "name": "Raw text to inject into system context to tune the chatbot's persona",
+            "key": "chatbot_system_context_general",
+            "name": "Raw text to inject into and set the chatbot's overall system context, persona, guardrails",
             "required": true,
             "type": "textarea"
         },
         {
-            "key": "chatbot_system_context_steps",
-            "name": "Raw text to inject into system context to tune the chatbot's behavior",
+            "key": "chatbot_system_context_baseline",
+            "name": "Raw text to inject into and tune the chatbot's baseline session system context",
             "required": true,
             "type": "textarea"
         },
         {
-            "key": "chatbot_system_context_rules",
-            "name": "Raw text to inject into system context to tune the chatbot's bounds",
+            "key": "chatbot_system_context_session_2",
+            "name": "Raw text to inject into and tune the chatbot's 2nd session system context",
+            "required": true,
+            "type": "textarea"
+        },
+        {
+            "key": "chatbot_system_context_session_3",
+            "name": "Raw text to inject into and tune the chatbot's 3rd session system context",
+            "required": true,
+            "type": "textarea"
+        },
+        {
+            "key": "chatbot_system_context_session_4",
+            "name": "Raw text to inject into and tune the chatbot's 4th session system context",
+            "required": true,
+            "type": "textarea"
+        },
+        {
+            "key": "chatbot_system_context_session_5",
+            "name": "Raw text to inject into and tune the chatbot's 5th session system context",
+            "required": true,
+            "type": "textarea"
+        },
+        {
+            "key": "chatbot_system_context_session_6",
+            "name": "Raw text to inject into and tune the chatbot's 6th session system context",
+            "required": true,
+            "type": "textarea"
+        },
+        {
+            "key": "chatbot_system_context_session_7",
+            "name": "Raw text to inject into and tune the chatbot's 7th session system context",
             "required": true,
             "type": "textarea"
         },

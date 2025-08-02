@@ -28,9 +28,12 @@ export default function Header() {
                 if (users.length > 0) {
                     const { id } = users[0];
                     mica_jsmo_module.completeSession(
-                        { participant_id: id },
+                        { 
+                            participant_id: id ,
+                            session: window.mica_jsmo_module.session_start_time.this_session,
+                            session_start_time: users[0].session_start_time
+                        },
                         async (res) => {
-                            console.log('Session ended successfully.');
                             if (res?.success) {
                                 // Redirect to post-session survey link
                                 window.location.href = res.survey_link;

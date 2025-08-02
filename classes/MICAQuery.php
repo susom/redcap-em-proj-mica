@@ -62,21 +62,25 @@ class MICAQuery extends ASEMLO
      * @return array Action
      * @throws \Exception
      */
-    public static function getLogsFor($module, $project_id, $mica_id)
+    public static function getLogsFor($module, $project_id, $mica_id, $sessionStart = null)
     {
-
         $filter_clause = "project_id = ? and mica_id = ? order by log_id asc";
         $objs = self::queryObjects(
             $module, $filter_clause, [$project_id, $mica_id]
         );
 
         $chatSession = [];
+        $start = $sessionStart ? (new \DateTime())->setTimestamp($sessionStart) : null;
 
         foreach ($objs as $action) {
-            $messageJson = $action->getValue('message');
             $timestamp = $action->getValue('timestamp');
-            
-            // Decode the JSON message
+            $ts = new \DateTime($timestamp);
+
+            if ($start && $ts < $start) {
+                continue; 
+            }
+
+            $messageJson = $action->getValue('message');
             $messageData = json_decode($messageJson, true);
 
             // Handle potential double encoding
@@ -95,7 +99,6 @@ class MICAQuery extends ASEMLO
             $userContent = $messageData['query']['content'] ?? null;
 
             if (empty($assistantContent)) {
-//                $module->emDebug("only return for completed Q + A");
                 continue; // Skip this iteration
             }
 

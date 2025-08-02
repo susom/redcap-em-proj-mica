@@ -3,9 +3,7 @@
 
     if (!window.ExternalModules.moduleQueuedAjax) {
         console.error("moduleQueuedAjax is not defined!");
-    } else {
-        console.log("moduleQueuedAjax is defined.");
-    }
+    } 
 
     Object.assign(module, {
         InitFunction: function () {
@@ -14,6 +12,10 @@
 
         getInitialSystemContext: function() {
           return  window.mica_jsmo_module.data;
+        },
+
+        getCurrentSession: function() {
+            return  window.mica_jsmo_module.this_session;
         },
 
         callAI: async (payload, callback, errorCallback) => {
@@ -40,7 +42,6 @@
                 console.error(parsed['error'])
                 errorCallback(parsed['error'])
             } else {
-                console.log('resolving!')
                 callback(parsed)
             }
         },

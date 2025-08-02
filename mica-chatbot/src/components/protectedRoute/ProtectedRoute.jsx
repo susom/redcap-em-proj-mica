@@ -5,7 +5,6 @@ export const ProtectedRoute = ({ children }) => {
     const { authed } = useAuth();
     if (!authed) {
         // user is not authenticated
-        console.log('user is not authenticated ... redirecting')
         return <Navigate to="/" replace />;
     }
     return children;

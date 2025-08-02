@@ -33,16 +33,8 @@ $build_files = $module->generateAssetFiles();
         "window.mica_jsmo_module = " . $module->getJavascriptModuleObjectName()
     ];
 
-    $initial_system_context = $module->initSystemContexts();
     $intro_text = $module->getIntroText();
     $end_session_text = $module->getEndSessionText();
-
-    $data = !empty($initial_system_context) ? $initial_system_context : null;
-
-
-    if ($data !== null) {
-        $cmds[] = "window.mica_jsmo_module.data = " . json_encode($data);
-    }
 
     if(!is_null($intro_text)){
         $cmds[] = "window.mica_jsmo_module.intro_text = " . json_encode($intro_text);

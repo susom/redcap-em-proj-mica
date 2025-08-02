@@ -1,10 +1,13 @@
 import * as React from "react";
+import { useContext } from 'react';
+
 import {db_cached_chats, user_info} from "../components/database/dexie.js";
+import { ChatContext } from '../contexts/Chat';
 
 const authContext = React.createContext();
-
 function useAuth() {
     const [authed, setAuthed] = React.useState(false);
+    const { replaceSession } = useContext(ChatContext);
 
     const checkUserCache = async () => {
         try {
@@ -18,33 +21,90 @@ function useAuth() {
 
     const cacheUser = async (payload) => {
         let {participant_id, name} = payload?.user
+        let code = payload?.code;
+        let session_start_time = payload?.session_start_time;
+
         if(participant_id && name){
             let data = {
                 id: parseInt(participant_id),
                 name: name,
+                code: code,
+                session_start_time : session_start_time, 
                 timestamp: Date.now()
             }
-
             await user_info.current_user.clear(); //There should only ever be one cached user in a browser
             await user_info.current_user.put(data);
         } else {
             console.log('unable to cache user... skipping')
         }
-
     }
+
+    const fetchSavedSession = async (participant_id, name, session_start_time) => {
+        const payload = { participant_id, name, session_start_time };
+        window.mica_jsmo_module.fetchSavedQueries(
+            payload,
+            (res) => {
+                if (res.current_session?.length) {
+                    const sessionData = {
+                        session_id: Date.now().toString(),
+                        queries: res.current_session,
+                    };
+                    replaceSession(sessionData);
+                }
+            },
+            (err) => {
+                console.error("Error fetching session:", err);
+            }
+        );
+    };
+    
+    const verifyEmail = (code) => {
+        return new Promise(async (resolve, reject) => {
+            const mica = mica_jsmo_module;
+            if (!mica) {
+                console.error('MICA EM is not injected, cannot execute function login');
+                reject();
+                return;
+            }
+    
+            await mica.verifyEmail({ code }, async (res) => {
+                const { participant_id, name } = res.user;
+                const session_start_time = res.session_start_time;
+    
+                setAuthed(true);
+                if (res.initial_system_context) {
+                    window.mica_jsmo_module.data = res.initial_system_context;
+                }
+                window.mica_jsmo_module.this_session = res.currentSession;
+    
+                await fetchSavedSession(participant_id, name, session_start_time);
+                await cacheUser({ ...res, code, session_start_time });
+    
+                resolve(res);
+            }, reject);
+        });
+    };
 
     return {
         authed,
         login(name, email) {
             return new Promise(async (resolve, reject) => {
                 try {
-                    const user = await checkUserCache()
-                    if(user){
+                    const user = await checkUserCache();
+                    
+                    if(user && user.name === name ){
                         let timeDifferential = Date.now() - user.timestamp
                         let isWithin30min = timeDifferential <= 30 * 60 * 1000
-                        if(user.name === name && isWithin30min){
-                            setAuthed(true);
-                            resolve('pass');
+                        if(isWithin30min  && user.code && user.session_start_time){
+                            try {
+                                await verifyEmail(user.code, user.session_start_time); 
+                                resolve('pass');
+                                return;
+                            } catch (err) {
+                                console.warn('Cached code verification failed:', err);
+                                reject(err);
+                                return;
+                            }
                         } else {
                             const mica = mica_jsmo_module
                             if(mica) {
@@ -80,24 +140,7 @@ function useAuth() {
                 res();
             });
         },
-        verifyEmail(code) {
-            return new Promise(async (resolve, reject) => {
-                const mica = mica_jsmo_module
-                if(mica) {
-                    let result = await mica_jsmo_module.verifyEmail({
-                        'code': code,
-                    }, (res) => {
-                        console.log('valid user, logging in...')
-                        cacheUser(res);
-                        setAuthed(true)
-                        resolve(res);
-                    }, reject)
-                } else {
-                    console.error('MICA EM is not injected, cannot execute function login')
-                    reject();
-                }
-            })
-        }
+        verifyEmail
     };
 }
 

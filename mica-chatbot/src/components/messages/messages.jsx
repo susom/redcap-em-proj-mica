@@ -18,7 +18,6 @@ export const Messages = () => {
     };
     
     const allMessages = [introMessage, ...(chat_context.chatContext || [])];
-    console.log(allMessages);
     const handleClick = (vote, index) => {
         chat_context.updateVote(index, vote);
     };

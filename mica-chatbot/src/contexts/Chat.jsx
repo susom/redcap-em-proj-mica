@@ -14,34 +14,9 @@ export const ChatContextProvider = ({ children }) => {
     const apiContextRef = useRef(apiContext);
     const chatContextRef = useRef(chatContext);
 
-    useEffect(() => {
-        console.log("apiContext updated: ", apiContext);
-    }, [apiContext]);
-
-    const fetchSavedSession = async () => {
-        const user = await getCurrentUser();
-        if (user.length > 0 && user[0] && user[0]?.id) {
-            let timeDifferential = Date.now() - user[0].timestamp;
-            let isWithin30min = timeDifferential <= 30 * 60 * 1000;
-            if(isWithin30min){
-                const payload = {
-                    participant_id: user[0].id,
-                    name: user[0].name,
-                };
-                window.mica_jsmo_module.fetchSavedQueries(payload, (res) => {
-                    if (res.current_session && res.current_session.length > 0) {
-                        const sessionData = {
-                            session_id: Date.now().toString(), // Or use ID from res if available
-                            queries: res.current_session, // Ensure this matches expected format
-                        };
-                        replaceSession(sessionData);
-                    }
-                }, (err) => {
-                    console.error("Error fetching session:", err);
-                });
-            }
-        }
-    };
+    // useEffect(() => {
+    //     console.log("apiContext updated: ", apiContext);
+    // }, [apiContext]);
 
     const updateApiContext = (newContext) => {
         apiContextRef.current = newContext;
@@ -134,9 +109,9 @@ export const ChatContextProvider = ({ children }) => {
 
     const replaceSession = async (session) => {
         setSessionId(session.session_id);
-        setMessages(session.queries);
+        await updateChatContext(session.queries);
+        setMessages(session.queries); 
         setMsgCount(session.queries.length);
-        updateChatContext(session.queries);
     };
 
     const callAjax = async (payload, callback) => {
@@ -193,7 +168,7 @@ export const ChatContextProvider = ({ children }) => {
     };
 
     return (
-        <ChatContext.Provider value={{ messages, addMessage, clearMessages, replaceSession, showRatingPO, setShowRatingPO, msgCount, setMsgCount, sessionId, setSessionId, callAjax, chatContext, updateChatContext, updateVote, deleteInteraction, fetchSavedSession }}>
+        <ChatContext.Provider value={{ messages, addMessage, clearMessages, replaceSession, showRatingPO, setShowRatingPO, msgCount, setMsgCount, sessionId, setSessionId, callAjax, chatContext, updateChatContext, updateVote, deleteInteraction }}>
             {children}
         </ChatContext.Provider>
     );

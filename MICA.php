@@ -15,9 +15,8 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     const SecureChatInstanceModuleName = 'secure_chat_ai';
 
     private \Stanford\SecureChatAI\SecureChatAI $secureChatInstance;
-    public $system_context_persona;
-    public $system_context_steps;
-    public $system_context_rules;
+    public $system_context_session;
+    public $system_context_global;
 
     private $primary_field;
 
@@ -25,15 +24,14 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         parent::__construct();
     }
 
-    public function initSystemContexts(){
-        $this->system_context_persona = $this->getProjectSetting('chatbot_system_context_persona');
-        $this->system_context_steps = $this->getProjectSetting('chatbot_system_context_steps');
-        $this->system_context_rules = $this->getProjectSetting('chatbot_system_context_rules');
+    public function initSystemContexts($session_key = 'baseline') {
 
-        $initial_system_context = $this->appendSystemContext([], $this->system_context_persona);
-        $initial_system_context = $this->appendSystemContext($initial_system_context, $this->system_context_steps);
-        $initial_system_context = $this->appendSystemContext($initial_system_context, $this->system_context_rules);
-        return $initial_system_context;
+        $setting_key = "chatbot_system_context_" . $session_key;
+        $this->system_context_global =  $this->getProjectSetting("chatbot_system_context_general");
+        $this->system_context_session = $this->getProjectSetting($setting_key);
+
+        $general_system_context =  $this->appendSystemContext([], $this->system_context_global);
+        return $this->appendSystemContext($general_system_context, $this->system_context_session);
     }
 
     public function getIntroText(){
@@ -234,7 +232,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     if($result)
                         $this->logMICAQuery(json_encode($result), $result['user_id']);
 
-//                    $this->emDebug("Result of SecureChatAI.callAI()", $result);
                     return json_encode($result);
                 case "login":
                     $data = $this->sanitizeInput($payload);
@@ -252,7 +249,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     $data = $this->sanitizeInput($payload);
                     $return_payload = [];
                     $return_payload["current_session"] = [];
-                    $existing_chat = $this->fetchSavedQueries($data);
+                    $existing_chat = $this->fetchSavedQueries($data, $data['session_start_time'] ?? null);
                     if(!empty($existing_chat)){
                         $return_payload["current_session"] = $existing_chat;
                     }
@@ -342,7 +339,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * @return array
      * @throws \Exception
      */
-    public function fetchSavedQueries($payload): array
+    public function fetchSavedQueries($payload, $sessionStart = null): array
     {
         ['name' => $name, 'participant_id' => $participant_id] = $payload;
 
@@ -357,14 +354,13 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             "filterLogic" => "[$primary_field] = '$participant_id'",
             "fields" => array($primary_field, "participant_name"),
         );
-
         // Find user and determine validity
         $json = json_decode(\REDCap::getData($params), true);
         $check = reset($json);
 
         // Check across participant name and id
-        if($check['participant_id'] === $participant_id && $check['participant_name'] === $name) {
-            return MICAQuery::getLogsFor($this, PROJECT_ID, $participant_id);
+        if($check['record_id'] === $participant_id && $check['participant_name'] === $name) {
+            return MICAQuery::getLogsFor($this, PROJECT_ID, $participant_id, $sessionStart);
         }
         return [];
     }
@@ -442,7 +438,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
         if (empty($response['errors'])) {
             $body = "<html><p>Your MICA Verification code is: <strong>$code</strong></p></html>";
-//            $body = "Your MICA Verification code is $code";
             $res = \REDCap::email($email, 'redcap@stanford.edu', 'Your MICA verification code', $body);
             if(!$res){
                 $this->emError('Email hook failure');
@@ -481,16 +476,24 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             throw new \Exception("Error logging in user, duplicate entries for $code ");
 
         $check = reset($json);
-        if($check['two_factor_code'] === $code)
-            return [
+        if ($check['two_factor_code'] === $code) {
+            $record_id = $check[$primary_field] ?? null;
+            $session_stuff = $this->getSystemContextForRecord($record_id);
+    
+            $chat_info = [
                 "success" => true,
                 "user" => [
-                    $primary_field => $check[$primary_field] ?? null,
+                    "participant_id" => $record_id,
                     "name" => $check['participant_name'] ?? null
-                ]
+                ],
+                "initial_system_context" => $session_stuff["system_context"],
+                "currentSession" => $session_stuff["currentSession"],
+                "session_start_time" => $session_stuff["session_start_time"]
             ];
-        else // In case of invalid number, don't notifiy the user
+            return $chat_info;
+        } else {
             throw new \Exception('Invalid OTP code');
+        }
     }
 
     /**
@@ -502,13 +505,63 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         if (!isset($content) || !isset($id))
             throw new \Exception('No content passed to addAction, unable to save message');
 
-//        $this->emDebug("Adding action for MICA");
         $action = new MICAQuery($this);
         $action->setValue('mica_id', $id);
         $action->setValue('message', $content);
         $action->save();
-//        $this->emDebug("Added MICA query " . $action->getId());
     }
+
+
+    public function getSystemContextForRecord($recordId): ?array {
+        $events = \REDCap::getEventNames(true, false);
+        $baselineEventId = array_search("baseline_arm_1", $events);
+        if (!$baselineEventId) {
+            $this->emError("Unable to find event ID for baseline_arm_1");
+            return null;
+        }
+    
+        $data = \REDCap::getData([
+            'project_id' => $this->getProjectId(),
+            'records' => [$recordId],
+            'fields' => ['consent_date'],
+            'events' => [$baselineEventId],
+            'return_format' => 'array'
+        ]);
+    
+        $consentDateStr = trim((string) $data[$recordId][$baselineEventId]['consent_date'] ?? '');
+        try {
+            $consentDate = new \DateTime($consentDateStr);
+            $today = new \DateTime();
+            $days = $consentDate->diff($today)->days;
+        } catch (\Exception $e) {
+            $this->emError("DateTime crash", [
+                'message' => $e->getMessage(),
+                'raw_value' => $consentDateStr,
+                'record' => $recordId,
+                'event' => $baselineEventId
+            ]);
+            return null;
+        }
+        $sessionNum = (int) min(7, floor($days / 14));
+        
+        $sessionStart = clone $consentDate;
+        $sessionStart->modify("+".($sessionNum * 14)." days");
+
+        $contextKey = $sessionNum === 0
+            ? 'baseline'
+            : "session_{$sessionNum}";
+    
+        $currentSession = $sessionNum === 0 ? 'baseline' : $sessionNum;
+        $sys_ctx = $this->initSystemContexts($contextKey);
+
+        return [
+            'system_context' => $sys_ctx,
+            'currentSession' => $currentSession,
+            'session_start_time' => $sessionStart->getTimestamp() 
+        ];
+    }
+    
+    
 
  /**
  * Send SMS with body payload
@@ -539,45 +592,69 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * @throws \Exception
      */
     public function completeSession($payload) {
-        ['participant_id' => $participant_id] = $payload;
+        ['participant_id' => $participant_id, 
+        'session' => $session,
+        'session_start_time' => $sessionStart] = $payload;
 
         if (empty($participant_id)) {
             throw new \Exception("Error with completing session: No participant ID provided");
         }
-
+    
         $primary_field = $this->getPrimaryField();
-        $params = [
-            "return_format" => "json",
-            "filterLogic" => "[$primary_field] = '$participant_id'",
-        ];
+        $logs = MICAQuery::getLogsFor($this, PROJECT_ID, $participant_id, $sessionStart);
+    
+        $this->emDebug("save these logs", $sessionStart, $logs);
 
-        // Retrieve participant data
-        $current_data = json_decode(\REDCap::getData($params), true);
-        $check = reset($current_data);
-        $logs = MICAQuery::getLogsFor($this, PROJECT_ID, $participant_id);
-
+        // Target uniform field names
+        $logField = 'raw_chat_logs';
+        $timestampField = 'session_timestamp';
+        $completeField = 'session_info_complete';
+    
         // Prepare data to save
         $save = [
-            "participant_info_complete" => "2",
-            "participant_info_timestamp" => date("Y-m-d H:i:s"),
-            "raw_chat_logs" => json_encode($logs),
+            $primary_field => $participant_id,
+            $logField => json_encode($logs),
+            $timestampField => date("Y-m-d H:i:s"),
+            $completeField => '2'
         ];
-
-        // Merge and save data
-        $save = [array_merge($check, $save)];
-        $response = \REDCap::saveData('json', json_encode($save), 'overwrite');
-
+    
+        // Determine target event
+        $eventName = ($session === 'baseline' || empty($session))
+            ? 'baseline_arm_1'
+            : "session_{$session}_arm_1";
+    
+        // Use targeted event for saving
+        $response = \REDCap::saveData([
+            'dataFormat' => 'json',
+            'data' => json_encode([ $save ]),
+            'overwriteBehavior' => 'overwrite',
+            'returnFormat' => 'json',
+            'eventName' => $eventName
+        ]);
+    
         if (!$response['errors']) {
-            $survey_link = $this->getProjectSetting('chatbot_end_session_url_override') ?: \REDCap::getSurveyLink($participant_id, "posttest");
-            return [
+            $override = $this->getProjectSetting('chatbot_end_session_url_override');
+            $event_id =  \REDCap::getEventIdFromUniqueEvent($eventName);
+
+            $survey_link = $override ?: \REDCap::getSurveyLink($participant_id, "posttest", $event_id);
+    
+            $surveys = [
                 "success" => true,
-                "survey_link" => $survey_link,
+                "survey_link" => $survey_link
             ];
+    
+            if ($session == 7) {
+                $surveys["follow_up_link"] = $this->getProjectSetting('chatbot_end_session_url_override')
+                    ?: \REDCap::getSurveyLink($participant_id, "month3_fu", "follow_up_arm_1");
+            }
+    
+            $this->emDebug("ok saved the chat session to session_info, now here is the survey links", $surveys);
+            return $surveys;
         } else {
             throw new \Exception($response['errors']);
         }
-        
     }
+    
 
     /**
      * @return bool

@@ -49,7 +49,8 @@ export function Login() {
             }
         }).catch((err) => {
             setLoading(false)
-            setError(err)
+            const msg = err?.message || String(err);
+            setError(msg);
             console.log('user has been rejected ', err)
         })
 
@@ -70,7 +71,8 @@ export function Login() {
             console.log("success!")
         }).catch(err => {
             setLoading(false)
-            setError(err)
+            const msg = err?.message || String(err);
+            setError(msg);
             console.error('reject verify')
         })
         // navigate('/home')
