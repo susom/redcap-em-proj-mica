@@ -699,7 +699,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $save = [
             $primary_field => $participant_id,
             'redcap_event_name' => $eventName,
-            $logField => json_encode($logs),
+            $logField => is_string($logs) ? $logs : json_encode($logs),
             $timestampField => date("Y-m-d H:i:s"),
             $completeField => '2'
         ];
