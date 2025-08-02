@@ -575,7 +575,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             $nextSessionStart = clone $sessionStart;
             $nextSessionStart->modify("+$session_length_days days");
             $today = new \DateTime();
-            $daysUntilNext = max(0, $today->diff($nextSessionStart)->days);
+            $daysUntilNext = max(0, $today->diff($nextSessionStart)->days) + 1;
             throw new \Exception("Session already completed. Return in $daysUntilNext day(s) for your next session!");
         }
 
@@ -633,26 +633,27 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $timestampField = 'session_timestamp';
         $completeField = 'session_info_complete';
     
-        // Prepare data to save
-        $save = [
-            $primary_field => $participant_id,
-            $logField => json_encode($logs),
-            $timestampField => date("Y-m-d H:i:s"),
-            $completeField => '2'
-        ];
-    
         // Determine target event
         $eventName = ($session === 'baseline' || empty($session))
             ? 'baseline_arm_1'
             : "session_{$session}_arm_1";
     
+        // Prepare data to save
+        $save = [
+            $primary_field => $participant_id,
+            'redcap_event_name' => $eventName,
+            $logField => json_encode($logs),
+            $timestampField => date("Y-m-d H:i:s"),
+            $completeField => '2'
+        ];
+    
+        
         // Use targeted event for saving
         $response = \REDCap::saveData([
             'dataFormat' => 'json',
             'data' => json_encode([ $save ]),
             'overwriteBehavior' => 'overwrite',
-            'returnFormat' => 'json',
-            'eventName' => $eventName
+            'returnFormat' => 'json'
         ]);
     
         if (!$response['errors']) {
