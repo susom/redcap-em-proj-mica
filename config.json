@@ -73,6 +73,13 @@
             "type": "textarea"
         },
         {
+            "key": "number_session_callback",
+            "name": "Number of previous sessions to hold in memory (default = 1)",
+            "required": false,
+            "type": "number",
+            "default": 1
+        },
+        {
             "key": "chatbot_end_session_text",
             "name": "Raw text to show in the UI to remind participant to 'end session'",
             "required": true,

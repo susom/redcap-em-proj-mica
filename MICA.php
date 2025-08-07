@@ -552,7 +552,8 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             : "session_{$sessionNum}";
     
         $currentSession = $sessionNum === 0 ? 'baseline' : $sessionNum;
-        $sys_ctx = $this->initSystemContexts($recordId, $contextKey, 3);
+        $backN = $this->getProjectSetting("number_session_callback") ?? 1;
+        $sys_ctx = $this->initSystemContexts($recordId, $contextKey, $backN);
 
         // check is session already complete
         $eventName = ($currentSession === 'baseline')
@@ -562,22 +563,29 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $completionData = \REDCap::getData([
             'project_id' => $this->getProjectId(),
             'records' => [$recordId],
-            'fields' => ['session_info_complete'],
+            'fields' => ['session_info_complete', 'des_mica','month3_fu_complete'],
             'events' => [$eventName],
             'return_format' => 'array'
         ]);
         
         $eventId = array_search($eventName, $events); // gives you the key '100' in your debug
         $sessionComplete = $completionData[$recordId][$eventId]['session_info_complete'] ?? null;
-            
+        $desMica = (int)($completionData[$recordId][$eventId]['des_mica'] ?? 1);
+        $month3_fu_complete = (int)($completionData[$recordId][$eventId]['month3_fu_complete'] ?? 0);
+
         if ((int)$sessionComplete === 2) {
-            $nextSessionStart = clone $sessionStart;
-            $nextSessionStart->modify("+$session_length_days days");
-            $today = new \DateTime();
-            $daysUntilNext = max(0, $today->diff($nextSessionStart)->days) + 1;
-            throw new \Exception("Session already completed. Return in $daysUntilNext day(s) for your next session!");
+            if ($desMica === 0 || $month3_fu_complete == 2) {
+                throw new \Exception("Session already completed. Thank you.");
+            } else {
+                $nextSessionStart = clone $sessionStart;
+                $nextSessionStart->modify("+$session_length_days days");
+                $today = new \DateTime();
+                $daysUntilNext = max(0, $today->diff($nextSessionStart)->days) + 1;
+                throw new \Exception("Session already completed. Return in $daysUntilNext day(s) for your next session!");
+            }
         }
 
+        $this->emDebug("currentSession ", $currentSession);
         return [
             'system_context' => $sys_ctx,
             'currentSession' => $currentSession,
@@ -714,22 +722,23 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         ]);
     
         if (!$response['errors']) {
-            $override = $this->getProjectSetting('chatbot_end_session_url_override');
-            $event_id =  \REDCap::getEventIdFromUniqueEvent($eventName);
-
-            $survey_link = $override ?: \REDCap::getSurveyLink($participant_id, "posttest", $event_id);
-    
             $surveys = [
                 "success" => true,
-                "survey_link" => $survey_link
             ];
     
+            if ($session == "baseline") {
+                $event_id =  \REDCap::getEventIdFromUniqueEvent($eventName);
+                $surveys["survey_link"] = $this->getProjectSetting('chatbot_end_session_url_override')
+                    ?: \REDCap::getSurveyLink($participant_id, "posttest", $event_id);
+            }
+
             if ($session == 7) {
-                $surveys["follow_up_link"] = $this->getProjectSetting('chatbot_end_session_url_override')
-                    ?: \REDCap::getSurveyLink($participant_id, "month3_fu", "follow_up_arm_1");
+                $event_id =  \REDCap::getEventIdFromUniqueEvent("baseline_arm_1");
+                $surveys["survey_link"] = $this->getProjectSetting('chatbot_end_session_url_override')
+                    ?: \REDCap::getSurveyLink($participant_id, "month3_fu", $event_id);
             }
     
-            $this->emDebug("ok saved the chat session to session_info, now here is the survey links", $surveys);
+            $this->emDebug("ok saved the chat session to session_info, now here is the survey links", $participant_id, $session, $surveys);
             return $surveys;
         } else {
             throw new \Exception($response['errors']);
