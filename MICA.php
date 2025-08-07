@@ -541,7 +541,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             ]);
             return null;
         }
-        $session_length_days = 1;
+        $session_length_days = 14;
         $sessionNum = (int) min(7, floor($days / $session_length_days));
         
         $sessionStart = clone $consentDate;
@@ -585,7 +585,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             }
         }
 
-        $this->emDebug("currentSession ", $currentSession);
+        // $this->emDebug("currentSession ", $currentSession);
         return [
             'system_context' => $sys_ctx,
             'currentSession' => $currentSession,
@@ -738,7 +738,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     ?: \REDCap::getSurveyLink($participant_id, "month3_fu", $event_id);
             }
     
-            $this->emDebug("ok saved the chat session to session_info, now here is the survey links", $participant_id, $session, $surveys);
             return $surveys;
         } else {
             throw new \Exception($response['errors']);
