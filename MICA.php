@@ -541,7 +541,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             ]);
             return null;
         }
-        $session_length_days = 14;
+        $session_length_days = 1;
         $sessionNum = (int) min(7, floor($days / $session_length_days));
         
         $sessionStart = clone $consentDate;

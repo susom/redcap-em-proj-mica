@@ -34,11 +34,11 @@ export default function Header() {
                             session_start_time: users[0].session_start_time
                         },
                         async (res) => {
-                            if (res?.success) {
+                            if (res?.success && res?.survey_link) {
                                 // Redirect to post-session survey link
                                 window.location.href = res.survey_link;
                             } else {
-                                console.error('Session ended, but no survey link found.');
+                                console.warn('Session ended with no survey link — signing out.');
                                 handleSignOut();
                             }
                         },
