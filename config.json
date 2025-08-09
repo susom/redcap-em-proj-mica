@@ -73,6 +73,13 @@
             "type": "textarea"
         },
         {
+            "key": "session_length_days",
+            "name": "Number of days in a session (default = 14)",
+            "required": false,
+            "type": "number",
+            "default": 14
+        },
+        {
             "key": "number_session_callback",
             "name": "Number of previous sessions to hold in memory (default = 1)",
             "required": false,

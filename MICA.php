@@ -510,7 +510,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $action->save();
     }
 
-
     public function getSystemContextForRecord($recordId): ?array {
         $events = \REDCap::getEventNames(true, false);
         $baselineEventId = array_search("baseline_arm_1", $events);
@@ -522,16 +521,25 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $data = \REDCap::getData([
             'project_id' => $this->getProjectId(),
             'records' => [$recordId],
-            'fields' => ['consent_date'],
+            'fields' => ['consent_date', 'des_mica', 'month3_fu_complete'],
             'events' => [$baselineEventId],
             'return_format' => 'array'
         ]);
     
+        $desMica = (int)($data[$recordId][$baselineEventId]['des_mica'] ?? 1);
+        $month3_fu_complete = (int)($data[$recordId][$baselineEventId]['month3_fu_complete'] ?? 0);
         $consentDateStr = trim((string) $data[$recordId][$baselineEventId]['consent_date'] ?? '');
+
+        // shortcut all this and throw exception if study already complete
+        if($month3_fu_complete == 2){
+            throw new \Exception("Study already completed. Thank you.");
+        }
+
+        // Otherwise lets go ahead and calcualte session
         try {
             $consentDate = new \DateTime($consentDateStr);
             $today = new \DateTime();
-            $days = $consentDate->diff($today)->days;
+            $days_since_consent = $consentDate->diff($today)->days;
         } catch (\Exception $e) {
             $this->emError("DateTime crash", [
                 'message' => $e->getMessage(),
@@ -541,17 +549,20 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             ]);
             return null;
         }
-        $session_length_days = 14;
-        $sessionNum = (int) min(7, floor($days / $session_length_days));
-        
+
+        // Calculate days since consent with Session Length to determine which session we are in (baseline , 2, 3, ... 7)
+        $session_length_days = $this->getProjectSetting("session_length_days") ?? 14;
+        $sessionNum = (int) min(7, floor($days_since_consent / $session_length_days));
+
         $sessionStart = clone $consentDate;
         $sessionStart->modify("+".($sessionNum * $session_length_days)." days");
 
-        $contextKey = $sessionNum === 0
-            ? 'baseline'
-            : "session_{$sessionNum}";
-    
-        $currentSession = $sessionNum === 0 ? 'baseline' : $sessionNum;
+        $currentSession = $sessionNum === 0 ? 'baseline' : $sessionNum + 1;
+        $contextKey = $currentSession == "baseline"
+            ? $currentSession
+            : "session_{$currentSession}";
+        
+        
         $backN = $this->getProjectSetting("number_session_callback") ?? 1;
         $sys_ctx = $this->initSystemContexts($recordId, $contextKey, $backN);
 
@@ -563,16 +574,14 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $completionData = \REDCap::getData([
             'project_id' => $this->getProjectId(),
             'records' => [$recordId],
-            'fields' => ['session_info_complete', 'des_mica','month3_fu_complete'],
+            'fields' => ['session_info_complete'],
             'events' => [$eventName],
             'return_format' => 'array'
         ]);
-        
+
         $eventId = array_search($eventName, $events); // gives you the key '100' in your debug
         $sessionComplete = $completionData[$recordId][$eventId]['session_info_complete'] ?? null;
-        $desMica = (int)($completionData[$recordId][$eventId]['des_mica'] ?? 1);
-        $month3_fu_complete = (int)($completionData[$recordId][$eventId]['month3_fu_complete'] ?? 0);
-
+       
         if ((int)$sessionComplete === 2) {
             if ($desMica === 0 || $month3_fu_complete == 2) {
                 throw new \Exception("Session already completed. Thank you.");
@@ -585,7 +594,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             }
         }
 
-        // $this->emDebug("currentSession ", $currentSession);
         return [
             'system_context' => $sys_ctx,
             'currentSession' => $currentSession,
@@ -596,9 +604,9 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     public function initSystemContexts($record_id, $session_key = 'baseline', $backN= 1) {
 
         $setting_key = "chatbot_system_context_" . $session_key;
+        $this->emDebug("using session context", $setting_key);
         $this->system_context_global =  $this->getProjectSetting("chatbot_system_context_general");
         $this->system_context_session = $this->getProjectSetting($setting_key);
-
         $general_system_context =  $this->appendSystemContext([], $this->system_context_global);
 
         if (preg_match('/session_(\d+)/', $session_key, $matches)) {
@@ -614,18 +622,13 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     public function summarizeCatchUp($recordId, $currentSession, $backN = 1) {
         $primary_field = $this->getPrimaryField();
         $logs = [];
-    
         for ($i = max(0, $currentSession - $backN); $i < $currentSession; $i++) {
-            if ($i === 1) continue; // skip session_1_arm_1 (doesn't exist)
-        
-            $event = $i === 0 ? 'baseline_arm_1' : "session_{$i}_arm_1";
-        
-            $eventId = \REDCap::getEventIdFromUniqueEvent($event);
+            $event = $i === 1 ? 'baseline_arm_1' : "session_{$i}_arm_1";
             $data = \REDCap::getData([
                 'project_id' => $this->getProjectId(),
                 'records' => [$recordId],
                 'fields' => ['raw_chat_logs'],
-                'events' => [$event],
+                'events' => [$eventId],
                 'return_format' => 'json'
             ]);
         
@@ -645,7 +648,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 }
             }
         }
-
         
         $summaryText = implode("\n", $logs);
         $flat_context = ['role' => 'system', 'content' => "Previous session summaries:\n" . $summaryText];
