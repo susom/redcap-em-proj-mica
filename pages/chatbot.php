@@ -96,8 +96,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <style>
   html,body { margin:0; height:100%; background:#E6E7ED; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
   .login-container { min-height:100%; display:flex; align-items:center; justify-content:center; padding:24px; }
-  .login-card { width:92%; max-width:920px; background:#fff; border-radius:12px; padding:24px; box-shadow:0 10px 30px rgba(0,0,0,.10); }
-  .title { text-align:center; font-weight:700; font-size:28px; margin:4px 0 18px; }
+  .login-card { width:92%; max-width:760px; background:#fff; border-radius:12px; padding:24px; box-shadow:0 10px 30px rgba(0,0,0,.10); }
+  .title { text-align:center; font-weight:700; font-size:136%; margin:4px 0 24px; }
   .grid { display:flex; gap:24px; align-items:stretch; }
   .grid > .col-text { flex:2; }
   .grid > .col-img  { flex:1; display:flex; align-items:center; justify-content:center; }
@@ -110,15 +110,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         cursor: pointer;
         z-index: 10000; /* Ensure it's above other elements */
     }
-  .fieldset { padding:18px; }
-  .legend { font-weight:600; color:#667085; }
-  .input { width:100%; box-sizing:border-box; border:1px solid #d1d5db; border-radius:8px; padding:10px 12px; font-size:14px; }
-  .row { margin-top:12px; }
-  .btn { display:inline-block; border:0; border-radius:8px; padding:10px 18px; font-weight:600; background:#8C1515; color:#fff; cursor:pointer; }
+ .otp.fieldset,
+  form.fieldset{
+    border: 1px solid #DEE2E6;
+    border-radius: 4px;
+    padding: 12px 24px;
+    min-height: 240px;
+  }
+  .otp.fieldset .legend,
+  form.fieldset .legend{
+    color:#000;
+    font-size:88%;
+  }
+  .legend { 
+    font-weight:500; 
+    color:#868E96;
+    margin-bottom:14px;
+  }
+  label{
+    display: block;
+    font-size: 88%;
+    margin-bottom: 3px;
+    padding-left: 2px;
+  }
+  .input { width:100%; box-sizing:border-box; border:1px solid #d1d5db; border-radius:3px; padding:10px 12px; font-size:14px; }
+  .row { margin-bottom:18px; }
+  .btn { display:inline-block; border:0; min-width:120px; font-size:92%; border-radius:8px; padding:10px 30px; font-weight:500; background:#8C1515; color:#fff; cursor:pointer; }
   .btn[disabled]{ opacity:.6; cursor:not-allowed; }
   .center { display:flex; justify-content:center; }
   .error { background:#fee2e2; color:#991b1b; border:1px solid #fecaca; padding:10px 12px; border-radius:10px; margin-bottom:10px; }
-  .fineprint { text-align:center; color:#98a2b3; font-size:12px; margin-top:10px; }
+  .fineprint { text-align:center; color:#878F98; font-size:78%; margin-top:15px; }
   @media (max-width: 768px){ .grid { flex-direction:column; } .splash{ width:160px; height:160px; } }
   .btn-row{
     display:flex;
@@ -142,7 +163,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="legend">Terms of Usage</div>
             <div class="row" style="color:#475467; font-size:14px; line-height:1.55">
               Before we get started, it's important to let you know that this is a chatbot session. The intent of the chatbot is not to diagnose, treat, mitigate, or prevent a disease or condition.
-              While our chatbot is designed to provide helpful and supportive responses, please remember that there is no human monitoring this data in real-time. If you are experiencing any acute issues or need immediate assistance, we encourage you to reach out to your nearest health center or emergency services. Thank you for your time and contribution.
+              While our chatbot is designed to provide helpful and supportive responses, please remember that there is no human monitoring this data in real-time. If you are experiencing any acute issues or need immediate assistance, we encourage you to reach out to your nearest health center or emergency services. Thank you for your time and contribution. Let's get started!
             </div>
             <form method="post" class="center" style="margin-top:14px">
                 <input type="hidden" name="redcap_csrf_token" value="<?php echo $module->getCSRFToken(); ?>">
@@ -172,34 +193,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <?php elseif ($view === 'otp'): ?>
             <?php if ($error): ?><div class="error"><?=h($error)?></div><?php endif; ?>
+            <div class="otp fieldset">
+              <!-- The OTP form holds the input + hidden fields -->
+              <form id="otpForm" method="post">
+                  <input type="hidden" name="redcap_csrf_token" value="<?php echo $module->getCSRFToken(); ?>">
+                  <input type="hidden" name="step" value="otp_submit">
 
-            <!-- The OTP form holds the input + hidden fields -->
-            <form id="otpForm" method="post" class="fieldset">
-                <input type="hidden" name="redcap_csrf_token" value="<?php echo $module->getCSRFToken(); ?>">
-                <input type="hidden" name="step" value="otp_submit">
+                  <div class="legend">Please enter the 6-digit code sent via email</div>
+                  <div class="row" style="margin-top:60px">
+                  <label for="code">Code</label>
+                  <input class="input" id="code" name="code"
+                          placeholder="_ _ _ _ _ _"
+                          autocomplete="one-time-code" required>
+                  </div>
+              </form>
 
-                <div class="legend">Please enter the 6-digit code sent via email</div>
-                <div class="row" style="margin-top:30px">
-                <label for="code">Code</label>
-                <input class="input" id="code" name="code"
-                        placeholder="__ __ __ __ __ __"
-                        autocomplete="one-time-code" required>
-                </div>
-            </form>
+              <!-- Buttons row (side-by-side) -->
+              <div class="btn-row">
+                  <!-- Separate form so it bypasses required validation -->
+                  <form method="post">
+                      <input type="hidden" name="redcap_csrf_token" value="<?php echo $module->getCSRFToken(); ?>">
+                      <input type="hidden" name="step" value="login">
+                      <button class="btn" type="submit" style="background:#e5e7eb;color:#111;border:none">
+                          Back to login
+                      </button>
+                  </form>
 
-            <!-- Buttons row (side-by-side) -->
-            <div class="btn-row">
-                <!-- Separate form so it bypasses required validation -->
-                <form method="post">
-                    <input type="hidden" name="redcap_csrf_token" value="<?php echo $module->getCSRFToken(); ?>">
-                    <input type="hidden" name="step" value="login">
-                    <button class="btn" type="submit" style="background:#e5e7eb;color:#111;border:none">
-                        Back to login
-                    </button>
-                </form>
-
-                <!-- Submits otpForm -->
-                <button class="btn" type="submit" form="otpForm">Validate</button>
+                  <!-- Submits otpForm -->
+                  <button class="btn" type="submit" form="otpForm">Validate</button>
+              </div>
             </div>
             <?php endif; ?>
 
