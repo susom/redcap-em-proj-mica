@@ -164,7 +164,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         return $chatMlArray;
     }
     
-
     /**
      * Set em config parameters for model usage
      * @param $params
@@ -175,7 +174,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             "temperature" => "gpt-temperature",
             "top_p" => "gpt-top-p",
             "frequency_penalty" => "gpt-frequency-penalty",
-            "presence_penalty" => "presence_penalty",
+            "presence_penalty" => "gpt-presence-penalty",
             "max_tokens" => "gpt-max-tokens",
             "reasoning_effort" => "reasoning-effort"
         ];
@@ -192,9 +191,105 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         }
     }
 
+    public function redcap_survey_page($pid,$record,$instrument,$event_id,$group_id,$survey_hash,$response_id,$repeat_instance){
+        if ($instrument !== 'ui_hosting_instrument') return;
+
+        // 1) Build bootstrap (same fields your app expects)
+        $ctx = $this->getSystemContextForRecord($record); // throws if session completed, etc.
+        $primary = $this->getPrimaryField();
+        $row = current(json_decode(\REDCap::getData([
+            'records' => [$record],
+            'fields'  => [$primary,'participant_name','participant_email'],
+            'return_format' => 'json'
+        ]), true)) ?: [];
+
+        $bootstrap = [
+            'participant_id'         => $record,
+            'name'                   => $row['participant_name'] ?? null,
+            'email'                  => $row['participant_email'] ?? null,
+            'current_session'        => $ctx['currentSession'] ?? null,
+            'session_start_time'     => $ctx['session_start_time'] ?? null,
+            'initial_system_context' => $ctx['system_context'] ?? [],
+            'login_url' => $this->getUrl('pages/chatbot.php', true, true)
+        ];
+        $json = json_encode($bootstrap, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT);
+
+        $this->emDebug("survey detail", $pid,$record,$instrument,$event_id, $json);
+
+        // 2) Define JSMO and a mount point
+        echo $this->initializeJavascriptModuleObject();
+        echo "<div id='chatbot_ui_container' data-bootstrap='$json'></div>";
+
+        // 3) Load JSMO helper + your built assets (CSS/JS from dist)
+        echo "<script src='".$this->getUrl('assets/jsmo.js', true, true)."'></script>";
+        foreach ($this->generateAssetFiles() as $f) echo $f;
+
+        // 4) Minimal inline bootstrap + mount + block submit
+        //    (If CSP blocks inline, move this into a small file later.)
+        $js = <<<JS
+        (function(){
+            // Make the EM object easy to reach
+            window.mica_jsmo_module = window.mica_jsmo_module || %s;
+
+            // Parse bootstrap
+            var root = document.getElementById('chatbot_ui_container');
+            var b = {};
+            try { b = JSON.parse(root.dataset.bootstrap || '{}'); } catch(e){ b = {}; }
+            window.mica_bootstrap = b;
+
+            // Mirror old verifyEmail side effects so existing code keeps working
+            window.mica_jsmo_module.data = b.initial_system_context || [];
+            window.mica_jsmo_module.this_session = b.current_session || null;
+
+            // Belt & suspenders: block survey submit / next / Enter submits
+            function blockSubmit(){
+                var form = document.querySelector('form#form');
+                if (!form) return;
+                form.setAttribute('novalidate','novalidate');
+                form.addEventListener('submit', function(e){ e.preventDefault(); e.stopImmediatePropagation(); }, true);
+                document.addEventListener('keydown', function(e){
+                if (e.key === 'Enter' && e.target && e.target.tagName === 'INPUT') e.preventDefault();
+                }, true);
+                document.querySelectorAll('button:not([type])').forEach(function(btn){ btn.setAttribute('type','button'); });
+            }
+
+            // Try to mount after page + modules load; retry until render is available
+            function tryMount(){
+                blockSubmit();
+                if (window.renderMicaApp && typeof window.renderMicaApp === 'function') {
+                window.renderMicaApp('#chatbot_ui_container'); // your bundle should export this
+                return true;
+                }
+                return false;
+            }
+
+            function ready(fn){ if (document.readyState !== 'loading') fn(); else document.addEventListener('DOMContentLoaded', fn); }
+            ready(function(){
+                blockSubmit();
+                var attempts = 0;
+                var id = setInterval(function(){
+                attempts++;
+                if (tryMount() || attempts > 100) clearInterval(id); // ~10s max
+                }, 100);
+                window.addEventListener('load', tryMount, { once:true });
+            });
+        })();
+        JS;
+
+        printf("<script>%s</script>", sprintf($js, $this->getJavascriptModuleObjectName()));
+    }
+
     public function redcap_module_ajax($action, $payload, $project_id, $record, $instrument, $event_id, $repeat_instance,
                                        $survey_hash, $response_id, $survey_queue_hash, $page, $page_full, $user_id, $group_id) {
         try {
+            $isSurvey = !empty($survey_hash);
+            $isUser   = !empty($_SESSION['username']);
+            if (!$isSurvey && !$isUser) {
+                http_response_code(403);
+                return json_encode(['error'=>'Forbidden']);
+            }
+            header('Content-Type: application/json; charset=utf-8');
+            
             switch ($action) {
                 case "callAI":
                     $messages = $this->handleUserInput($payload);
@@ -232,17 +327,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                         $this->logMICAQuery(json_encode($result), $result['user_id']);
 
                     return json_encode($result);
-                case "login":
-                    $data = $this->sanitizeInput($payload);
-                    return json_encode($this->loginUser($data));
-
-                case "verifyEmail":
-                    $data = $this->sanitizeInput($payload);
-                    $verify_phone_data = $this->verifyEmail($data);
-
-                    $return_payload = $verify_phone_data;
-                    $return_payload["current_session"] = [];
-                    return json_encode($return_payload);
 
                 case "fetchSavedQueries":
                     $data = $this->sanitizeInput($payload);
@@ -258,7 +342,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     // expecting {participant_id : participant_id}
                     $data = $this->sanitizeInput($payload);
                     return json_encode($this->completeSession($data));
-                    break;
 
                 default:
                     throw new Exception("Action $action is not defined");
@@ -271,7 +354,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             ]);
         }
     }
-
 
     /**
      * Fetch and format REDCap instrument data for a participant based on config.
@@ -332,7 +414,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         return empty($finalFormatted) ? null : $finalFormatted;
     }
 
-
     /**
      * @param $payload
      * @return array
@@ -365,7 +446,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     }
 
     public function getPrimaryField(){
-        //TODO CLEAN THIS UP
         $pro                    = new \Project(PROJECT_ID);
         $this->primary_field    = $pro->table_pk;
         return $this->primary_field;
@@ -454,7 +534,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * @return false[]|true[]
      * @throws \Exception
      */
-    private function verifyEmail($payload) {
+    public function verifyEmail($payload) {
         $primary_field = $this->getPrimaryField();
 
         if(empty($payload['code']))
@@ -571,15 +651,14 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             ? 'baseline_arm_1'
             : "session_{$currentSession}_arm_1";
 
+        $eventId = array_search($eventName, $events);
         $completionData = \REDCap::getData([
             'project_id' => $this->getProjectId(),
             'records' => [$recordId],
             'fields' => ['session_info_complete'],
-            'events' => [$eventName],
+            'events' => [$eventId],
             'return_format' => 'array'
         ]);
-
-        $eventId = array_search($eventName, $events); // gives you the key '100' in your debug
         $sessionComplete = $completionData[$recordId][$eventId]['session_info_complete'] ?? null;
        
         if ((int)$sessionComplete === 2) {
@@ -624,6 +703,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $logs = [];
         for ($i = max(0, $currentSession - $backN); $i < $currentSession; $i++) {
             $event = $i === 1 ? 'baseline_arm_1' : "session_{$i}_arm_1";
+            $eventId =  \REDCap::getEventIdFromUniqueEvent($event);
             $data = \REDCap::getData([
                 'project_id' => $this->getProjectId(),
                 'records' => [$recordId],
@@ -654,7 +734,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         return [$flat_context];
     }
     
-
  /**
  * Send SMS with body payload
  * @param $body
@@ -746,7 +825,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         }
     }
     
-
     /**
      * @return bool
      */

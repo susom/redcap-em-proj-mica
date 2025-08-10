@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useContext } from 'react';
+import { useContext, useEffect} from 'react';
 
 import {db_cached_chats, user_info} from "../components/database/dexie.js";
 import { ChatContext } from '../contexts/Chat';
@@ -8,6 +8,29 @@ const authContext = React.createContext();
 function useAuth() {
     const [authed, setAuthed] = React.useState(false);
     const { replaceSession } = useContext(ChatContext);
+
+    useEffect(() => {
+        if (authed) return;
+        const b = window.mica_bootstrap;
+        if (!b || !b.participant_id || !b.name) return;
+
+        // Mirror verifyEmail() side-effects
+        setAuthed(true);
+        if (b.initial_system_context) {
+            window.mica_jsmo_module.data = b.initial_system_context;
+        }
+        window.mica_jsmo_module.this_session = b.current_session || null;
+
+        // Load any saved chat and cache the user (same shapes as before)
+        (async () => {
+            await fetchSavedSession(b.participant_id, b.name, b.session_start_time);
+            await cacheUser({
+            user: { participant_id: b.participant_id, name: b.name },
+            code: "BOOTSTRAP",
+            session_start_time: b.session_start_time
+            });
+        })();
+    }, [authed]);
 
     const checkUserCache = async () => {
         try {

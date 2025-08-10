@@ -19,10 +19,9 @@
             "institution": "Stanford University"
         }
     ],
-
     "framework-version": 14,
 
-    "enable-every-page-hooks-on-system-pages": false,
+    "enable-every-page-hooks-on-system-pages": true,
 
     "enable-no-auth-logging": true,
 

@@ -20,4 +20,3 @@ ReactDOM.createRoot(document.getElementById('chatbot_ui_container')).render(
   </React.StrictMode>,
 )
 
-window.REDCap_Chatbot = App;

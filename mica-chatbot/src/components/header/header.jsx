@@ -13,10 +13,13 @@ export default function Header() {
     const { logout } = useAuth();
 
     const handleSignOut = async () => {
+        sessionStorage.setItem('mica_disable_bootstrap','1'); // keep if you already added the guard
         await user_info.current_user.clear();
-        await clearMessages(); // Clear chat context
-        await logout()
-        navigate('/'); // Navigate to login route
+        await clearMessages();
+        await logout();
+
+        const back = window.mica_bootstrap?.login_url || '/';
+        window.location.href = back;
     };
 
     const endSession = async () => {

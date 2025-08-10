@@ -1,45 +1,19 @@
+// components/appRouter/appRouter.jsx
 import React from "react";
-import { Login } from "../../views/Login/login.jsx";
-import { Home } from '../../views/Home/home.jsx';
-import { Splash } from '../../views/Splash/splash.jsx';
-import { PostSession } from '../../views/PostSession/postsession.jsx';
-import { ProtectedRoute } from "../protectedRoute/ProtectedRoute.jsx";
+import { Home } from "../../views/Home/home.jsx";
+import { PostSession } from "../../views/PostSession/postsession.jsx";
 import { AuthProvider } from "../../Hooks/useAuth.jsx";
+import { createHashRouter, RouterProvider, Navigate } from "react-router-dom";
 
-import {
-    createHashRouter,
-    RouterProvider,
-} from "react-router-dom";
-
+// keep it simple: always go to /home
 const router = createHashRouter([
-    {
-        path: '/',
-        element: <Login />
-    },
-    {
-        path: '/splash',
-        element: <Splash />
-    },
-    {
-        path: '/home',
-        element: (
-            <ProtectedRoute>
-                <Home />
-            </ProtectedRoute>
-        )
-    },
-    {
-        path: '/postsession',
-        element: (
-            <ProtectedRoute>
-                <PostSession />
-            </ProtectedRoute>
-        )
-    }
+  { path: "/", element: <Navigate to="/home" replace /> },
+  { path: "/home", element: <Home /> },
+  { path: "/postsession", element: <PostSession /> },
 ]);
 
 export const AppRouter = () => (
-    <AuthProvider>
-        <RouterProvider router={router} />
-    </AuthProvider>
+  <AuthProvider>
+    <RouterProvider router={router} />
+  </AuthProvider>
 );
