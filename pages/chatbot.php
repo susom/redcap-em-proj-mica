@@ -96,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <style>
   html,body { margin:0; height:100%; background:#E6E7ED; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
   .login-container { min-height:100%; display:flex; align-items:center; justify-content:center; padding:24px; }
-  .login-card { width:92%; max-width:760px; background:#fff; border-radius:12px; padding:24px; box-shadow:0 10px 30px rgba(0,0,0,.10); }
+  .login-card {transform: translateY(-40%);width:92%; max-width:760px; background:#fff; border-radius:12px; padding:24px; box-shadow:0 10px 30px rgba(0,0,0,.10); }
   .title { text-align:center; font-weight:700; font-size:136%; margin:4px 0 24px; }
   .grid { display:flex; gap:24px; align-items:stretch; }
   .grid > .col-text { flex:2; }
