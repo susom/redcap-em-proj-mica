@@ -191,6 +191,26 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         }
     }
 
+    // In your EM class
+    public function redcap_survey_page_top($pid,$record,$instrument,$event_id,$group_id,$survey_hash,$response_id,$repeat_instance){
+        if ($instrument !== 'ui_hosting_instrument') return;
+        echo <<<HTML
+        <style id="mica-hide-native">
+        html,body { background:#E6E7ED !important; }
+        /* Hide only REDCap's native chrome, not the content wrapper */
+        #surveytitle, #surveyinstructions,
+        #return_instructions, #footer, .rc-footer {
+            display:none !important;
+        }
+        </style>
+        <noscript>
+        <div style="padding:16px;font-family:sans-serif">
+            JavaScript is required to use this chatbot. Please enable JavaScript and reload.
+        </div>
+        </noscript>
+        HTML;
+    }
+
     public function redcap_survey_page($pid,$record,$instrument,$event_id,$group_id,$survey_hash,$response_id,$repeat_instance){
         if ($instrument !== 'ui_hosting_instrument') return;
 
@@ -228,51 +248,51 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         //    (If CSP blocks inline, move this into a small file later.)
         $js = <<<JS
         (function(){
-            // Make the EM object easy to reach
-            window.mica_jsmo_module = window.mica_jsmo_module || %s;
+        window.mica_jsmo_module = window.mica_jsmo_module || %s;
 
-            // Parse bootstrap
-            var root = document.getElementById('chatbot_ui_container');
-            var b = {};
-            try { b = JSON.parse(root.dataset.bootstrap || '{}'); } catch(e){ b = {}; }
-            window.mica_bootstrap = b;
+        var root = document.getElementById('chatbot_ui_container');
+        var b = {};
+        try { b = JSON.parse(root.dataset.bootstrap || '{}'); } catch(e){ b = {}; }
+        window.mica_bootstrap = b;
 
-            // Mirror old verifyEmail side effects so existing code keeps working
-            window.mica_jsmo_module.data = b.initial_system_context || [];
-            window.mica_jsmo_module.this_session = b.current_session || null;
+        window.mica_jsmo_module.data = b.initial_system_context || [];
+        window.mica_jsmo_module.this_session = b.current_session || null;
 
-            // Belt & suspenders: block survey submit / next / Enter submits
-            function blockSubmit(){
-                var form = document.querySelector('form#form');
-                if (!form) return;
-                form.setAttribute('novalidate','novalidate');
-                form.addEventListener('submit', function(e){ e.preventDefault(); e.stopImmediatePropagation(); }, true);
-                document.addEventListener('keydown', function(e){
-                if (e.key === 'Enter' && e.target && e.target.tagName === 'INPUT') e.preventDefault();
-                }, true);
-                document.querySelectorAll('button:not([type])').forEach(function(btn){ btn.setAttribute('type','button'); });
+        function blockSubmit(){
+            var form = document.querySelector('form#form');
+            if (!form) return;
+            form.setAttribute('novalidate','novalidate');
+            form.addEventListener('submit', function(e){ e.preventDefault(); e.stopImmediatePropagation(); }, true);
+            document.addEventListener('keydown', function(e){
+            if (e.key === 'Enter' && e.target && e.target.tagName === 'INPUT') e.preventDefault();
+            }, true);
+            document.querySelectorAll('button:not([type])').forEach(function(btn){ btn.setAttribute('type','button'); });
+        }
+
+        function unmask(){
+            var tag = document.getElementById('mica-hide-native');
+            if (tag) tag.remove();
+        }
+
+        function tryMount(){
+            blockSubmit();
+            if (window.renderMicaApp && typeof window.renderMicaApp === 'function') {
+            window.renderMicaApp('#chatbot_ui_container');
+            unmask();  // reveal after app mounts
+            return true;
             }
+            return false;
+        }
 
-            // Try to mount after page + modules load; retry until render is available
-            function tryMount(){
-                blockSubmit();
-                if (window.renderMicaApp && typeof window.renderMicaApp === 'function') {
-                window.renderMicaApp('#chatbot_ui_container'); // your bundle should export this
-                return true;
-                }
-                return false;
-            }
-
-            function ready(fn){ if (document.readyState !== 'loading') fn(); else document.addEventListener('DOMContentLoaded', fn); }
-            ready(function(){
-                blockSubmit();
-                var attempts = 0;
-                var id = setInterval(function(){
-                attempts++;
-                if (tryMount() || attempts > 100) clearInterval(id); // ~10s max
-                }, 100);
-                window.addEventListener('load', tryMount, { once:true });
-            });
+        function ready(fn){ if (document.readyState !== 'loading') fn(); else document.addEventListener('DOMContentLoaded', fn); }
+        ready(function(){
+            var attempts = 0;
+            var id = setInterval(function(){
+            attempts++;
+            if (tryMount() || attempts > 100) clearInterval(id); // ~10s
+            }, 100);
+            window.addEventListener('load', tryMount, { once:true });
+        });
         })();
         JS;
 
