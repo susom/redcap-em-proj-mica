@@ -215,7 +215,11 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         if ($instrument !== 'ui_hosting_instrument') return;
 
         // 1) Build bootstrap (same fields your app expects)
-        $ctx = $this->getSystemContextForRecord($record); // throws if session completed, etc.
+        try {
+            $ctx = $this->getSystemContextForRecord($record);
+        } catch (\Exception $e) {
+            $error = $e->getMessage();
+        }
         $primary = $this->getPrimaryField();
         $row = current(json_decode(\REDCap::getData([
             'records' => [$record],
@@ -611,13 +615,15 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     }
 
     public function getSystemContextForRecord($recordId): ?array {
-        $events = \REDCap::getEventNames(true, false);
+        $calc = $this->calculateSessionInfo($recordId);
+        if (!$calc) return null;
+
+        $currentSession = $calc['currentSession'];
+        $sessionStart   = $calc['sessionStart'];
+        $eventName      = $calc['eventName'];
+        $events         = $calc['events'];
+
         $baselineEventId = array_search("baseline_arm_1", $events);
-        if (!$baselineEventId) {
-            $this->emError("Unable to find event ID for baseline_arm_1");
-            return null;
-        }
-    
         $data = \REDCap::getData([
             'project_id' => $this->getProjectId(),
             'records' => [$recordId],
@@ -625,51 +631,20 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             'events' => [$baselineEventId],
             'return_format' => 'array'
         ]);
-    
+
         $desMica = (int)($data[$recordId][$baselineEventId]['des_mica'] ?? 1);
         $month3_fu_complete = (int)($data[$recordId][$baselineEventId]['month3_fu_complete'] ?? 0);
-        $consentDateStr = trim((string) $data[$recordId][$baselineEventId]['consent_date'] ?? '');
 
-        // shortcut all this and throw exception if study already complete
         if($month3_fu_complete == 2){
             throw new \Exception("Study already completed. Thank you.");
         }
 
-        // Otherwise lets go ahead and calcualte session
-        try {
-            $consentDate = new \DateTime($consentDateStr);
-            $today = new \DateTime();
-            $days_since_consent = $consentDate->diff($today)->days;
-        } catch (\Exception $e) {
-            $this->emError("DateTime crash", [
-                'message' => $e->getMessage(),
-                'raw_value' => $consentDateStr,
-                'record' => $recordId,
-                'event' => $baselineEventId
-            ]);
-            return null;
-        }
-
-        // Calculate days since consent with Session Length to determine which session we are in (baseline , 2, 3, ... 7)
-        $session_length_days = $this->getProjectSetting("session_length_days") ?? 14;
-        $sessionNum = (int) min(7, floor($days_since_consent / $session_length_days));
-
-        $sessionStart = clone $consentDate;
-        $sessionStart->modify("+".($sessionNum * $session_length_days)." days");
-
-        $currentSession = $sessionNum === 0 ? 'baseline' : $sessionNum + 1;
         $contextKey = $currentSession == "baseline"
             ? $currentSession
             : "session_{$currentSession}";
-        
-        
+
         $backN = $this->getProjectSetting("number_session_callback") ?? 1;
         $sys_ctx = $this->initSystemContexts($recordId, $contextKey, $backN);
-
-        // check is session already complete
-        $eventName = ($currentSession === 'baseline')
-            ? 'baseline_arm_1'
-            : "session_{$currentSession}_arm_1";
 
         $eventId = array_search($eventName, $events);
         $completionData = \REDCap::getData([
@@ -680,12 +655,13 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             'return_format' => 'array'
         ]);
         $sessionComplete = $completionData[$recordId][$eventId]['session_info_complete'] ?? null;
-       
+
         if ((int)$sessionComplete === 2) {
             if ($desMica === 0 || $month3_fu_complete == 2) {
                 throw new \Exception("Session already completed. Thank you.");
             } else {
                 $nextSessionStart = clone $sessionStart;
+                $session_length_days = $this->getProjectSetting("session_length_days") ?? 14;
                 $nextSessionStart->modify("+$session_length_days days");
                 $today = new \DateTime();
                 $daysUntilNext = max(0, $today->diff($nextSessionStart)->days) + 1;
@@ -696,9 +672,10 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         return [
             'system_context' => $sys_ctx,
             'currentSession' => $currentSession,
-            'session_start_time' => $sessionStart->getTimestamp() 
+            'session_start_time' => $sessionStart->getTimestamp()
         ];
     }
+
     
     public function initSystemContexts($record_id, $session_key = 'baseline', $backN= 1) {
 
@@ -776,6 +753,56 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 //            )
 //        );
 //}
+    private function calculateSessionInfo($recordId): ?array {
+        $events = \REDCap::getEventNames(true, false);
+        $baselineEventId = array_search("baseline_arm_1", $events);
+        if (!$baselineEventId) {
+            $this->emError("Unable to find event ID for baseline_arm_1");
+            return null;
+        }
+
+        $data = \REDCap::getData([
+            'project_id' => $this->getProjectId(),
+            'records' => [$recordId],
+            'fields' => ['consent_date'],
+            'events' => [$baselineEventId],
+            'return_format' => 'array'
+        ]);
+
+        $consentDateStr = trim((string) $data[$recordId][$baselineEventId]['consent_date'] ?? '');
+        try {
+            $consentDate = new \DateTime($consentDateStr);
+            $today = new \DateTime();
+            $days_since_consent = $consentDate->diff($today)->days;
+        } catch (\Exception $e) {
+            $this->emError("DateTime crash", [
+                'message' => $e->getMessage(),
+                'raw_value' => $consentDateStr,
+                'record' => $recordId,
+                'event' => $baselineEventId
+            ]);
+            return null;
+        }
+
+        $session_length_days = $this->getProjectSetting("session_length_days") ?? 14;
+        $sessionNum = (int) min(7, floor($days_since_consent / $session_length_days));
+
+        $sessionStart = clone $consentDate;
+        $sessionStart->modify("+".($sessionNum * $session_length_days)." days");
+
+        $currentSession = $sessionNum === 0 ? 'baseline' : $sessionNum + 1;
+        $eventName = ($currentSession === 'baseline')
+            ? 'baseline_arm_1'
+            : "session_{$currentSession}_arm_1";
+
+        return [
+            'currentSession' => $currentSession,
+            'sessionStart'   => $sessionStart,
+            'eventName'      => $eventName,
+            'events'         => $events
+        ];
+    }
+
 
     /**
      * @param $payload
@@ -783,28 +810,30 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * @throws \Exception
      */
     public function completeSession($payload) {
-        ['participant_id' => $participant_id, 
-        'session' => $session,
-        'session_start_time' => $sessionStart] = $payload;
+        ['participant_id' => $participant_id] = $payload;
 
         if (empty($participant_id)) {
             throw new \Exception("Error with completing session: No participant ID provided");
         }
-    
+
+        $calc = $this->calculateSessionInfo($participant_id);
+        $session = $calc['currentSession'];
+        $calcSessionStart = $calc["sessionStart"];
+        $sessionStart = $calcSessionStart->getTimestamp();
+
+        $this->emDebug("payload and calc", $payload, $session, $sessionStart);
+
         $primary_field = $this->getPrimaryField();
         $logs = MICAQuery::getLogsFor($this, PROJECT_ID, $participant_id, $sessionStart);
-    
-        // Target uniform field names
+
         $logField = 'raw_chat_logs';
         $timestampField = 'session_timestamp';
         $completeField = 'session_info_complete';
-    
-        // Determine target event
-        $eventName = ($session === 'baseline' || empty($session))
+
+        $eventName = ($session === 'baseline')
             ? 'baseline_arm_1'
             : "session_{$session}_arm_1";
-    
-        // Prepare data to save
+
         $save = [
             $primary_field => $participant_id,
             'redcap_event_name' => $eventName,
@@ -812,39 +841,34 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             $timestampField => date("Y-m-d H:i:s"),
             $completeField => '2'
         ];
-    
-        
-        // Use targeted event for saving
+
         $response = \REDCap::saveData([
             'dataFormat' => 'json',
-            'data' => json_encode([ $save ]),
+            'data' => json_encode([$save]),
             'overwriteBehavior' => 'overwrite',
             'returnFormat' => 'json'
         ]);
-    
-        if (!$response['errors']) {
-            $surveys = [
-                "success" => true,
-            ];
-    
-            if ($session == "baseline") {
-                $event_id =  \REDCap::getEventIdFromUniqueEvent($eventName);
-                $surveys["survey_link"] = $this->getProjectSetting('chatbot_end_session_url_override')
-                    ?: \REDCap::getSurveyLink($participant_id, "posttest", $event_id);
-            }
-
-            if ($session == 7) {
-                $event_id =  \REDCap::getEventIdFromUniqueEvent("baseline_arm_1");
-                $surveys["survey_link"] = $this->getProjectSetting('chatbot_end_session_url_override')
-                    ?: \REDCap::getSurveyLink($participant_id, "month3_fu", $event_id);
-            }
-    
-            return $surveys;
-        } else {
+        if ($response['errors']) {
             throw new \Exception($response['errors']);
         }
+
+        $surveys = ["success" => true];
+
+        if ($session === 'baseline') {
+            $event_id = \REDCap::getEventIdFromUniqueEvent($eventName);
+            $surveys["survey_link"] = $this->getProjectSetting('chatbot_end_session_url_override')
+                ?: \REDCap::getSurveyLink($participant_id, "posttest", $event_id);
+        } elseif ($session == 7) {
+            $event_id = \REDCap::getEventIdFromUniqueEvent("baseline_arm_1");
+            $surveys["survey_link"] = $this->getProjectSetting('chatbot_end_session_url_override')
+                ?: \REDCap::getSurveyLink($participant_id, "month3_fu", $event_id);
+        }
+
+        $this->emDebug("return surveys object ", $participant_id, $session, $event_id, $surveys);
+
+        return $surveys;
     }
-    
+
     /**
      * @return bool
      */
