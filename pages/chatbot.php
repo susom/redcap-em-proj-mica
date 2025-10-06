@@ -96,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <style>
   html,body { margin:0; height:100%; background:#E6E7ED; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
   .login-container { min-height:100%; display:flex; align-items:center; justify-content:center; padding:24px; }
-  .login-card {transform: translateY(-40%);width:92%; max-width:760px; background:#fff; border-radius:12px; padding:24px; box-shadow:0 10px 30px rgba(0,0,0,.10); }
+  .login-card {width:92%; max-width:760px; background:#fff; border-radius:12px; padding:24px; box-shadow:0 10px 30px rgba(0,0,0,.10); }
   .title { text-align:center; font-weight:700; font-size:136%; margin:4px 0 24px; }
   .grid { display:flex; gap:24px; align-items:stretch; }
   .grid > .col-text { flex:2; }
@@ -140,7 +140,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   .center { display:flex; justify-content:center; }
   .error { background:#fee2e2; color:#991b1b; border:1px solid #fecaca; padding:10px 12px; border-radius:10px; margin-bottom:10px; }
   .fineprint { text-align:center; color:#878F98; font-size:78%; margin-top:15px; }
-  @media (max-width: 768px){ .grid { flex-direction:column; } .splash{ width:160px; height:160px; } }
+  @media (max-width: 768px){ 
+    .grid { flex-direction:column; } 
+    .splash{ width:160px; height:160px; } 
+    .login-card {
+      margin-top: 2vh;
+      padding: 18px;
+    }
+  }
   .btn-row{
     display:flex;
     gap:12px;
@@ -148,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     align-items:center;
     margin-top:16px;
     }
-    .btn-row form{ margin:0; }
+.btn-row form{ margin:0; }
 </style>
 </head>
 <body>
