@@ -21,3 +21,6 @@
 
 *node_modules
 *vendor
+
+# Playwright session state (contains REDCap session cookies)
+docs/project-structure
