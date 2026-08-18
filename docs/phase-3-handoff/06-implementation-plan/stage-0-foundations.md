@@ -84,6 +84,19 @@ final class SchemaValidator {
 - Keep `emLoggerTrait` logging in all new classes reachable from the module;
   pure classes receive a logger callable instead.
 
+### 0.6 Chatbot cleanup (SOW: "Chatbot Cleanup & SecureChatAI Integration")
+
+Per `../07-chatbot-cleanup-securechatai.md` (decisions 2026-08-13) — all
+behavior-preserving, verified by a Playwright baseline recorded first:
+
+- `config.json`: drop Twilio system settings; drop dead `login`/`verifyEmail`
+  `no-auth-ajax-actions` entries.
+- `MICA.php`: delete commented `sendSMS()`; metadata-only `emDebug` (no
+  message content); escape/parameterize user input in `filterLogic` strings
+  (`loginUser`/`verifyEmail`/`fetchSavedQueries` — no-auth entry points).
+- `mica-chatbot/src`: remove unreferenced Cappy-inherited assets; rebuild
+  `dist/`.
+
 ## Tests (all new, PHPUnit)
 
 | Test | Asserts |
@@ -102,3 +115,4 @@ final class SchemaValidator {
 - [ ] Tamper test fails closed
 - [ ] All vendored schemas load and validate fixtures (draft 2020-12)
 - [ ] `composer test` green in CI; PSR-12 clean on new files
+- [ ] Cleanup (0.6) landed; Playwright baseline passes before and after

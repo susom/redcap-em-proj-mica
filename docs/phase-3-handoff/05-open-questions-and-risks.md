@@ -15,15 +15,37 @@
 5. **MI phase-transition matrix** — sign off the proposed default
    (`02-data-model.md §4`) or supply corrections.
 6. **Approved-resources list** — content per setting (ED vs remote).
-7. **ED baseline launch flow** — is Day-1 ED chat opened by staff on a study
-   device (skip OTP?) or does the participant use their own device with the
-   OTP email flow? Affects login UX, not architecture.
-8. **PID 257 field design** — sign off the draft fields for
-   `mica_ed_session` / `mica_booster_session` + auth fields + the repeating
-   `mica_safety_finding` instrument (`02-data-model.md §3`), and confirm the
-   `alcohol_summary` field mapping. Includes two flagged sub-decisions: one
-   action bundle per finding (vs. a separate actions instrument) and the
-   `scan_failure` placeholder-instance convention.
+7. ~~**ED baseline launch flow**~~ — **ANSWERED 2026-08-17 (with Ihab):** the
+   participant uses **their own device** at Day 1 in the ED. The resulting auth
+   design (retire the custom OTP; native Survey Login + record-bound,
+   time-limited, SMS/email-delivered participant link) is in
+   [`08-auth-discovery.md`](08-auth-discovery.md), pending PI + Stanford
+   security/privacy sign-off. That memo also supersedes `01-architecture.md:142`
+   and the `two_factor_*` auth fields in `02-data-model.md §3` if approved.
+8. **PID 257 field design** — **partially answered 2026-08-17.** The researcher
+   structure is now in place (262 fields / 27 instruments / 18 surveys, 0 records)
+   and audited field-by-field in
+   [`09-pid-257-structure-audit.md`](09-pid-257-structure-audit.md). Confirmed
+   present: the arm/event model, MICA at Day 1 (ED) + Month 3 in arms 2 & 3,
+   `postsession` (the R01 `posttest` equivalent), contact fields on `baseline1`,
+   `admin.randomization_date` for window computation, and the
+   `alcohol_summary` sources (`audit`/`ddq`/`sip2r`/`screen.auditc*`).
+   **Still open (audit G1–G8):**
+   - **G1** the chat host — `mica_ed_session` / `mica_booster_session` are
+     `_complete`-only placeholders and not surveys (there is no
+     `ui_hosting_instrument` in this project)
+   - **G4** transcript/session fields (`raw_chat_logs`, `session_timestamp`,
+     `mica_transcript_hash`/`_ref`) do not exist
+   - **G5** the repeating `mica_safety_finding` instrument does not exist, and
+     **no repeating instruments are configured on the project at all**
+   - **G2** `[calcrnd]` — the passcode field the study's own `check_code` /
+     `sms_code_check` depend on — does not exist; **G6** no randomization group
+     field; **G3** no `consent_date` (the pilot session engine reads it)
+   - the two previously flagged sub-decisions still stand: one action bundle per
+     finding (vs. a separate actions instrument) and the `scan_failure`
+     placeholder-instance convention.
+   Also: 48 unresolved `[field]`/`[event]` references project-wide
+   (`09 §5`) — researcher-side, mostly outside MICA.
 9. **Frozen regression suites** — request the 67-context counselor suite +
    judge harness and the 120-case SafetyScan suite from the research team;
    required by the lifecycle policy for any future model/prompt change

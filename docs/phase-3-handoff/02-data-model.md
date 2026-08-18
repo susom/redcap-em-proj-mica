@@ -189,6 +189,38 @@ The `mica_ed_session` and `mica_booster_session` instruments are currently
 empty placeholders (created 2026-08-04). Proposed fields — **draft for study
 team sign-off** (open question #8):
 
+> ### ⚠️ 2026-08-17: the session instruments are now REPEATING — this section needs rework
+>
+> `mica_ed_session` and `mica_booster_session` were made **repeating instruments** at their
+> events, with REDCap's "Repeat Survey" enabled, so a participant gets a fresh link and a fresh
+> login per session attempt (rationale and verification:
+> [`10-auth-implementation-pid257.md §1.4`](10-auth-implementation-pid257.md)). That is a real
+> change to this section's assumptions, not just a survey setting:
+>
+> - The fields below become **per instance**, so every session field is keyed by
+>   `(record, event, instance)` rather than `(record, event)`.
+> - "One finalized transcript per session" (`01-architecture.md §4`) becomes one per *instance*.
+>   The transcript finalizer and `mica_transcript_ref` must carry the instance number.
+> - The scan-job `idempotency_key` (`§1`/`01-architecture.md §4.4`) currently hashes
+>   `project_id|record|session_type|transcript_sha256`; **it must include the instance**, or two
+>   sessions in the same window collide or one gets dropped as a duplicate.
+> - `getRepeatFormInstanceMaxCount()` / `redcap_data.instance` semantics now apply to reads and
+>   writes of these forms.
+>
+> **Open question for the study team:** is multiple chat sessions per window intended clinically,
+> or is repeating a development convenience to make login re-testable? The answer decides whether
+> the above is a required rework or should be reverted. Revert SQL is in `10 §5`.
+
+> **Confirmed still true 2026-08-17** ([`09-pid-257-structure-audit.md`](09-pid-257-structure-audit.md)):
+> as of the researcher's structure delivery, both instruments contain *only* their
+> `_complete` field and are **not enabled as surveys**, so **every field in §3.1 and §3.2
+> below remains to be built** (audit G1, G4, G5) — none of them exist yet. Two additions to
+> the §3.1 list, both needed before the chat can render: a descriptive **mount-point field**
+> on each instrument (so the instrument can be enabled as a survey and the SPA has somewhere
+> to attach), and the transcript fields `raw_chat_logs`, `session_timestamp`,
+> `mica_transcript_hash`, `mica_transcript_ref`. Note also that **no repeating instruments
+> are configured on this project at all**, which §3.2 depends on.
+
 ### 3.1 Session instruments (`mica_ed_session` / `mica_booster_session`)
 
 | Field (both instruments unless noted) | Type | Purpose |
@@ -206,11 +238,28 @@ team sign-off** (open question #8):
 | `mica_goal_status` (booster form) | radio: enum from wrapper schema | `prior_goal_status` |
 | `mica_booster_window_open` (booster) | date | window logic (or derive from randomization date) |
 
-Also needed on enrollment/randomization forms: enrollment datetime and
-randomized arm (drives whether MICA is offered at all — arms 2 & 3 only).
-Participant contact fields (`participant_name/email/phone`, OTP fields) must
-exist in PID 257 for the login flow — currently absent; they belong on the
-`baseline1` (Demographics) or a dedicated auth instrument.
+> **Updated 2026-08-17** against the as-built PID 257
+> ([`09-pid-257-structure-audit.md`](09-pid-257-structure-audit.md)).
+
+**Contact fields already exist — do not add.** `baseline1` carries `first_name`,
+`last_name` (PHI), `email` (email-validated, PHI), `phonen` (cell, PHI) and
+`choice_fup_delivery` (email-vs-text preference). **No OTP/`two_factor_*` fields are
+needed** — the revised auth design ([`08-auth-discovery.md §6`](08-auth-discovery.md))
+retires the custom OTP in favour of native Survey Login, whose credential is an existing
+field (`last_name` at tier L2; PID 257 collects **no date of birth**).
+
+**Enrollment/randomization:** `admin.randomization_date` (`date_ymd`) exists and is the
+window source, with `admin.calc_month_3` deriving the booster date; `admin.enrollment_id`
+exists. **The randomized-arm field does not** — `randomization` is a 1-field placeholder
+and `[group]` is referenced but undefined (audit G6). Note the arm restriction is already
+enforced structurally: the MICA instruments are designated to arms 2 & 3 only.
+
+**Also relevant to session entry:** `admin.study_withdrawn` and `admin.sms_stop` exist and
+must be honoured (`08 §6.1b`).
+
+**Chat host:** there is no `ui_hosting_instrument` in PID 257. The hosts are
+`mica_ed_session` (Day 1, arms 2 & 3) and `mica_booster_session` (Month 3, arms 2 & 3),
+both currently `_complete`-only placeholders that are not yet surveys (audit G1).
 
 ### 3.2 Findings + review: repeating instrument `mica_safety_finding`
 

@@ -61,16 +61,70 @@ Resolution rules (`01-architecture.md §3`):
   `history-max-messages`, `research-approved-resources`, booster-window
   settings.
 
-### 2.3 PID 257 dictionary + auth (after #8 sign-off; dev copy first)
+### 2.3 PID 257 dictionary + auth (revised 2026-08-17 against the as-built project)
 
-- Build fields per `02-data-model.md §3.1/§3.2` on the dev PID 257 copy:
-  session instruments (arms 2 & 3 events), repeating `mica_safety_finding`
-  instrument (Stage 4 writes it; created now so the dictionary ships once),
-  auth/OTP + contact fields on the Demographics/auth instrument.
-- Keep the existing OTP email login (`loginUser`/`verifyEmail`,
-  `MICA.php:482/561`) pointed at the new field names; ED-tablet launch flow
-  per #7 when decided (login UX only).
-- Randomized-arm check: module refuses session start for arms without MICA.
+> Rewritten against the real dictionary — see
+> [`09-pid-257-structure-audit.md`](../09-pid-257-structure-audit.md) and the revised
+> [`08-auth-discovery.md §6`](../08-auth-discovery.md). The researcher structure is in
+> place (262 fields / 27 instruments / 18 surveys, 0 records); several assumptions here
+> were wrong and are corrected below.
+
+**Already present — do not build (audit §1/§2):**
+
+- Arms/events, and MICA designated to Day 1 (ED) + Month 3 in **arms 2 & 3 only**. The
+  arm restriction is therefore enforced by REDCap's event/form designation, not module
+  logic — the "randomized-arm check" below becomes a defence-in-depth assertion, not the
+  primary control.
+- Contact fields, on `baseline1`: `first_name`, `last_name`, `email` (email-validated),
+  `phonen` (cell), and `choice_fup_delivery` (email-vs-text preference → maps to Twilio's
+  `twilio_delivery_preference_field_map`).
+- Window source: `admin.randomization_date` (`date_ymd`) plus `admin.calc_month_3`.
+  **There is no `consent_date` field in PID 257**, so deleting the pilot
+  `consent_date + 14n` arithmetic is mandatory, not merely preferred.
+- Post-session participant measure: **`postsession`** (11 MI-quality items), designated
+  Day 1 (ED) + Month 3, arms 2 & 3 — the R01 equivalent of the pilot's `posttest`.
+  `completeSession`'s post-session survey link should target this.
+- `alcohol_summary` sources: `audit` (+`audit_score`), `ddq` (+`max`), `sip2r`,
+  `screen.auditc1-3`.
+
+**Still to build (audit G1, G4, G5) — needs #8 sign-off; dev copy first:**
+
+- **G1 — the chat host.** `mica_ed_session` and `mica_booster_session` exist and are
+  designated correctly but are `_complete`-only placeholders and **not surveys**. There is
+  no `ui_hosting_instrument` in this project. Add one descriptive field to each as the SPA
+  mount point, then "Enable as survey" (descriptive-only surveys are valid — see
+  `sms_code_check` / `sms_opt_out` in the same project).
+- **G4 — session/transcript fields** per `02-data-model.md §3.1`: none of
+  `raw_chat_logs`, `session_timestamp`, `mica_transcript_hash`, `mica_transcript_ref`
+  exist yet.
+- **G5 — the repeating `mica_safety_finding` instrument**: does not exist, and **no
+  repeating instruments are configured on this project at all**, so repeating must be
+  enabled as part of this work.
+- **No `two_factor_*` fields** need creating or renaming — they do not exist in PID 257,
+  and the auth recommendation retires them rather than porting them.
+
+**Sequencing constraint discovered during the auth implementation
+([`10 §4.1`](../10-auth-implementation-pid257.md)):** `baseline1` is entered **before**
+randomization (confirmed with the study), and MICA's host surveys are designated to arms 2 & 3
+only. `REDCap::getSurveyLink()` requires the record to exist in the requested event's **arm**, so
+a MICA session link **returns null until the participant is randomized**. Link issuance must
+therefore check arm presence and surface an explicit "not randomized yet" state — never treat the
+null as a generic failure, and never bypass it with `$ensureThatRecordExists = false`.
+
+**Auth (replaces the previous "keep the existing OTP email login" instruction):**
+
+- Configure native **Survey Login** scoped to the two MICA chat surveys
+  (`survey_auth_apply_all_surveys = 0` + `survey_auth_enabled_single = 1` on those two),
+  credential per `08 §6.2` — **`last_name` for tier L2**, since PID 257 collects no DOB.
+- Enable `survey_time_limit_*` on both chat surveys and have the module write
+  `redcap_surveys_participants.link_expiration` at link issuance (`08 §3.3`).
+- Delete `loginUser`/`verifyEmail`/`generateOneTimePassword` and `pages/chatbot.php`
+  rather than repointing them at new field names.
+- Do **not** route the chat through the study's `check_code` passcode survey — it is a
+  survey-queue gate for the assessment battery, not an access boundary (`08 §6.1a`).
+- Session-entry checks must additionally refuse **withdrawn** participants
+  (`admin.study_withdrawn`) and respect SMS opt-out (`admin.sms_stop`) — `08 §6.1b`.
+- Randomized-arm check retained as a server-side assertion.
 
 ### 2.4 Frontend (`mica-chatbot/` SPA)
 

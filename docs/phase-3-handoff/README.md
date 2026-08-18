@@ -49,6 +49,13 @@ safety detection moves to a post-session service (SafetyScan) with a human
 | [`04-test-plan.md`](04-test-plan.md) | Unit / integration / Playwright E2E strategy, fixtures, regression obligations |
 | [`05-open-questions-and-risks.md`](05-open-questions-and-risks.md) | Study-team decisions needed, launch blockers, technical risks |
 | [`06-implementation-plan/`](06-implementation-plan/README.md) | Detailed work breakdown per stage: tasks, file paths, code contracts, tests, acceptance checklists |
+| [`07-chatbot-cleanup-securechatai.md`](07-chatbot-cleanup-securechatai.md) | SOW "Chatbot Cleanup & SecureChatAI Integration": MICA-vs-Cappy comparison, cleanup inventory, conformance tasks folded into Stages 0/1 |
+| [`08-auth-discovery.md`](08-auth-discovery.md) | SOW Discovery "Identify a 2FA Replacement": current-state findings on the OTP flow, native REDCap 17.2.3 capabilities, options matrix, recommendation, and the PI-facing decision summary. Answers open question #7 |
+| [`09-pid-257-structure-audit.md`](09-pid-257-structure-audit.md) | As-built audit of the researcher-provided PID 257 structure (262 fields / 27 instruments): what matches the plan, the gaps that block phase-3 work, and 48 unresolved field/event references. Basis for the 2026-08-17 revision of `08` |
+| [`10-auth-implementation-pid257.md`](10-auth-implementation-pid257.md) | **Implementation record** — Option B's REDCap layer applied to PID 257 (two host surveys + scoped Survey Login), the verification run, the blank-credential security finding that changed the design, rollback SQL, and the module-side work still outstanding |
+| [`11-auth-manual-test-guide.md`](11-auth-manual-test-guide.md) | How to hand-test the auth gate: test-participant setup, an 11-case matrix with expected results, case/whitespace behaviour, mobile checks, audit-trail verification, teardown |
+| [`12-auth-engineering-review.md`](12-auth-engineering-review.md) | **Peer-review request** — self-contained engineering summary of the auth mechanism, the four counterintuitive decisions that need checking, what is deliberately not done yet, and a labelled verification-status table. Circulate to engineers before the PI memo |
+| [`scripts/`](scripts/README.md) | Idempotent apply script, independent verifier, and the manual-test participant helper |
 
 ## Non-goals of this phase
 

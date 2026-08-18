@@ -111,6 +111,24 @@ Sub-components (each its own small class, unit-tested in isolation):
   unset). Reviewed by module owners; MICA `README` records the minimum
   SecureChatAI version.
 
+### 1.6 SecureChatAI conformance — legacy path (SOW cleanup item)
+
+Per `../07-chatbot-cleanup-securechatai.md`; the v2 path gets this via
+`TurnService` by construction. Legacy (flag-off) path changes:
+
+- SPA sends `{messages, session_id}` (Cappy shape; `sessionId` already exists
+  in `contexts/Chat.jsx`); backend accepts both shapes for compatibility.
+- Pass `session_id` (params) + participant id (`$username` arg) to
+  `SecureChatAI::callAI()` → central turn log gains session grouping;
+  `MICAQuery` transcript kept unchanged (replaced in Stage 3).
+- Strip nonstandard `user_id` keys from messages before `callAI()`.
+- Remove `formatResponse()` raw pass-through branch (responses are always
+  normalized + sanitized by SecureChatAI).
+- `setIfNotBlank()` semantics for model params; refresh `llm-model` dropdown
+  to current registry aliases.
+- System prompt handling **unchanged** on this path (client round-trip stays
+  until TurnService; decision 2026-08-13).
+
 ## Tests
 
 - **Unit** (fixture model outputs; no REDCap): every gate boundary
@@ -134,3 +152,5 @@ Sub-components (each its own small class, unit-tested in isolation):
 - [ ] `mica_turn` rows carry correct hashes/params/status; no message text
 - [ ] All gate/failure unit branches covered; suite green
 - [ ] SecureChatAI PR #1 merged + version pin recorded
+- [ ] Legacy path passes `session_id`/username; MICA turns visible in
+      SecureChatAI project logs grouped by session (1.6)

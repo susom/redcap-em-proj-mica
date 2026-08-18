@@ -139,10 +139,20 @@ runs at **Day 1 (ED)** (`mica_ed_session` instrument, arms 2 & 3) and
   forbids inventing resources, so an empty list means "offer none".
 - Bounded history: last `history-max-messages` (default 20) accepted messages,
   each hard-truncated to the schema's 4000-char ceiling.
-- Login: existing OTP email flow is kept for the remote booster; ED-tablet
-  launch flow is open question #7. Legacy pilot code paths (sessions 2–7,
-  `month3_fu`, `posttest`, `des_mica`) are removed after tagging the pilot
-  release (Stage 0).
+- Login: **superseded 2026-08-17** — the custom OTP flow is *retired*, not kept.
+  Participants enter via a record-bound, expiring participant link (SMS-preferred
+  in the ED) plus REDCap-native **Survey Login** scoped to the two MICA chat
+  surveys. Open question #7 is answered (participant's own device at Day 1). See
+  [`08-auth-discovery.md`](08-auth-discovery.md) for the design and
+  [`09-pid-257-structure-audit.md`](09-pid-257-structure-audit.md) for the
+  as-built constraints (no `ui_hosting_instrument`, no DOB field).
+- Session hosts: `mica_ed_session` (Day 1, arms 2 & 3) and
+  `mica_booster_session` (Month 3, arms 2 & 3) — one survey per window, so the
+  active window is carried by the link's own event rather than inferred.
+- Legacy pilot code paths (sessions 2–7, `month3_fu`, `posttest`, `des_mica`,
+  `consent_date` arithmetic, `two_factor_*`) are removed after tagging the pilot
+  release (Stage 0). Note none of those fields exist in PID 257, and the R01
+  post-session measure is `postsession`.
 
 ## 4. Transcript finalization (A→B bridge)
 
