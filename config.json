@@ -60,6 +60,13 @@
 
     "project-settings": [
         {
+            "key": "chat_host_instruments",
+            "name": "Comma-delimited list of instruments that host the chat UI<br><i>(default = ui_hosting_instrument)</i>",
+            "required": false,
+            "type": "text",
+            "default": "ui_hosting_instrument"
+        },
+        {
             "key": "chatbot_end_session_url_override",
             "name": "Optional URL Override for Redirect URL when 'End Session' is clicked",
             "required": true,

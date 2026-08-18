@@ -4,7 +4,13 @@ namespace Stanford\MICA;
 require_once "emLoggerTrait.php";
 require_once "classes/Sanitizer.php";
 require_once "classes/MICAQuery.php";
-require_once "vendor/autoload.php";
+
+// Composer deps are optional (vendor/ is gitignored and nothing in the module currently uses
+// php-ml or the Twilio SDK) - a hard require here makes the module class file unloadable,
+// which surfaces as an unrelated fatal error when REDCap tries to enable the module.
+if (file_exists(__DIR__ . "/vendor/autoload.php")) {
+    require_once __DIR__ . "/vendor/autoload.php";
+}
 use Exception;
 use UserRights;
 
@@ -191,9 +197,41 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         }
     }
 
+    /**
+     * Is this instrument one of the instruments configured to host the chat UI?
+     * Reads the comma-delimited `chat_host_instruments` project setting and falls back to the
+     * original pilot instrument when the setting is empty/unset so existing projects are unchanged.
+     * @param $instrument
+     * @return bool
+     */
+    private function isChatHostInstrument($instrument): bool {
+        $setting = trim((string) $this->getProjectSetting('chat_host_instruments'));
+        if ($setting === '') {
+            $setting = 'ui_hosting_instrument';
+        }
+        $hosts = array_filter(array_map('trim', explode(',', $setting)), fn($host) => $host !== '');
+        return in_array((string) $instrument, $hosts, true);
+    }
+
+    /**
+     * All field names present in this project's data dictionary (empty array if unavailable).
+     * Used to avoid asking getData() for fields a project does not have.
+     * @return array
+     */
+    private function getProjectFieldNames(): array {
+        try {
+            $pro        = new \Project(PROJECT_ID);
+            $metadata   = $pro->getMetadata();
+            return is_array($metadata) ? array_keys($metadata) : [];
+        } catch (\Throwable $e) {
+            $this->emError("Unable to read project metadata", $e->getMessage());
+            return [];
+        }
+    }
+
     // In your EM class
     public function redcap_survey_page_top($pid,$record,$instrument,$event_id,$group_id,$survey_hash,$response_id,$repeat_instance){
-        if ($instrument !== 'ui_hosting_instrument') return;
+        if (!$this->isChatHostInstrument($instrument)) return;
         echo <<<HTML
         <style id="mica-hide-native">
         html,body { background:#E6E7ED !important; }
@@ -202,6 +240,17 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         #return_instructions, #footer, .rc-footer {
             display:none !important;
         }
+        </style>
+        <style id="mica-hide-submit">
+        /* REDCap's submit chrome must never be reachable on a chat host survey. On a
+           repeating host (Repeat Survey enabled) this block also renders a "Take this
+           survey again" button, which would let a participant mint their own session
+           instance, and a plain Submit, which completes the response. The SPA paints over
+           them, but they stay in the DOM, focusable by keyboard and exposed to screen
+           readers - so hide them outright.
+           Deliberately a SEPARATE style block from #mica-hide-native above, because that
+           one is removed by unmask() once the app mounts; this must survive that. */
+        .surveysubmit { display:none !important; }
         </style>
         <noscript>
         <div style="padding:16px;font-family:sans-serif">
@@ -212,20 +261,38 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     }
 
     public function redcap_survey_page($pid,$record,$instrument,$event_id,$group_id,$survey_hash,$response_id,$repeat_instance){
-        if ($instrument !== 'ui_hosting_instrument') return;
+        if (!$this->isChatHostInstrument($instrument)) return;
 
         // 1) Build bootstrap (same fields your app expects)
+        $ctx = null;
         try {
             $ctx = $this->getSystemContextForRecord($record);
         } catch (\Exception $e) {
             $error = $e->getMessage();
+            $this->emDebug("Unable to build system context for record", $record, $error);
         }
+        // Projects without the pilot's session scaffolding get null back - normalize to safe defaults
+        if (!is_array($ctx)) $ctx = [];
+
         $primary = $this->getPrimaryField();
-        $row = current(json_decode(\REDCap::getData([
-            'records' => [$record],
-            'fields'  => [$primary,'participant_name','participant_email'],
-            'return_format' => 'json'
-        ]), true)) ?: [];
+
+        // Only ask for fields this project actually has (participant_name/participant_email are pilot-only)
+        $projectFields  = $this->getProjectFieldNames();
+        $requestFields  = [$primary];
+        foreach (['participant_name','participant_email'] as $optionalField) {
+            if (in_array($optionalField, $projectFields, true)) $requestFields[] = $optionalField;
+        }
+
+        $row = [];
+        if (!empty($record)) {
+            $data = json_decode((string) \REDCap::getData([
+                'records' => [$record],
+                'fields'  => $requestFields,
+                'return_format' => 'json'
+            ]), true);
+            $first = is_array($data) ? current($data) : false;
+            if (is_array($first)) $row = $first;
+        }
 
         $bootstrap = [
             'participant_id'         => $record,
@@ -236,7 +303,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             'initial_system_context' => $ctx['system_context'] ?? [],
             'login_url' => $this->getUrl('pages/chatbot.php', true, true)
         ];
-        $json = json_encode($bootstrap, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT);
+        $json = json_encode($bootstrap, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT) ?: '{}';
 
         $this->emDebug("survey detail", $pid,$record,$instrument,$event_id, $json);
 
