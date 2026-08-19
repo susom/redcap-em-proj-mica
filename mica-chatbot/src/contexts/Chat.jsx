@@ -1,7 +1,39 @@
-import React, { createContext, useState, useRef, useEffect } from 'react';
-import {saveNewSession, updateSession, getSession, deleteSession, getCurrentUser} from '../components/database/dexie';
+import { createContext, useState, useRef } from 'react';
+import {saveNewSession, updateSession, getSession, getCurrentUser} from '../components/database/dexie';
 
 export const ChatContext = createContext();
+
+/** Never show a participant a raw transport payload. */
+const GENERIC_TURN_FAILURE = "That didn't reach MICA. Check your connection and try again.";
+
+/**
+ * The module answers with HTTP 200 and {"error": ..., "success": false} on a
+ * caught exception (MICA.php redcap_module_ajax), and assets/jsmo.js hands that
+ * body to errorCallback as an unparsed JSON *string*. So an error arrives here as
+ * a string that may or may not be JSON, may be an Error, or may be a bare
+ * message. Reduce all of those to one sentence a participant can act on.
+ */
+const readErrorMessage = (err) => {
+    if (!err) return GENERIC_TURN_FAILURE;
+    if (err instanceof Error) return err.message || GENERIC_TURN_FAILURE;
+
+    let candidate = err;
+    if (typeof candidate === 'string') {
+        const trimmed = candidate.trim();
+        if (trimmed === '') return GENERIC_TURN_FAILURE;
+        try {
+            candidate = JSON.parse(trimmed);
+        } catch {
+            // Not JSON. Only surface it if it reads like prose rather than a payload.
+            return /[{}[\]<>]/.test(trimmed) ? GENERIC_TURN_FAILURE : trimmed;
+        }
+    }
+    if (candidate && typeof candidate === 'object') {
+        const message = candidate.error || candidate.message;
+        if (typeof message === 'string' && message.trim() !== '') return message.trim();
+    }
+    return GENERIC_TURN_FAILURE;
+};
 
 export const ChatContextProvider = ({ children }) => {
     const [apiContext, setApiContext] = useState([]);
@@ -11,12 +43,34 @@ export const ChatContextProvider = ({ children }) => {
     const [messages, setMessages] = useState([]);
     const [msgCount, setMsgCount] = useState(0);
 
+    // Session lifecycle. 'blocked' is a terminal state: the server raised one of
+    // its gates and there is no session to hold. It is rendered as a system
+    // notice and it takes the composer away, rather than being pushed into the
+    // transcript as an assistant message over a live input (docs 14 D7, and
+    // critique 2026-08-19 P0).
+    const [sessionState, setSessionState] = useState('active'); // 'active' | 'blocked'
+    const [blockedReason, setBlockedReason] = useState(null);
+
+    // A turn is in flight. Guards against double-send and drives the pending row.
+    const [pending, setPending] = useState(false);
+    // The last turn failed and can be retried. { index, message }
+    const [turnError, setTurnError] = useState(null);
+
     const apiContextRef = useRef(apiContext);
     const chatContextRef = useRef(chatContext);
+    const pendingRef = useRef(false);
 
-    // useEffect(() => {
-    //     console.log("apiContext updated: ", apiContext);
-    // }, [apiContext]);
+    const setPendingBoth = (value) => {
+        pendingRef.current = value;
+        setPending(value);
+    };
+
+    const blockSession = (reason) => {
+        setBlockedReason(reason);
+        setSessionState('blocked');
+        setPendingBoth(false);
+        setTurnError(null);
+    };
 
     const updateApiContext = (newContext) => {
         apiContextRef.current = newContext;
@@ -37,7 +91,6 @@ export const ChatContextProvider = ({ children }) => {
     const updateChatContext = async (newContext, shouldSave = true) => {
         chatContextRef.current = newContext;
         setChatContext(newContext);
-        // console.log("Updated chatContext:", newContext);
         if (shouldSave) {
             await saveChatContext(); // Save chat session after each update
         }
@@ -107,6 +160,8 @@ export const ChatContextProvider = ({ children }) => {
         setMsgCount(0);
         setMessages([]);
         setSessionId(newSessionId);
+        setTurnError(null);
+        setPendingBoth(false);
 
         // Filter apiContext to keep only "system" roles
         const filteredApiContext = apiContextRef.current.filter(entry => entry.role === "system");
@@ -145,24 +200,75 @@ export const ChatContextProvider = ({ children }) => {
         updateApiContext(rebuilt);
     };
 
+    /**
+     * Send the already-recorded turn at `index` to the model.
+     * Split out of callAjax so a failed turn can be retried without duplicating
+     * the participant's message in either the transcript or the model context.
+     */
+    const dispatchTurn = (index, callback) => {
+        setPendingBoth(true);
+        setTurnError(null);
+
+        const wrappedPayload = [...apiContextRef.current];
+
+        const finish = () => {
+            setPendingBoth(false);
+            if (callback) callback();
+        };
+
+        const fail = (err) => {
+            // Previously this path only console.log'd, so the participant's message
+            // sat in the transcript with no reply, no error and no retry, forever
+            // (docs: critique 2026-08-19, heuristic 9).
+            console.error('MICA: turn failed', err);
+            setTurnError({ index, message: readErrorMessage(err) });
+            finish();
+        };
+
+        try {
+            window.mica_jsmo_module.callAI(wrappedPayload, (res) => {
+                if (res && res.response) {
+                    updateMessage(res, index);
+                    finish();
+                } else {
+                    fail(res);
+                }
+            }, fail);
+        } catch (err) {
+            fail(err);
+        }
+    };
+
     const callAjax = async (payload, callback) => {
+        // One turn at a time. Without this the composer stayed live during a
+        // request, so a participant on a slow connection who tapped send twice
+        // produced interleaved turns.
+        if (pendingRef.current) {
+            if (callback) callback();
+            return;
+        }
+
         // Readiness check. Without it a missing cached identity dropped the message with no echo,
         // no request and no error - the send button simply did nothing (docs 14 D22).
         const currentUser = await getCurrentUser();
         if (!currentUser?.[0]?.id) {
             console.error('MICA: cannot send - no participant identity cached for this session', window.mica_bootstrap);
-            // When the server explained why there is no session (a completion gate), say that rather
-            // than a generic failure (docs 14 D7).
+            // When the server explained why there is no session (a completion gate), that is a
+            // terminal state, not a chat message: hand it to the session notice (docs 14 D7).
             const serverReason = window.mica_bootstrap?.error;
-            await updateChatContext([
-                ...chatContextRef.current,
-                {
-                    user_content: payload.content,
-                    assistant_content: serverReason
-                        || "Sorry - this chat session could not be started. Please reload the page, and contact the study team if this keeps happening.",
-                    timestamp: new Date().getTime(),
-                },
-            ]);
+            if (serverReason) {
+                blockSession(serverReason);
+            } else {
+                await updateChatContext([
+                    ...chatContextRef.current,
+                    { user_content: payload.content, assistant_content: null, timestamp: new Date().getTime() },
+                ]);
+                setTurnError({
+                    index: chatContextRef.current.length - 1,
+                    message: "This chat session could not be started. Please reload the page, and contact the study team if this keeps happening.",
+                    retryable: false,
+                });
+            }
             if (callback) callback();
             return;
         }
@@ -187,20 +293,13 @@ export const ChatContextProvider = ({ children }) => {
         await addMessage({ role: 'user', content: payload.content });
 
         const userMessageIndex = chatContextRef.current.length - 1;
-        const wrappedPayload = [...apiContextRef.current];
-        console.log("calling callAI with ", wrappedPayload);
+        dispatchTurn(userMessageIndex, callback);
+    };
 
-        window.mica_jsmo_module.callAI(wrappedPayload, (res) => {
-            if (res && res.response) {
-                updateMessage(res, userMessageIndex);
-                if (callback) callback();
-            } else {
-                console.log("Unexpected response format:", res);
-            }
-        }, (err) => {
-            console.log("callAI error", err);
-            if (callback) callback();
-        });
+    /** Re-send the turn that failed. The message is already recorded; only the call is repeated. */
+    const retryTurn = () => {
+        if (!turnError || turnError.retryable === false || pendingRef.current) return;
+        dispatchTurn(turnError.index);
     };
 
     const updateVote = async (index, vote) => {
@@ -210,28 +309,16 @@ export const ChatContextProvider = ({ children }) => {
             rating: vote
         };
         await updateChatContext(updatedState);
-        // console.log("Updated chatContext after vote:", updatedState);
-    };
-
-    const deleteInteraction = async (index) => {
-        const updatedChatContext = [...chatContextRef.current];
-        updatedChatContext.splice(index, 1);
-
-        const updatedApiContext = apiContextRef.current.filter(entry => entry.index !== index);
-
-        // Update the index of remaining entries
-        updatedApiContext.forEach((entry, i) => {
-            if (entry.index > index) {
-                entry.index -= 1;
-            }
-        });
-
-        updateChatContext(updatedChatContext);
-        updateApiContext(updatedApiContext);
     };
 
     return (
-        <ChatContext.Provider value={{ messages, addMessage, clearMessages, replaceSession, showRatingPO, setShowRatingPO, msgCount, setMsgCount, sessionId, setSessionId, callAjax, chatContext, updateChatContext, updateVote, deleteInteraction }}>
+        <ChatContext.Provider value={{
+            messages, addMessage, clearMessages, replaceSession,
+            showRatingPO, setShowRatingPO, msgCount, setMsgCount,
+            sessionId, setSessionId, callAjax, chatContext, updateChatContext, updateVote,
+            sessionState, blockedReason, blockSession,
+            pending, turnError, retryTurn,
+        }}>
             {children}
         </ChatContext.Provider>
     );

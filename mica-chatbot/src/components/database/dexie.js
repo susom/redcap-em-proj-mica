@@ -19,7 +19,7 @@ export async function getCurrentUser() {
 export async function deleteAllData(){
   await db_cached_chats.chats.clear();
   console.log(await db_cached_chats.chats.toArray()); // Output: []
-};
+}
 
 export async function saveNewSession(session_id, timestamp, queries) {
   try {

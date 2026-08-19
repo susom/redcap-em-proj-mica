@@ -1,4 +1,3 @@
-import React, {useEffect, useContext} from "react";
 import { Container } from 'react-bootstrap';
 import { Messages } from "../../components/messages/messages";
 import Header from "../../components/header/header.jsx";

@@ -5,54 +5,112 @@
     bottom: 0;
     width: 100vw; /* Ensure it covers the entire viewport width */
     display: flex;
-    align-items: center;
+    align-items: flex-end; /* the composer grows upward; controls stay on the baseline */
     justify-content: space-between; /* Distribute space between input and buttons */
-    padding: 10px;
+    gap: 8px;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
     box-sizing: border-box; /* Include padding and border in the element's total width and height */
 }
 
+/* Every control here is a 44px target. They were 27x29 and 32x29, which is
+   below both the WCAG 2.5.8 and the iOS minimum, on a phone used one-handed. */
 .footer button {
-    background: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 44px;
+    height: 44px;
+    padding: 0;
     border: none;
+    border-radius: 10px;
+    background: none;
+    cursor: pointer;
+    transition: background-color 140ms ease-out, color 140ms ease-out, opacity 140ms ease-out;
+}
+
+/* #ccc on white measured 1.6:1. Non-text controls need 3:1; this is 5.8:1. */
+.footer button.clear_chat {
+    color: #5F6673;
+    margin-right: 2px;
+}
+
+.footer button.clear_chat:hover:not(:disabled) {
+    background: #EEF0F4;
+    color: #2C3038;
+}
+
+.footer button.send_btn {
+    background: var(--mica-accent, #2846E4);
+    color: #fff;
+}
+
+.footer button.send_btn:hover:not(:disabled) {
+    background: #1E39C8;
+}
+
+.footer button:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.footer button.send_btn:disabled {
+    background: #C9CFDA;
+    color: #fff;
+    opacity: 1;
+}
+
+/* Visually hidden, still announced. The composer had no label of any kind. */
+.footer .user_input_label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
 }
 
 .footer .user_input {
+    flex: 1;
+    min-width: 0;
     border: none;
-    flex: 1; /* Take up remaining space */
-    padding: 10px 0;
-    text-align: left; /* Ensure text is left-aligned */
+    background: none;
+    padding: 12px 4px;
+    margin: 0;
+    text-align: left;
+    font: inherit;
+    font-size: 16px; /* below 16px iOS Safari force-zooms on focus */
+    line-height: 1.45;
+    color: #14161A;
+    caret-color: var(--mica-accent, #2846E4);
+    resize: none;
+    overflow-y: auto;
+    max-height: 132px;
 }
 
-.footer .user_input:focus {
-    outline: none;
+.footer .user_input::placeholder {
+    color: #6A7180; /* 4.9:1 on white; the browser default is not a design decision */
+}
+
+.footer .user_input:disabled {
+    background: none;
+    color: #6A7180;
+}
+
+/* The outline was removed outright with nothing in its place, so a keyboard user
+   could not see where they were in the app's primary control. */
+.footer .user_input:focus-visible,
+.footer button:focus-visible {
+    outline: 2px solid var(--mica-focus-on-light, #1B41C7);
+    outline-offset: 2px;
+    border-radius: 8px;
 }
 
 .footer .send-container {
     display: flex;
     align-items: center;
-}
-
-.footer button .sendfill.rotate {
-    display: initial;
-    animation: rotate 2s linear infinite;
-}
-
-.footer button.clear_chat {
-    padding-left: 0;
-    margin-right: 5px;
-    border-right: 1px dotted #ccc;
-}
-
-.footer button .sendfill,
-.footer button .send.off {
-    display: none;
-}
-
-@keyframes rotate {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
 }

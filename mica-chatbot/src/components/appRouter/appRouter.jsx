@@ -1,5 +1,4 @@
 // components/appRouter/appRouter.jsx
-import React from "react";
 import { Home } from "../../views/Home/home.jsx";
 import { PostSession } from "../../views/PostSession/postsession.jsx";
 import { AuthProvider } from "../../Hooks/useAuth.jsx";

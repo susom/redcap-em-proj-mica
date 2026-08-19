@@ -4,6 +4,14 @@
     padding-bottom:100px;
 }
 
+/* Terminal state: the notice owns the whole area and centers in it. */
+.messages.messages--blocked {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    overflow-y: auto;
+}
+
 /* Floating message */
 .floating-message {
     text-align: center; /* Center the text */
@@ -64,6 +72,7 @@
     margin-bottom: 30px;
     margin-right: 12px;
     position: relative;
+    overflow-wrap: break-word; /* a pasted URL or an unbroken string must not widen the bubble */
 }
 
 .messages dt.empty-dt{
@@ -85,6 +94,7 @@
     margin-bottom: 0px;
     margin-left: 25px;
     position: relative;
+    overflow-wrap: break-word;
 }
 
 .soft_text {
@@ -122,11 +132,106 @@
     margin: 15px 0;
 }
 
-.delete-icon {
-    cursor: pointer;
-    color: red;
-    position:absolute;
-    top:0;
-    right:0;
+/* ---------------------------------------------------------------------------
+   Turn states
+   ---------------------------------------------------------------------------
+   Pending keeps MICA's bubble and speaker label, because it *is* MICA about to
+   speak. The failure row deliberately drops both: it is the system reporting a
+   transport problem, and it must not arrive wearing the counselor's avatar. */
+
+.messages dd.mica-pending {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #4A5261;
 }
 
+.mica-pending__dots {
+    display: inline-flex;
+    gap: 4px;
+}
+
+.mica-pending__dots i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #7C8595;
+    animation: mica-pending-pulse 1.25s ease-in-out infinite;
+}
+
+.mica-pending__dots i:nth-child(2) { animation-delay: 0.16s; }
+.mica-pending__dots i:nth-child(3) { animation-delay: 0.32s; }
+
+.mica-pending__text {
+    font-size: 0.875rem;
+}
+
+@keyframes mica-pending-pulse {
+    0%, 100% { opacity: 0.3; transform: translateY(0); }
+    40%      { opacity: 1;   transform: translateY(-2px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mica-pending__dots i { animation: none; opacity: 0.75; }
+}
+
+.messages dd.mica-turn-error {
+    float: none;
+    clear: both;
+    width: auto;
+    max-width: 42rem;
+    margin: 10px 12px 0 25px;
+    min-height: 0;
+    background: rgba(255, 155, 147, 0.10);
+    border: 1px solid rgba(255, 155, 147, 0.34);
+    border-radius: 10px;
+    color: #FFC9C4;
+    padding: 12px 14px;
+}
+
+/* No avatar, no "MICA AI" label - this is not MICA speaking. */
+.messages dd.mica-turn-error:before {
+    content: none;
+}
+
+.mica-turn-error__text {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 0;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+}
+
+.mica-turn-error__text svg {
+    flex: none;
+    margin-top: 2px;
+}
+
+.mica-turn-error__retry {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 10px;
+    min-height: 44px;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 201, 196, 0.5);
+    background: transparent;
+    color: #FFC9C4;
+    font: inherit;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 140ms ease-out;
+}
+
+.mica-turn-error__retry:hover:not(:disabled) {
+    background: rgba(255, 155, 147, 0.14);
+}
+
+.mica-turn-error__retry:disabled {
+    opacity: 0.55;
+    cursor: default;
+}

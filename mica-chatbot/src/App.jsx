@@ -1,5 +1,4 @@
 // src/App.jsx
-import React from "react";
 import Header from "./components/header/header.jsx";
 import { Footer } from "./components/footer/footer.jsx";
 import { AppRouter } from "./components/appRouter/appRouter.jsx";

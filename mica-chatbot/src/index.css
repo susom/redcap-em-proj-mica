@@ -1,3 +1,26 @@
+/* Tokens for the states added in this pass. Deliberately narrow: these name the
+   colours the incumbent stylesheets were already using as literals, plus the two
+   the app was missing entirely (a focus ring and a danger tone that is not pure
+   red). A full token pass belongs to /impeccable extract. */
+:root {
+    --mica-canvas: #2C2C2C;
+    --mica-surface: #383838;
+    --mica-raised: #3F4042;   /* frontmost surface, above a 0.82 scrim */
+    --mica-hairline: #454545;
+    --mica-hairline-strong: #5A5A5A;
+
+    --mica-ink: #F2F3F5;
+    --mica-ink-soft: #B9BEC6;      /* 7.5:1 on --mica-canvas */
+
+    --mica-accent: #2846E4;
+
+    --mica-danger-strong: #B8332C; /* on light: 5.3:1 */
+    --mica-danger-on-dark: #FF9B93;
+
+    --mica-focus: #8AB4FF;         /* on dark: 6.6:1 */
+    --mica-focus-on-light: #1B41C7;/* on white: 8.0:1 */
+}
+
 body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
@@ -10,4 +33,45 @@ body {
 code {
     font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
+}
+
+/* Browser surfaces. These ship with defaults that belong to no design system,
+   and the app is injected into a REDCap survey page, so everything here is
+   scoped to the chat container rather than themed globally. */
+
+#chatbot_ui_container ::selection {
+    background: rgba(40, 70, 228, 0.28);
+    color: inherit;
+}
+
+#chatbot_ui_container *:focus-visible {
+    outline: 2px solid var(--mica-focus, #8AB4FF);
+    outline-offset: 2px;
+}
+
+/* The transcript is the one long scroller in the app. */
+#chatbot_ui_container .messages {
+    scrollbar-width: thin;
+    scrollbar-color: #575757 transparent;
+    overscroll-behavior: contain;
+}
+
+#chatbot_ui_container .messages::-webkit-scrollbar {
+    width: 10px;
+}
+
+#chatbot_ui_container .messages::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#chatbot_ui_container .messages::-webkit-scrollbar-thumb {
+    background: #575757;
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 10px;
+}
+
+#chatbot_ui_container .messages::-webkit-scrollbar-thumb:hover {
+    background: #6E6E6E;
+    background-clip: content-box;
 }

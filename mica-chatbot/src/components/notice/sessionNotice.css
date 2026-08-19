@@ -1,0 +1,60 @@
+/* Deliberately shares nothing with the message bubbles: no avatar, no speaker
+   label, no asymmetric bubble radius, no float. A participant must be able to
+   tell at a glance that this is the study system talking, not MICA. */
+
+.mica-notice {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 20px calc(48px + env(safe-area-inset-bottom, 0px));
+}
+
+.mica-notice__panel {
+    width: 100%;
+    max-width: 34rem;
+    text-align: center;
+    border-top: 1px solid var(--mica-hairline, #454545);
+    border-bottom: 1px solid var(--mica-hairline, #454545);
+    padding: 30px 22px;
+}
+
+.mica-notice__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 46px;
+    margin-bottom: 16px;
+    border-radius: 50%;
+    color: var(--mica-ink-soft, #B9BEC6);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.mica-notice--error .mica-notice__icon {
+    color: var(--mica-danger-on-dark, #FF9B93);
+    background: rgba(255, 155, 147, 0.12);
+}
+
+.mica-notice__headline {
+    margin: 0;
+    font-size: 1.1875rem;
+    line-height: 1.45;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    color: var(--mica-ink, #F2F3F5);
+    text-wrap: pretty;
+    overflow-wrap: break-word;
+}
+
+.mica-notice__aside {
+    margin: 14px 0 0;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--mica-ink-soft, #B9BEC6);
+}
+
+@media (min-width: 640px) {
+    .mica-notice__panel { padding: 38px 28px; }
+    .mica-notice__headline { font-size: 1.3125rem; }
+}

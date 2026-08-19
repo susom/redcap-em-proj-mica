@@ -1,0 +1,130 @@
+.mica-confirm {
+    position: fixed;
+    inset: 0;
+    z-index: 10050; /* above #chatbot_ui_container's 9999 */
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+}
+
+/* Heavy enough that the transcript's light bubbles go darker than the panel.
+   At 0.62 they scrimmed to roughly #464749, which is *lighter* than the panel
+   surface, so the depth cue inverted and the sheet read as part of the backdrop. */
+.mica-confirm__scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(10, 10, 12, 0.82);
+    animation: mica-confirm-scrim 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mica-confirm__panel {
+    position: relative;
+    background: var(--mica-raised, #3F4042);
+    color: var(--mica-ink, #F2F3F5);
+    /* A dark shadow on a dark canvas carries no depth on its own, so the lift comes
+       from the surface value plus a light top edge. */
+    border-top: 1px solid #63656A;
+    border-radius: 16px 16px 0 0;
+    padding: 22px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -18px 44px rgba(0, 0, 0, 0.55);
+    animation: mica-confirm-rise 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mica-confirm__title {
+    margin: 0 0 8px;
+    font-size: 1.125rem;
+    line-height: 1.3;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+}
+
+.mica-confirm__body {
+    margin: 0 0 20px;
+    font-size: 0.9375rem;
+    line-height: 1.55;
+    color: var(--mica-ink-soft, #B9BEC6);
+    max-width: 60ch;
+}
+
+.mica-confirm__body p { margin: 0 0 8px; }
+.mica-confirm__body p:last-child { margin-bottom: 0; }
+
+.mica-confirm__actions {
+    display: flex;
+    flex-direction: column-reverse; /* primary sits lowest = closest to the thumb */
+    gap: 10px;
+}
+
+.mica-btn {
+    min-height: 48px;
+    padding: 12px 18px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    font: inherit;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 140ms ease-out, border-color 140ms ease-out;
+}
+
+.mica-btn:disabled { opacity: 0.6; cursor: default; }
+
+.mica-btn--primary {
+    background: var(--mica-accent, #2846E4);
+    color: #fff;
+}
+.mica-btn--primary:hover:not(:disabled) { background: #1E39C8; }
+
+.mica-btn--danger {
+    background: var(--mica-danger-strong, #B8332C);
+    color: #fff;
+}
+.mica-btn--danger:hover:not(:disabled) { background: #9E2A24; }
+
+.mica-btn--ghost {
+    background: transparent;
+    color: var(--mica-ink, #F2F3F5);
+    border-color: var(--mica-hairline-strong, #5A5A5A);
+}
+.mica-btn--ghost:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); }
+
+@media (min-width: 640px) {
+    .mica-confirm { justify-content: center; align-items: center; padding: 24px; }
+
+    .mica-confirm__panel {
+        width: 100%;
+        max-width: 30rem;
+        border-radius: 14px;
+        border: 1px solid #63656A;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+        animation-name: mica-confirm-appear;
+    }
+
+    .mica-confirm__actions {
+        flex-direction: row;
+        justify-content: flex-end;
+    }
+
+    .mica-confirm__actions .mica-btn { min-width: 8.5rem; }
+}
+
+@keyframes mica-confirm-scrim {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes mica-confirm-rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes mica-confirm-appear {
+    from { opacity: 0; transform: translateY(8px) scale(0.985); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mica-confirm__scrim,
+    .mica-confirm__panel { animation-duration: 1ms; }
+}
