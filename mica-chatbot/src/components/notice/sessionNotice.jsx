@@ -27,7 +27,7 @@ export function SessionNotice({ reason, tone = "info", contact = true }) {
                 <span className="mica-notice__icon" aria-hidden="true">
                     <Icon size={22} />
                 </span>
-                <p className="mica-notice__headline">{reason}</p>
+                <h2 className="mica-notice__headline">{reason}</h2>
                 {contact && (
                     <p className="mica-notice__aside">
                         If you think this is a mistake, contact the study team.

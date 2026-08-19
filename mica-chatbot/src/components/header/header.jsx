@@ -7,7 +7,7 @@ import useAuth from '../../Hooks/useAuth.jsx';
 import ConfirmSheet from '../confirm/confirmSheet.jsx';
 
 export default function Header() {
-    const { clearMessages, chatContext, sessionState, blockSession, pending } = useContext(ChatContext);
+    const { clearMessages, chatContext, sessionState, reportSessionError, clearSessionError, pending } = useContext(ChatContext);
     const { logout } = useAuth();
     const [confirmEnd, setConfirmEnd] = useState(false);
     const [ending, setEnding] = useState(false);
@@ -24,6 +24,7 @@ export default function Header() {
 
     const endSession = async () => {
         setEnding(true);
+        clearSessionError();
         const mica = mica_jsmo_module;
         if (mica) {
             try {
@@ -52,15 +53,20 @@ export default function Header() {
                             // the login page with no message and no way to retry (docs 14 D16).
                             //
                             // It is also not MICA's line to deliver: a finalization failure is the
-                            // study system reporting a problem, so it goes to the session notice
-                            // rather than into the counselor's bubble (critique 2026-08-19, P0).
+                            // study system reporting a problem, so it is rendered as a system row
+                            // rather than in the counselor's bubble (critique 2026-08-19, P0).
+                            //
+                            // Reported, NOT blocked. Blocking would hide the transcript and remove
+                            // this button, which is the "no way to retry" half of D16 all over
+                            // again. The session and the messages still exist; only the save failed,
+                            // so End Session stays pressable.
                             console.error('Error ending session:', err);
                             setEnding(false);
                             setConfirmEnd(false);
                             const msg = typeof err === 'string' && err.trim() !== ''
                                 ? err
                                 : 'Your session could not be finalized. Please contact the study team.';
-                            blockSession(msg);
+                            reportSessionError(msg);
                         }
                     );
                 } else {

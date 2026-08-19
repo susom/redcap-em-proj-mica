@@ -55,6 +55,12 @@ export const ChatContextProvider = ({ children }) => {
     const [pending, setPending] = useState(false);
     // The last turn failed and can be retried. { index, message }
     const [turnError, setTurnError] = useState(null);
+    // A session-level failure that is NOT terminal: the session and the messages
+    // still exist, only an operation on them failed. Kept separate from
+    // `blocked` on purpose - blocking would take the transcript and the End
+    // Session button away, which is exactly the "no way to retry" half of
+    // docs 14 D16.
+    const [sessionError, setSessionError] = useState(null);
 
     const apiContextRef = useRef(apiContext);
     const chatContextRef = useRef(chatContext);
@@ -70,7 +76,12 @@ export const ChatContextProvider = ({ children }) => {
         setSessionState('blocked');
         setPendingBoth(false);
         setTurnError(null);
+        setSessionError(null);
     };
+
+    /** Report a recoverable, session-level failure without tearing the session down. */
+    const reportSessionError = (message) => setSessionError(message || null);
+    const clearSessionError = () => setSessionError(null);
 
     const updateApiContext = (newContext) => {
         apiContextRef.current = newContext;
@@ -161,6 +172,7 @@ export const ChatContextProvider = ({ children }) => {
         setMessages([]);
         setSessionId(newSessionId);
         setTurnError(null);
+        setSessionError(null);
         setPendingBoth(false);
 
         // Filter apiContext to keep only "system" roles
@@ -317,6 +329,7 @@ export const ChatContextProvider = ({ children }) => {
             showRatingPO, setShowRatingPO, msgCount, setMsgCount,
             sessionId, setSessionId, callAjax, chatContext, updateChatContext, updateVote,
             sessionState, blockedReason, blockSession,
+            sessionError, reportSessionError, clearSessionError,
             pending, turnError, retryTurn,
         }}>
             {children}

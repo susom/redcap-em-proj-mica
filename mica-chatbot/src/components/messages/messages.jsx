@@ -10,7 +10,7 @@ export const Messages = () => {
     const newQaRef = useRef(null);
     const end_session_text = window.mica_jsmo_module.end_session_text || 'Please click "End Session" to ensure compensation for your participation.';
 
-    const { sessionState, blockedReason, pending, turnError, retryTurn } = chat_context;
+    const { sessionState, blockedReason, pending, turnError, retryTurn, sessionError } = chat_context;
 
     const introMessage = {
         user_content: null,
@@ -96,6 +96,17 @@ export const Messages = () => {
                     );
                 })}
             </div>
+            {/* A session-level failure that is not terminal - today, a finalization
+                failure. The transcript stays, End Session stays pressable, and the
+                message is not delivered in MICA's voice. */}
+            {sessionError && (
+                <div className="mica-session-error" role="alert">
+                    <p className="mica-turn-error__text">
+                        <ExclamationCircle size={16} aria-hidden="true" />
+                        <span>{sessionError}</span>
+                    </p>
+                </div>
+            )}
             {chat_context.chatContext && chat_context.chatContext.length > 0 && (
                 <dl className="soft_text floating-message">
                     <dd>{end_session_text}</dd>

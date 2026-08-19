@@ -235,3 +235,17 @@
     opacity: 0.55;
     cursor: default;
 }
+
+/* Session-level failure (e.g. finalization). Same non-counselor treatment as a
+   failed turn, but it belongs to the session rather than to one message, so it
+   sits after the transcript and is centred in the column. */
+.mica-session-error {
+    clear: both;
+    max-width: 42rem;
+    margin: 18px auto 0;
+    padding: 12px 14px;
+    background: rgba(255, 155, 147, 0.10);
+    border: 1px solid rgba(255, 155, 147, 0.34);
+    border-radius: 10px;
+    color: #FFC9C4;
+}

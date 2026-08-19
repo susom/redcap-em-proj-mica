@@ -40,9 +40,14 @@ A `sessionState` of `'blocked'` in `ChatContext`, set by `useAuth` from
 - `Footer` returns `null`, so there is no composer to type into.
 - The `End Session` control is removed from the header, because there is no session to end.
 
-`blockSession()` is also now the destination for a `completeSession` failure (previously
-appended in MICA's voice) and for a missing bootstrap (previously a silent `return` that
-left a greeting and a live composer that could never send).
+`blockSession()` is also the destination for a **missing bootstrap** — previously a silent
+`return` that left a greeting and a live composer which could never send. Note this also
+means `npm run dev` with no `window.mica_bootstrap` now shows the notice instead of a chat;
+that is correct, not a bug. If `$record` can ever be empty on a legitimate first load of a
+chat-host survey, this turns a bad-but-recoverable state into a dead end — worth confirming
+against a real survey link.
+
+A `completeSession` failure is **not** routed here; see §4a.
 
 **The rule this encodes: system state and error state never speak as the counselor.**
 
@@ -130,6 +135,20 @@ message. All of those reduce to one actionable sentence, and anything that looks
 payload rather than prose falls back to *"That didn't reach MICA. Check your connection and
 try again."* A participant is never shown a raw JSON blob.
 
+### 4a. A finalization failure is reported, not terminal
+
+A `completeSession` failure is a different animal from a gate: the session existed and the
+messages exist, only the save failed. Routing it through `blockSession()` would hide the
+transcript and remove the `End Session` button — which is precisely the "no way to retry"
+half of what docs 14 D16 set out to fix. So it gets its own non-terminal state,
+`sessionError`, rendered as a `role="alert"` system row after the transcript, in the same
+non-counselor treatment as a failed turn.
+
+Verified: on failure the transcript stays (6 message rows), the composer stays, `End
+Session` stays present **and enabled**, the confirm dialog closes, no session notice
+appears, the row carries no `MICA AI` label — and pressing `End Session` again completes
+and reaches the survey link.
+
 ---
 
 ## 5. Composer and controls
@@ -185,11 +204,14 @@ Rendered from the **built** `mica-chatbot/dist` bundle with the REDCap
 | Gate, fresh participant | notice shown; intro, nag, composer and End Session all gone; 0 bubbles |
 | Gate, returning participant (stale cached identity) | same — **the bypass is closed in the UI** |
 | Confirm dialogs | `aria-modal`, labelled, focus on confirm, Esc closes and restores focus |
+| Finalization failure | transcript kept, composer kept, End Session present **and enabled**, `role="alert"`, no MICA label, retry completes |
+| Heading structure when blocked | `h1` "MICA AI Chatbot" → `h2` the notice sentence |
 | Page errors | none |
 
 **Not verified:** REDCap's own CSS cascade on a real survey page, real iOS keyboard and
-viewport behaviour, live server responses on the ajax paths (transport stubbed), and the
-`completeSession` failure path against a real project.
+viewport behaviour, and live server responses on the ajax paths (the transport is stubbed,
+so failures were induced at the JSMO boundary in exactly the shapes `MICA.php` and
+`jsmo.js` produce, rather than by a real server).
 
 ---
 
@@ -216,6 +238,22 @@ These are real, and they belong to other passes rather than this one:
   `eslint-disable-next-line` and that explanation.
 - **`PostSession` is still unreachable** (`endSession` uses `window.location.href`), and the
   compensation reminder still sits under a failed turn.
+
+## Branch note
+
+This branch was cut while a concurrent session was committing on `mica-phase-3`, and that
+session's stage-0 commit `c939851` ("feat(stage-0): schema validation over the pinned
+handoff schemas") landed **on this branch** while local `mica-phase-3` stayed at `845d1bd`.
+`c939851` contains no `mica-chatbot/` files, so the two changes do not overlap — but a PR
+opened from here will show the stage-0 work as part of the diff. **Fast-forward
+`mica-phase-3` to `c939851` first**, after which the harden commits are the only delta.
+
+Re-basing this branch onto `845d1bd` was deliberately not done: checking that commit out
+would delete `vendor/` and `tools/` from the working tree, and `MICA.php` now hard-requires
+`vendor/autoload.php`.
+
+`.impeccable/critique/` is committed (the critique this branch answers, so the reasoning
+travels with the code). `.impeccable/config.local.json` is deliberately left untracked.
 
 ## Lint config
 
