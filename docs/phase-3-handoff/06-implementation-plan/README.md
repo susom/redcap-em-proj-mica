@@ -10,9 +10,9 @@ acceptance checklist.
 
 | Stage | File | Depends on | Status |
 |---|---|---|---|
-| 0 — Foundations | [`stage-0-foundations.md`](stage-0-foundations.md) | — | not started |
-| 1 — Counselor v2 turn contract | [`stage-1-turn-contract.md`](stage-1-turn-contract.md) | 0 | not started |
-| 2 — R01 session engine + frontend | [`stage-2-session-engine.md`](stage-2-session-engine.md) | 1 | not started |
+| 0 — Foundations | [`stage-0-foundations.md`](stage-0-foundations.md) | — | **in progress** — 0.5b done; 0.1–0.5 + 0.6 not started |
+| 1 — Counselor v2 turn contract | [`stage-1-turn-contract.md`](stage-1-turn-contract.md) | 0 | **in progress** — parts of 1.6 done (see below); 1.1–1.5 not started |
+| 2 — R01 session engine + frontend | [`stage-2-session-engine.md`](stage-2-session-engine.md) | 1 | not started — auth half (2.3) partly done, see `10-auth-implementation-pid257.md` |
 | 3 — Transcript finalization + scan queue | [`stage-3-transcripts-and-queue.md`](stage-3-transcripts-and-queue.md) | 2 | not started |
 | 4 — SafetyScan runner | [`stage-4-safetyscan-runner.md`](stage-4-safetyscan-runner.md) | 3 | not started |
 | 5 — RA dashboard | [`stage-5-ra-dashboard.md`](stage-5-ra-dashboard.md) | 4 | not started |
@@ -20,6 +20,72 @@ acceptance checklist.
 
 Update the Status column (`not started / in progress / blocked / done`) as
 work proceeds; note blockers inline with the open-question number.
+
+### State as of 2026-08-19
+
+Work landed on `mica-phase-3` so far came in through the live-defect pass
+([`../14-live-defects.md`](../14-live-defects.md)) and the auth implementation, not
+through the stage sequence, so the mapping needs stating explicitly:
+
+**Done, and it belongs to a stage:**
+
+- **0.5b** — D1 fixed (`e407183`): `llm-model` choices replaced with real registry
+  aliases + `assertModelIsRegistered()` before every `callAI()`. PID 257 currently
+  holds `claude-opus-4-7`, which matches the dev registry. Production value still
+  unverified (two read-only checks in `14 §D1`).
+- **Part of 1.6** — server-derived participant identity (`440ba41`, closes D2 and the
+  1.6 identity item), `filterLogic` no longer interpolates user input (D3),
+  restore rebuilds model context (D8, `b2c3c80`), the empty-context send hang (D7/D22,
+  `c98b161`), fail-closed `saveData` checks (D11, D16).
+- **Part of 2.3 (auth)** — native Survey Login scoped to the two MICA host surveys,
+  applied and verified on PID 257 ([`../10-auth-implementation-pid257.md`](../10-auth-implementation-pid257.md)).
+  The module-side deletions (`loginUser`/`verifyEmail`/`generateOneTimePassword`/
+  `pages/chatbot.php`) are still pending and still in the Stage 2 scope.
+
+**Done, and it belongs to no stage** (arrived as a study-operations request):
+automatic arm placement — [`../15-arm-materialization.md`](../15-arm-materialization.md).
+
+**Still open from 0.6 / 1.6, measured against the tree on 2026-08-19:**
+`config.json` still carries the three `twilio-*` system settings,
+`chatbot_system_context_session_2..7`, `session_length_days`,
+`number_session_callback`, and the `gpt-*` sampling params;
+`composer.json` still requires `php-ai/php-ml` + `twilio/sdk` and nothing else;
+`no-auth-ajax-actions` still lists `login` and `verifyEmail`; there is no
+`handoff/`, no `tests/`, and no `pilot-final` tag.
+
+**Corrections to the stage files, from measurement:**
+
+1. **Stage 0.1 is undone and is the highest-value cheap step.** `git tag` returns
+   empty. `main` is at `5e56073` (2026-07-14); `mica-phase-3` is 13 commits ahead. The
+   pilot is pinned to nothing, so every commit above is an unpinned potential pilot
+   regression. Tag first.
+2. **Stage 0.4's "`vendor/` ships with the module" contradicts the tree.**
+   `.gitignore` has `*vendor` and `git ls-files vendor` returns 0 files, while
+   `MICA.php`'s vendor require is deliberately conditional (that conditional is what
+   fixed the enable failure). The moment `SchemaValidator` hard-depends on
+   `opis/json-schema`, a missing `vendor/` stops being harmless and becomes a fatal
+   inside the turn path. Decide before `composer require`: commit `vendor/`, or keep it
+   ignored and add a documented build step plus a loud startup check. Not a detail.
+3. **Stage 1's dev prerequisite is unmet and fails *silently*.** The dev SecureChatAI
+   registry holds exactly one alias, `claude-opus-4-7` (`api-settings` verified
+   2026-08-19). `SecureChatAI.php:399`'s `$schemaModels` allowlist is OpenAI-only, so
+   `json_schema` is `unset()` with no error — a counselor-v2 turn would come back as
+   free text and every response-schema gate would fail for the wrong reason. A
+   `gpt-4-1`/`gpt-5-4` `api-settings` row is needed. This gates exactly one acceptance
+   item (Stage 1's live smoke); everything else in Stages 0–1 tests green against a
+   stub through the existing `setSecureChatInstance()` seam, so do **not** sequence
+   Stage 1 behind provisioning.
+4. **D4 moves out of Stage 6's security pass into the near-term list.**
+   `pages/sessionSelector.php:5-11` runs `completeSession` before
+   `validatePermissions()`, with no CSRF token, an unsanitized `$_POST['participant_id']`,
+   and an unescaped echo at `:57`. Same class as D2/D3, which are fixed; leaving it
+   until Stage 6 leaves an unauthenticated caller able to close any participant's session.
+5. **The apostrophe/e-mail question (D3) needs no study decision.** The stricter
+   validation that rejects `o'brien@example.com` exists only on `mica-phase-3`, not on
+   `main`, and Stage 2.3 deletes `loginUser`/`verifyEmail` outright in favour of native
+   Survey Login. It can only ever affect code already scheduled for deletion — provided
+   the pilot deployment tracks `main`/`pilot-final` and not this branch. Confirm that
+   when tagging (correction 1) and the question closes.
 
 ## Working conventions
 
