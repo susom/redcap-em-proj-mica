@@ -10,8 +10,9 @@ they are broken now and do not need the phase-3 architecture to be fixed.
 > Playwright E2E run as an end user *before* it is fixed, and the failing test
 > kept. Except where a defect is explicitly marked **Observed**, the evidence is
 > static analysis with line-level citations — treat those symptoms as predicted,
-> not observed. D1 has a partial observation from the log tables (see below);
-> nothing has yet been reproduced through the UI, which is itself blocked by D1.
+> not observed. **D1, D9 and D22 were reproduced through the real participant
+> path with Playwright on 2026-08-19** (see D1's E2E section); the rest are still
+> static findings.
 
 Refs are `MICA.php` unless another file is named. SPA paths are relative to
 `mica-chatbot/`. `SCA/` = `modules-local/secure_chat_ai_v9.9.9/`.
@@ -132,10 +133,85 @@ confirming that a caller omitting `session_id` gets no turn log at all
    `claude-haiku-4-5` passes, `gpt-4o` is blocked, empty is blocked with a
    distinct message.
 
+#### Playwright E2E confirmation (2026-08-19)
+
+Run against the real participant path on PID 257: `manual-test-auth.php 257
+setup` → open the ED-session survey link → Survey Login (`last_name =
+Testerson`) → chat UI. Desktop (1400×950) and iPhone 13 viewports.
+
+Confirmed working:
+
+- Survey Login gate appears and is **scoped** — it prompts on
+  `mica_ed_session` only, exactly as [`10`](10-auth-implementation-pid257.md)
+  intends.
+- The SPA mounts and renders correctly on both viewports: header, MICA avatar,
+  intro bubble, composer, End Session (screenshots in the run artifacts).
+- **D1 is fixed, verified through MICA's own AJAX endpoint inside the
+  authenticated survey session** — i.e. through `handleUserInput()` →
+  `assertModelIsRegistered()` → `callAI()` → `formatResponse()` →
+  `logMICAQuery()`, over real HTTP, not a direct provider call:
+
+  ```json
+  {"response":{"role":"assistant","content":"OK"},
+   "id":null,"model":"claude-haiku-4-5-20251001",
+   "usage":{"prompt_tokens":14,"completion_tokens":4,"total_tokens":18},
+   "user_id":"MICATEST01","query":{"role":"user","content":"Reply with the single word OK."}}
+  ```
+
+  Both transcript rows persisted with `mica_id = MICATEST01`. This also
+  confirms empirically that `id` is always `null`
+  ([`13`](13-securechatai-current-state-delta.md) §1.3).
+
+Confirmed broken, by observation:
+
+- **D9** — `typeof window.renderMicaApp === "undefined"` and
+  `#mica-hide-native` was still in the DOM after mount, exactly as predicted.
+- **D22 (new — see below)** — no message can be sent through the UI at all.
+
 **Still outstanding:** the production `llm-model` value and check 2 above — I can
-only measure this instance. And a UI-level Playwright reproduction is still owed
-per the process note; the provider-boundary reproduction above is narrower than a
-participant-path E2E.
+only measure this instance.
+
+### D22 — On PID 257 the participant cannot send a message at all, silently
+
+**Severity:** blocking for any UI-level testing on PID 257
+**Status:** reproduced E2E 2026-08-19 (desktop + mobile)
+
+Typing a message and pressing Enter *or* clicking the send arrow does
+**nothing**: the message is not echoed, no AJAX request is made, no error is
+shown or logged, and the spinner does not even start. Root cause chain, each link
+observed in the live page:
+
+1. PID 257 has no `participant_name` / `participant_email` field, so the survey
+   bootstrap ships `name: null`, `email: null` (`MICA.php:299-305`). Observed:
+   `{"participant_id":"MICATEST01","name":null,"email":null,"current_session":null,
+   "session_start_time":null,"initial_system_context":[]}`.
+2. `useAuth.jsx:17` hard-requires `b.name` and aborts before writing Dexie.
+   Observed: `indexedDB.databases()` returned `[]` — the `user_info` database is
+   never created.
+3. `Chat.jsx:46-48` `addMessage()` does `const user = await getCurrentUser();
+   if (user[0]?.id) { … }` with no `else`. With no Dexie store the gate is
+   falsy, so the entire body — echo, `apiContext` update, and the `callAI` call —
+   is skipped **with no diagnostic**.
+
+This is distinct from D7 (the `.pop()` chain): execution never reaches the
+system-context injection, because the message is dropped one step earlier. It is
+also why D1 could not be observed through the chat bubble and had to be verified
+at MICA's AJAX endpoint instead.
+
+**Fix direction:** this disappears once participant identity is server-derived
+and the Dexie gate is deleted (`07` decision 8 / Stage 1 §1.6). Until then,
+`addMessage()` needs an `else` branch that surfaces the failure instead of
+returning silently. Note the underlying cause — pilot fields absent from the R01
+structure — is Stage 2 scope, and validates the gap
+[`09-pid-257-structure-audit.md`](09-pid-257-structure-audit.md) flagged.
+
+**Also noted during the run:** `scripts/manual-test-auth.php` teardown deletes
+**every** response-less participant row in the project
+(`manual-test-auth.php:118-121`), not only the test record's. It removed five
+pre-existing orphan rows for surveys 1315/1316. No response data was lost (those
+rows had none), but previously generated survey links for them are now dead. The
+docstring says "delete the test participant and all traces" — worth narrowing the
+`DELETE` to the test record.
 
 **Guard against recurrence:** validate the configured alias against
 `getAvailableModels()` (`SCA/SecureChatAI.php:578`) at turn time or on save, and
@@ -296,13 +372,18 @@ false, which means:
 
 1. ~~**D1 alone, first**~~ — **done in dev 2026-08-19** (config choices + PID 257
    value + an alias guard). Production value still to be confirmed.
-2. **Record the Playwright baseline** (welcome → login → OTP → chat turn → end
-   session, desktop + mobile) *after* D1 and *before* anything else. Stage 0
-   §0.6 depends on that baseline existing.
-3. **D2 + D3 + D4** as one security pass — they share the "trust the client's
+2. **D22 next** — until it is fixed, no UI-level chat test is possible on PID
+   257, so the Stage 0 §0.6 baseline cannot be recorded there. Either add an
+   `else` branch to `addMessage()` and populate `name` from the R01 fields, or
+   bring forward the server-derived-identity change from Stage 1 §1.6 (which
+   removes the gate entirely). The Survey Login gate and the SPA mount are
+   already confirmed working, so this is the only blocker left on that path.
+3. **Record the Playwright baseline** (login → chat turn → end session, desktop +
+   mobile). Stage 0 §0.6 depends on that baseline existing.
+4. **D2 + D3 + D4** as one security pass — they share the "trust the client's
    participant id" root cause, and D2's fix is the same edit the SOW payload
    change needs.
-4. **D6, D7, D8** — participant-visible behavior; each needs a failing E2E test
+5. **D6, D7, D8** — participant-visible behavior; each needs a failing E2E test
    first.
-5. **D5** with the Stage 0 §0.6 logging cleanup.
-6. **D9-D21** folded into Stage 0 §0.6 as behavior-preserving cleanup.
+6. **D5** with the Stage 0 §0.6 logging cleanup.
+7. **D9-D21** folded into Stage 0 §0.6 as behavior-preserving cleanup.
