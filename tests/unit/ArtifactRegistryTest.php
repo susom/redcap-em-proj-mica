@@ -24,8 +24,10 @@ final class ArtifactRegistryTest extends TestCase
     protected function tearDown(): void
     {
         foreach ($this->temps as $dir) {
-            foreach (glob("$dir/*") ?: [] as $f) {
-                unlink($f);
+            // scandir, not glob() - glob skips dotfiles, and one of these fixtures plants a
+            // .DS_Store, which would leave the directory non-empty and rmdir() warning.
+            foreach (array_diff(scandir($dir) ?: [], ['.', '..']) as $f) {
+                unlink("$dir/$f");
             }
             rmdir($dir);
         }
@@ -139,6 +141,17 @@ final class ArtifactRegistryTest extends TestCase
         $this->expectException(ArtifactIntegrityException::class);
         $this->expectExceptionMessageMatches('/Unpinned file/');
         (new ArtifactRegistry($dir))->verifyAll();
+    }
+
+    public function testOperatingSystemJunkDoesNotFailTheDirectoryCheck(): void
+    {
+        // A developer opening handoff/ in Finder must not be able to block session start once
+        // verifyAll() is wired into the Stage 6 launch-readiness gate.
+        $dir = $this->copyHandoff();
+        file_put_contents($dir . '/.DS_Store', "\x00\x01junk");
+
+        (new ArtifactRegistry($dir))->verifyAll();
+        $this->assertFileExists($dir . '/.DS_Store', 'the check must not delete anything either');
     }
 
     public function testMissingFileFailsClosed(): void

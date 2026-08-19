@@ -122,7 +122,15 @@ class ArtifactRegistry
         $expected = array_column($this->manifest(), 'file');
         $expected[] = self::MANIFEST;
 
-        $present = array_values(array_diff(scandir($this->dir) ?: [], ['.', '..']));
+        // Dotfiles are excluded on purpose. Every pin is a plain basename and none begins with a
+        // dot, so a dotfile can never be mistaken for an artifact - whereas a `.DS_Store` from a
+        // developer opening the folder in Finder would otherwise be enough to fail a launch-
+        // readiness check and refuse to start a session. What this check is for is a plausible
+        // extra - a stray `..._v3.txt` that someone later wires up, or a botched re-vendoring.
+        $present = array_values(array_filter(
+            scandir($this->dir) ?: [],
+            static fn($f) => !str_starts_with($f, '.')
+        ));
         $unpinned = array_diff($present, $expected);
         if ($unpinned) {
             throw new ArtifactIntegrityException(

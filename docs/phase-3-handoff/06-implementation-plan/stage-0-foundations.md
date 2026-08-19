@@ -206,24 +206,46 @@ Contract as specified, plus:
 - `getJson()` on an artifact pinned as text throws `\InvalidArgumentException`,
   not `ArtifactIntegrityException`: the artifact is fine, the caller is wrong,
   and a caller bug must not be catchable as an integrity failure.
+- **Dotfiles are excluded from the unpinned-file check.** Every pin is a plain
+  basename and none begins with a dot, so a dotfile can never be mistaken for an
+  artifact — whereas a `.DS_Store` from a developer opening `handoff/` in Finder
+  would otherwise be enough to fail the Stage 6 launch-readiness gate and refuse
+  to start a session. The check exists to catch a *plausible* extra: a stray
+  `..._v3.txt` someone later wires up, or a botched re-vendoring.
 
-**28 tests, green on PHP 8.4 (host) and 8.3 (the container REDCap runs on).**
-The suite was mutation-checked: replacing the `hash_equals` comparison with
-`if (false)` fails 3 tests. That check found a weak assertion — the
-empty-file test had been passing on an incidental JSON-decode error rather than
-on the pin — which is now asserted on the pin message.
+**29 tests, green on PHP 8.4 (host) and 8.3 (the container REDCap runs on),
+via `composer test`.** The suite was mutation-checked: replacing the
+`hash_equals` comparison with `if (false)` fails 3 tests. That check found a weak
+assertion — the empty-file test had been passing on an incidental JSON-decode
+error rather than on the pin — which is now asserted on the pin message.
+
+`MICA.php` gained one line (an explicit `require_once` for the registry, so the
+integrity gate does not depend on the composer autoloader being present), so the
+existing full-path E2E was re-run against it: **23/23, unchanged** — Survey Login
+gate, chatbot load, three-turn conversation with context retained, single JS/CSS
+bundle, desktop + iPhone 13. The one known gap is also unchanged: End Session
+still reports that the project is not configured for MICA sessions, which is the
+Stage 2 / [`09`](../09-pid-257-structure-audit.md) G1/G4 work, not a regression.
 
 ## Open decisions this work surfaced
 
 1. **`vendor/`** (blocks 0.4). `.gitignore` has `*vendor` and no vendor file is
    tracked, while `MICA.php`'s vendor require is deliberately conditional — that
-   conditional is what fixed the module-enable fatal. PHPUnit is dev-only so
-   nothing is forced yet, but `opis/json-schema` is a *runtime* dependency: the
-   day `SchemaValidator` needs it, a missing `vendor/` stops being harmless and
-   becomes a fatal inside the counselor turn path. Either commit `vendor/`
-   (normal for a REDCap EM, which deploys by directory copy) or keep it ignored
-   with a documented build step and a loud startup check. Decide before
-   `composer require`.
+   conditional is what fixed the module-enable fatal. `opis/json-schema` is a
+   *runtime* dependency: the day `SchemaValidator` needs it, a missing `vendor/`
+   stops being harmless and becomes a fatal inside the counselor turn path.
+   Either commit `vendor/` (normal for a REDCap EM, which deploys by directory
+   copy) or keep it ignored with a documented build step and a loud startup
+   check. Decide before `composer require`.
+
+   **Whichever is chosen, what ships must be built `--no-dev`.** Adding PHPUnit
+   pulled in 27 dev packages, and because `MICA.php` requires
+   `vendor/autoload.php` when present, the running module now registers autoload
+   rules for `phpunit`, `nikic/php-parser` and `sebastian/*` on every page load
+   that touches MICA. Harmless on a dev box; committing `vendor/` as it currently
+   sits on disk would put a test framework — a code-execution surface — on
+   production REDCap. This is the ordinary reason EMs ship `--no-dev`, and it is
+   the constraint that makes the question three-way rather than two-way.
 2. **PSR-12 baseline** (blocks the `composer test` checklist line). 0.5 specifies
    `phpcs --standard=PSR12 classes/ MICA.php`, which on today's legacy `MICA.php`
    would be red from the first run and stay red — the opposite of "every stage
