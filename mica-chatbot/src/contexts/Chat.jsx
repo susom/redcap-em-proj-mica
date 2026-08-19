@@ -44,8 +44,18 @@ export const ChatContextProvider = ({ children }) => {
     };
 
     const addMessage = async (message) => {
+        if (!message || !message.role) {
+            console.error('MICA: addMessage called without a usable message', message);
+            return;
+        }
         const user = await getCurrentUser()
-        if(user[0]?.id) {
+        if(!user?.[0]?.id) {
+            // Do not fail silently here - callAjax checks readiness up front and reports to the
+            // participant; this is the last-resort guard (docs 14 D22).
+            console.error('MICA: dropping message - no participant identity cached', message.role);
+            return;
+        }
+        {
             const index = chatContextRef.current.length;
             const updatedApiContext = [
                 ...apiContextRef.current,
@@ -115,10 +125,36 @@ export const ChatContextProvider = ({ children }) => {
     };
 
     const callAjax = async (payload, callback) => {
+        // Readiness check. Without it a missing cached identity dropped the message with no echo,
+        // no request and no error - the send button simply did nothing (docs 14 D22).
+        const currentUser = await getCurrentUser();
+        if (!currentUser?.[0]?.id) {
+            console.error('MICA: cannot send - no participant identity cached for this session', window.mica_bootstrap);
+            await updateChatContext([
+                ...chatContextRef.current,
+                {
+                    user_content: payload.content,
+                    assistant_content: "Sorry - this chat session could not be started. Please reload the page, and contact the study team if this keeps happening.",
+                    timestamp: new Date().getTime(),
+                },
+            ]);
+            if (callback) callback();
+            return;
+        }
+
         if(apiContextRef.current.length === 0){
-            const initial_system_context = window.mica_jsmo_module.getInitialSystemContext().pop();
-            console.log("initial apiContext, if empty , inject system context before first query", initial_system_context);
-            await addMessage(initial_system_context);
+            // getInitialSystemContext() may be empty (no session context resolved server-side) or
+            // carry several entries (general context plus a catch-up summary). The previous .pop()
+            // both crashed on the empty case and silently discarded all but the last entry
+            // (docs 14 D7 and D8).
+            const initial = window.mica_jsmo_module.getInitialSystemContext();
+            const contexts = Array.isArray(initial) ? initial : (initial ? [initial] : []);
+            if (!contexts.length) {
+                console.warn('MICA: no initial system context was provided for this session');
+            }
+            for (const ctx of contexts) {
+                if (ctx && ctx.role && ctx.content) await addMessage(ctx);
+            }
         }
 
         await addMessage({ role: 'user', content: payload.content });

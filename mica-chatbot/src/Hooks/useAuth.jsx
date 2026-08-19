@@ -12,7 +12,10 @@ function useAuth() {
     useEffect(() => {
         if (authed) return;
         const b = window.mica_bootstrap;
-        if (!b || !b.participant_id || !b.name) return;
+        // `name` is optional: it comes from the pilot-only `participant_name` field, which does not
+        // exist in the R01 project structure. Requiring it here aborted the whole bootstrap, so no
+        // user was ever cached and every message was silently dropped downstream (docs 14 D22).
+        if (!b || !b.participant_id) return;
 
         // Mirror verifyEmail() side-effects
         setAuthed(true);
@@ -47,18 +50,21 @@ function useAuth() {
         let code = payload?.code;
         let session_start_time = payload?.session_start_time;
 
-        if(participant_id && name){
+        if(participant_id){
             let data = {
-                id: parseInt(participant_id),
-                name: name,
+                // Keep REDCap's record id verbatim. parseInt() turned any non-numeric record id
+                // into NaN, which is falsy and failed the identity gate in Chat.addMessage the
+                // same way a missing user did (docs 14 D22).
+                id: participant_id,
+                name: name ?? null,
                 code: code,
-                session_start_time : session_start_time, 
+                session_start_time : session_start_time,
                 timestamp: Date.now()
             }
             await user_info.current_user.clear(); //There should only ever be one cached user in a browser
             await user_info.current_user.put(data);
         } else {
-            console.log('unable to cache user... skipping')
+            console.error('MICA: no participant_id in the bootstrap - cannot cache user', payload)
         }
     }
 

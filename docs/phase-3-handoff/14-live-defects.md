@@ -174,7 +174,8 @@ only measure this instance.
 ### D22 — On PID 257 the participant cannot send a message at all, silently
 
 **Severity:** blocking for any UI-level testing on PID 257
-**Status:** reproduced E2E 2026-08-19 (desktop + mobile)
+**Status: FIXED 2026-08-19 — reproduced, fixed, and re-verified E2E (desktop +
+mobile). See "Fix and verification" below.**
 
 Typing a message and pressing Enter *or* clicking the send arrow does
 **nothing**: the message is not echoed, no AJAX request is made, no error is
@@ -198,12 +199,55 @@ system-context injection, because the message is dropped one step earlier. It is
 also why D1 could not be observed through the chat bubble and had to be verified
 at MICA's AJAX endpoint instead.
 
-**Fix direction:** this disappears once participant identity is server-derived
-and the Dexie gate is deleted (`07` decision 8 / Stage 1 §1.6). Until then,
-`addMessage()` needs an `else` branch that surfaces the failure instead of
-returning silently. Note the underlying cause — pilot fields absent from the R01
-structure — is Stage 2 scope, and validates the gap
-[`09-pid-257-structure-audit.md`](09-pid-257-structure-audit.md) flagged.
+A **second, independent** cause was found while fixing this: `cacheUser()` stored
+`id: parseInt(participant_id)` (`useAuth.jsx`). Any non-numeric REDCap record id
+becomes `NaN`, which is falsy and fails the very same gate — so even with a
+`name` present, a project using non-numeric record ids would have been dead in
+exactly the same silent way.
+
+#### Fix and verification
+
+Four changes, all client-side; no wire-contract change, so this is independent of
+the Stage 1 §1.6 payload work:
+
+1. `useAuth.jsx` — the bootstrap no longer requires `b.name`. It is a pilot-only
+   field (`participant_name`) that does not exist in the R01 structure; requiring
+   it aborted the whole bootstrap.
+2. `useAuth.jsx` — `cacheUser()` keeps the record id verbatim instead of
+   `parseInt()`-ing it, and no longer requires `name`. Its failure branch is now
+   `console.error`, not `console.log`.
+3. `Chat.jsx` — `callAjax()` checks readiness **up front**. If no identity is
+   cached it echoes the participant's message, renders a plain-language error in
+   the transcript, and invokes the callback so the spinner clears — instead of
+   dropping everything silently.
+4. `Chat.jsx` — the `.pop()` on the initial system context is replaced by a loop
+   over all entries, guarded for the empty case. **This also fixes D7 and D8**,
+   which live on the same two lines: the empty case no longer throws, and
+   multi-entry contexts are no longer truncated to the last element.
+
+`addMessage()` keeps the identity check as a last-resort guard, but now logs
+instead of returning silently, and rejects a malformed `message` argument.
+
+Re-verified E2E on both viewports (`npm run lint` shows 43 problems before and
+after — all pre-existing; `npm run build` regenerated `dist/`):
+
+- Participant message is echoed, a **real model reply renders in the bubble**, no
+  apology, composer resets. This also closes the one hop D1's verification could
+  not reach — the SPA consuming the response (`Chat.jsx:74`) and rendering it.
+- Four transcript rows persisted across the two sends, all tagged
+  `mica_id = MICATEST01` — a **string**, confirming the `parseInt` removal.
+
+**Known remaining gap on PID 257 (expected, Stage 2 scope):** the reply comes
+back with no counselor persona — the model introduced itself as Claude — because
+`initial_system_context` is still `[]`. The pilot session engine cannot resolve
+`baseline_arm_1` / `consent_date` against the R01 structure, so no prompt is
+assembled. The new `console.warn` in `callAjax()` announces this. The send path
+is fixed; supplying the R01 session context is
+[`09-pid-257-structure-audit.md`](09-pid-257-structure-audit.md) / Stage 2 work.
+
+**Still worth doing later:** the Dexie identity cache disappears entirely once
+participant identity is server-derived (`07` decision 8 / Stage 1 §1.6). This fix
+makes the current design work; it does not pre-empt that change.
 
 **Also noted during the run:** `scripts/manual-test-auth.php` teardown deletes
 **every** response-less participant row in the project
@@ -302,6 +346,12 @@ saved turns (`redcap_chatbot_v9.9.9/chatbot_ui/src/contexts/Chat.js:94-105`).
 ### D7 — Send button hangs permanently on the "session already completed" gate
 
 **Severity:** medium-high (dead end with no message)
+**Status: PARTLY FIXED 2026-08-19.** The client-side crash is gone — `callAjax()`
+no longer `.pop()`s an empty array, so the send no longer throws and the spinner
+no longer sticks (see D22's fix). **The server's message is still lost:**
+`redcap_survey_page` catches the gate exception into `$error` (`:268-275`) and
+never sends it to the browser, so the participant is told nothing about *why*
+there is no session. Surfacing that text is the remaining half.
 
 `getSystemContextForRecord()` throws the completion gates (`:706`, `:728`,
 `:735`). `redcap_survey_page` catches and normalizes to `$ctx = []`
@@ -319,6 +369,10 @@ message to deliver ("Return in N day(s) for your next session!").
 ### D8 — Only the *last* system-context element ever reaches the model
 
 **Severity:** medium (silent prompt loss)
+**Status: FIXED 2026-08-19** — `callAjax()` now iterates every entry returned by
+`getInitialSystemContext()` instead of `.pop()`-ing one (see D22's fix). Not yet
+observable on PID 257, where the context array is empty; needs a pilot-structured
+project (or Stage 2's R01 context) to regression-test the multi-entry case.
 
 `appendSystemContext()` `array_unshift`es a new entry when the first system
 message is empty (`:165-167`), so `initSystemContexts()` can legitimately return
@@ -372,14 +426,13 @@ false, which means:
 
 1. ~~**D1 alone, first**~~ — **done in dev 2026-08-19** (config choices + PID 257
    value + an alias guard). Production value still to be confirmed.
-2. **D22 next** — until it is fixed, no UI-level chat test is possible on PID
-   257, so the Stage 0 §0.6 baseline cannot be recorded there. Either add an
-   `else` branch to `addMessage()` and populate `name` from the R01 fields, or
-   bring forward the server-derived-identity change from Stage 1 §1.6 (which
-   removes the gate entirely). The Survey Login gate and the SPA mount are
-   already confirmed working, so this is the only blocker left on that path.
+2. ~~**D22 next**~~ — **done 2026-08-19**, and it carried D8 plus D7's crash with
+   it. A participant can now send and receive a real reply on PID 257, desktop
+   and mobile.
 3. **Record the Playwright baseline** (login → chat turn → end session, desktop +
-   mobile). Stage 0 §0.6 depends on that baseline existing.
+   mobile). Now unblocked. Note the baseline will show a reply with **no
+   counselor persona** until the R01 session context exists (D22's "known
+   remaining gap"), so record it as a send-path baseline, not a prompt baseline.
 4. **D2 + D3 + D4** as one security pass — they share the "trust the client's
    participant id" root cause, and D2's fix is the same edit the SOW payload
    change needs.
