@@ -244,13 +244,22 @@ These are real, and they belong to other passes rather than this one:
 This branch was cut while a concurrent session was committing on `mica-phase-3`, and that
 session's stage-0 commit `c939851` ("feat(stage-0): schema validation over the pinned
 handoff schemas") landed **on this branch** while local `mica-phase-3` stayed at `845d1bd`.
-`c939851` contains no `mica-chatbot/` files, so the two changes do not overlap — but a PR
-opened from here will show the stage-0 work as part of the diff. **Fast-forward
-`mica-phase-3` to `c939851` first**, after which the harden commits are the only delta.
+`c939851` contains no `mica-chatbot/` files, so the two changes never overlapped.
 
-Re-basing this branch onto `845d1bd` was deliberately not done: checking that commit out
-would delete `vendor/` and `tools/` from the working tree, and `MICA.php` now hard-requires
+**Resolved 2026-08-19:** local `mica-phase-3` was fast-forwarded `845d1bd → c939851`
+(`git branch -f`, no checkout, so `vendor/` and `tools/` were never removed from the working
+tree). The stage-0 commit now sits on the branch it belongs to, and this branch's delta over
+`mica-phase-3` is exactly the two harden commits.
+
+Re-basing this branch onto `845d1bd` was deliberately not done, and `git branch -f` was used
+in preference to a checkout for the same reason: checking `845d1bd` out would delete
+`vendor/` and `tools/` from the working tree, and `MICA.php` now hard-requires
 `vendor/autoload.php`.
+
+**Still outstanding:** `origin/mica-phase-3` is at `fd6b3e6`, four commits behind local —
+`34144f5`, `cd01f24`, `845d1bd`, `c939851`, all of them stage-0 workstream. Until those are
+pushed, a PR opened against the *remote* `mica-phase-3` will still show them alongside the
+harden work. Pushing them is the stage-0 author's call, not this branch's.
 
 `.impeccable/critique/` is committed (the critique this branch answers, so the reasoning
 travels with the code). `.impeccable/config.local.json` is deliberately left untracked.
