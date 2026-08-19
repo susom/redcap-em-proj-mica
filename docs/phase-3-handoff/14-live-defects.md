@@ -19,6 +19,36 @@ Refs are `MICA.php` unless another file is named. SPA paths are relative to
 
 ---
 
+## Full-path E2E run (2026-08-19)
+
+Playwright suite over the real participant path on PID 257 — Survey Login gate
+plus chatbot — desktop (1400×950) and iPhone 13. **23 checks, all passing.**
+
+| Group | Result |
+|---|---|
+| **Survey Login** | Gate present on the ED-session link; chat unreachable before login; **wrong credential rejected**; the control survey (`baseline1`) correctly does **not** prompt — scoping holds |
+| **Chatbot load** | Header, intro message, End Session control, composer all render; exactly **one** JS + one CSS bundle loaded (no stale-asset double-load); zero failed requests |
+| **Conversation** | Two turns; message echoed; real model replies; **context retained across turns** ("You asked me what 2+2 equals."); all four `proj_mica` AJAX calls HTTP 200; zero MICA JS errors |
+| **Mobile** | Renders; **no horizontal overflow** (390/390); composer inside the viewport; turn works |
+
+Two attribution notes, so nobody chases the wrong thing:
+
+- **The `offsetHeight` TypeError on survey pages is REDCap core, not MICA.** It
+  fires on the control survey too — a page MICA's hooks never touch — and the
+  stack lands in `redcap_v17.2.3/Resources/webpack/js/bundle.js`. Excluded from
+  the module's error budget.
+- **An earlier "auth scoping broken" reading was a false positive in the test,
+  not a real finding.** `baseline1` is the Enrollment instrument and contains
+  `last_name` as a genuine data-entry field, so keying on
+  `input[name=last_name]` matches it. Discriminate on
+  `input[name=survey-auth-submit]` + a "Log In" button instead. The repo's own
+  `verify-auth-config.php` passes all checks, including "non-MICA surveys
+  gated: none".
+
+Three gaps observed in the same run, all downstream of the PID 257 structure
+mismatch rather than of the chat code: no counselor persona (D22's known gap),
+reload loses the transcript (D6 below), and **End Session fatals** (D16 below).
+
 ## A. Blocking / security
 
 ### D1 — `llm-model = gpt-4o` is unregistered: every chat turn fails silently
@@ -332,6 +362,13 @@ Cappy's convention is the target: metadata only — role + content **length**
 ### D6 — Restoring a session does not restore the model's context
 
 **Severity:** high (silently degrades the intervention)
+**Observed 2026-08-19:** on PID 257 restore does not happen **at all** — after a
+reload mid-conversation the transcript is empty and only the intro bubble shows.
+`fetchSavedSession()` passes `b.name` (null on this structure) and the backend
+`fetchSavedQueries` requires a name and cross-checks it against
+`participant_name` (`MICA.php:515`, `:533`), so the call returns nothing. The
+display-only defect described below is therefore the *next* failure a
+pilot-structured project would hit, not the current one here.
 
 `replaceSession()` (`src/contexts/Chat.jsx:110-115`) repopulates `chatContext`,
 `messages`, and `msgCount` — the **display** state — but never rebuilds
@@ -383,6 +420,35 @@ message is empty (`:165-167`), so `initSystemContexts()` can legitimately return
 the catch-up summary is unshifted, the prior-session summary or the general
 context is dropped before the model sees it — with no error.
 
+### D16 — End Session fatals and silently discards the session
+
+**Severity:** high — the participant's session is lost, and they are told nothing
+**Status:** reproduced E2E 2026-08-19 (promoted from the low-severity table)
+
+Clicking **End Session** on PID 257 returns:
+
+```
+Call to a member function getTimestamp() on null
+```
+
+`completeSession()` calls `calculateSessionInfo()` (`:887`), which returns `null`
+when `baseline_arm_1` cannot be resolved (`:828`). The result is dereferenced
+without a guard, so `$calc["sessionStart"]->getTimestamp()` (`:889`) is a fatal on
+`null`.
+
+What the participant experiences: `header.jsx`'s `errorCallback` runs
+`handleSignOut()`, so they are **signed out and redirected to the login page**
+with no message — and because the fatal happens before `REDCap::saveData()`,
+`raw_chat_logs`, `session_timestamp` and `session_info_complete` are **never
+written**. The whole conversation is discarded. Observed: the URL moved to
+`pages/chatbot&NOAUTH` and no data row was written.
+
+**Fix direction:** guard `$calc` (and the same null return at `:851`) and raise a
+typed exception that the client renders as a real message, per the fail-closed
+rule in `06-implementation-plan/README.md`. Note the underlying `null` is again
+the R01/pilot event mismatch, so the guard is the durable part and the session
+engine rework (Stage 2) is what makes the happy path work.
+
 ### D9 — `renderMicaApp` does not exist: dead mount contract
 
 **Severity:** low-medium (cosmetic + listener leak)
@@ -413,7 +479,7 @@ false, which means:
 | D13 | `fetchSavedQueries` compares `$check['record_id']` instead of the `$primary_field` it just fetched | `:533` |
 | D14 | `handleUserInput` reads `$data['user_id']` unconditionally though only `role`/`content` are validated ⇒ undefined-key warning and `user_id: null` on every assistant turn | `:109` |
 | D15 | `$messages[sizeof($messages)-1]` becomes `$messages[-1]` when `handleUserInput` returns `[]` (non-array payload) | `:389` |
-| D16 | `$calc` may be null (`calculateSessionInfo` returns null at `:828`/`:851`) and is dereferenced unguarded | `:887-889` |
+| D16 | **Promoted to section B** — reproduced as a fatal that loses the session. See "D16 — End Session fatals" above | `:887-889` |
 | D17 | `Sanitizer` HTML-escapes prompt text **before** it reaches the model and before storage, so apostrophes persist as `&#039;` in transcripts | `classes/Sanitizer.php:16` |
 | D18 | `get_magic_quotes_gpc` branch is dead under PHP 8 | `classes/Sanitizer.php:13` |
 | D19 | `pages/chatbot.php:68` hardcodes `ui_hosting_instrument` in `getSurveyLink()`, so the new `chat_host_instruments` setting does not reach the OTP path | `pages/chatbot.php:68` |
