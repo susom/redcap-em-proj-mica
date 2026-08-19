@@ -103,10 +103,13 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     isset($message['content']) && is_string($message['content'])
                 ) {
                     $data = $this->sanitizeInput($message);
+                    // Keep only the fields the model API accepts. The client's per-message `user_id`
+                    // used to be forwarded verbatim into the request AND used as the participant's
+                    // identity; identity is now resolved server-side (docs 14 D2), and dropping the
+                    // key here also stops a nonstandard field reaching the provider.
                     $sanitizedPayload[] = array(
                         'role' => $data['role'],
                         'content' => $data['content'],
-                        'user_id' => $data['user_id']
                     );
                 }
             }
@@ -212,6 +215,48 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * @return void
      * @throws \Exception
      */
+    /**
+     * Determine which participant this AJAX request is actually for.
+     *
+     * All five ajax actions are declared no-auth, and the guard in redcap_module_ajax() only checks
+     * that *some* survey hash or *some* logged-in session exists. Taking the participant id from the
+     * payload therefore let any caller act as any record: write another participant's transcript,
+     * pull their baseline instrument data into the prompt, or close their session (docs 14 D2).
+     *
+     * On the survey path the framework hands us the record the participant is authenticated for
+     * (verified: `$record` is populated alongside a survey hash), so that is authoritative and the
+     * payload is ignored. Only an authenticated REDCap user - who already has data access - may
+     * name a record explicitly.
+     *
+     * @param $record   the framework-supplied record for this request
+     * @param $payload  the client payload (only consulted for authenticated users)
+     * @return string
+     * @throws \Exception
+     */
+    private function resolveParticipantId($record, $payload): string
+    {
+        if (!empty($record)) {
+            return (string) $record;
+        }
+
+        if (!empty($_SESSION['username'])) {
+            $candidate = null;
+            if (is_array($payload)) {
+                if (isset($payload['participant_id'])) {
+                    $candidate = $payload['participant_id'];
+                } else {
+                    $first = current($payload);
+                    if (is_array($first) && isset($first['user_id'])) $candidate = $first['user_id'];
+                }
+            }
+            if (!empty($candidate)) {
+                return (string) $this->sanitizeInput($candidate);
+            }
+        }
+
+        throw new \Exception('Unable to determine which participant this request is for');
+    }
+
     private function assertModelIsRegistered($model): void
     {
         if (empty($model)) {
@@ -417,17 +462,22 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 return json_encode(['error'=>'Forbidden']);
             }
             header('Content-Type: application/json; charset=utf-8');
-            
+
+            // Never take the participant's identity from the payload - see resolveParticipantId().
+            $participant_id = $this->resolveParticipantId($record, $payload);
+
             switch ($action) {
                 case "callAI":
                     $messages = $this->handleUserInput($payload);
+                    if (empty($messages)) {
+                        throw new \Exception('No usable messages were provided');
+                    }
 
                     // Add most recent message to database
-                    $recent_query = $messages[sizeof($messages) - 1];
-                    $this->logMICAQuery(json_encode($recent_query), $recent_query['user_id']);
+                    $recent_query = $messages[count($messages) - 1];
+                    $this->logMICAQuery(json_encode($recent_query), $participant_id);
 
                     // Add user baseline AFTER logging to leave it out of the logs
-                    $participant_id = current($payload)["user_id"];
                     $formattedBaseline = $this->getFormattedBaselineData($participant_id);
                     if (!empty($formattedBaseline)) {
                         $messages = $this->appendSystemContext($messages, $formattedBaseline);
@@ -445,20 +495,17 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     $response = $this->getSecureChatInstance()->callAI($model, $params, PROJECT_ID );
                     $result = $this->formatResponse($response);
 
-                    if(isset($recent_query['user_id'])) {
-                        $result['user_id'] = $recent_query['user_id'];
-                        unset($recent_query['user_id']);
-                        $result['query'] = $recent_query;
-                    }
+                    $result['user_id'] = $participant_id;
+                    $result['query']   = $recent_query;
 
                     // Add response to database
-                    if($result)
-                        $this->logMICAQuery(json_encode($result), $result['user_id']);
+                    $this->logMICAQuery(json_encode($result), $participant_id);
 
                     return json_encode($result);
 
                 case "fetchSavedQueries":
                     $data = $this->sanitizeInput($payload);
+                    $data['participant_id'] = $participant_id; // authoritative, not client-supplied
                     $return_payload = [];
                     $return_payload["current_session"] = [];
                     $existing_chat = $this->fetchSavedQueries($data, $data['session_start_time'] ?? null);
@@ -468,8 +515,8 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     return json_encode($return_payload);
 
                 case "completeSession":
-                    // expecting {participant_id : participant_id}
                     $data = $this->sanitizeInput($payload);
+                    $data['participant_id'] = $participant_id; // authoritative, not client-supplied
                     return json_encode($this->completeSession($data));
 
                 default:
@@ -609,21 +656,37 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         if(empty($payload['name']) || empty($payload['email']))
             throw new \Exception("Error logging in user, either name or email is empty");
 
-        ['name' => $name, 'email' => $email] = $payload;
+        $name  = trim((string) $payload['name']);
+        $email = trim((string) $payload['email']);
 
-        // Fetch user information
+        // Only a validated e-mail is ever interpolated into filterLogic; the free-text name is
+        // compared in PHP. Previously both went in raw from $_POST on a no-auth page (docs 14 D3).
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || preg_match('/[\'"\\\\\[\]]/', $email)) {
+            throw new \Exception('Invalid Credentials');
+        }
+
         $params = array(
             "return_format" => "json",
-            "filterLogic" => "[participant_name] = '$name' AND [participant_email] = '$email'",
+            "filterLogic" => "[participant_email] = '$email'",
             "fields" => array($primary_field, "participant_name", "participant_email", "participant_phone", "user_complete", "completion_timestamp"),
         );
 
-        // Find user and determine validity
-        $json = json_decode(\REDCap::getData($params), true);
-        if(count($json) > 1)
+        $json = json_decode((string) \REDCap::getData($params), true);
+        $rows = is_array($json) ? $json : [];
+
+        // Name match happens here rather than in the logic string.
+        $matches = array_values(array_filter(
+            $rows,
+            fn($row) => is_array($row) && ($row['participant_name'] ?? null) === $name
+        ));
+
+        if (count($matches) > 1)
             throw new \Exception("Error logging in user, duplicate entries for $name, $email");
 
-        $check = reset($json);
+        $check = $matches[0] ?? false;
+        if (!is_array($check)) {
+            throw new \Exception('Invalid Credentials');
+        }
 
         // Ensure completed users cannot login again
         if (isset($check["user_complete"]) && $check['user_complete'] == "2") {
@@ -734,7 +797,13 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         if(empty($payload['code']))
             throw new \Exception("Error verifying email, no code provided");
 
-        ['code' => $code] = $payload;
+        // Codes are bin2hex(random_bytes(3)) - exactly six lowercase hex characters. Validating the
+        // shape means no user-supplied text is interpolated into filterLogic (docs 14 D3), and it
+        // rejects the malformed input that would otherwise scan every record.
+        $code = strtolower(trim((string) $payload['code']));
+        if (!preg_match('/^[0-9a-f]{6}$/', $code)) {
+            throw new \Exception('Invalid OTP code');
+        }
 
         // Fetch user information
         $params = array(
@@ -744,12 +813,13 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         );
 
         // Find user and determine validity
-        $json = json_decode(\REDCap::getData($params), true);
-        if(count($json) > 1)
+        $json = json_decode((string) \REDCap::getData($params), true);
+        $rows = is_array($json) ? $json : [];
+        if(count($rows) > 1)
             throw new \Exception("Error logging in user, duplicate entries for $code ");
 
-        $check = reset($json);
-        if ($check['two_factor_code'] === $code) {
+        $check = reset($rows);
+        if (is_array($check) && ($check['two_factor_code'] ?? null) === $code) {
             $record_id = $check[$primary_field] ?? null;
             $session_stuff = $this->getSystemContextForRecord($record_id);
     

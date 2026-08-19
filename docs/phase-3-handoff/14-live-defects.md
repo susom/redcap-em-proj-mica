@@ -1,8 +1,8 @@
 # 14 — Live defects found during the SecureChatAI audit (2026-08-18)
 
-**Status:** FINDINGS — most verified by code reading. **Fixed and E2E-verified so
-far: D1, D6, D7, D8, D10, D11, D13, D16, D22.** Still open: D2, D3, D4, D5, D9,
-D12, D14, D15, D17-D21
+**Status:** FINDINGS — most verified by code reading. **Fixed and verified so far:
+D1, D2, D3, D6, D7, D8, D10, D11, D13, D16, D22.** Still open: D4, D5, D9, D12,
+D14, D15, D17-D21
 **Scope:** defects in the code as it stands on `mica-phase-3` @ `ab81cca`.
 These are distinct from the SOW migration work in
 [`07-chatbot-cleanup-securechatai.md`](07-chatbot-cleanup-securechatai.md):
@@ -303,6 +303,9 @@ of failure from a real answer.
 ### D2 — No ownership binding on the no-auth AJAX surface
 
 **Severity:** high — cross-participant PHI disclosure and transcript tampering
+**Status: FIXED 2026-08-19** for the AJAX surface — attack attempted and blocked
+E2E (4/4). `pages/sessionSelector.php` (D4) is a separate page POST and is
+**still open**.
 
 `redcap_module_ajax` authorizes on the mere *existence* of a survey hash or a
 session (`:376-381`): `$isSurvey = !empty($survey_hash)`,
@@ -322,20 +325,82 @@ Three concrete consequences:
 `fetchSavedQueries` is the only action with even a knowledge check (name + id,
 `:533`).
 
-**Fix direction:** derive the participant id server-side from the survey
-context (`$record` / `$survey_hash`) and ignore any payload-supplied identity.
-This is the same edit the SOW payload-shape change needs (see `07` §Stage 1),
-which is why the two should land together.
+#### Fix and verification
+
+**The framework already supplies the answer.** Probed at runtime: on the
+survey-hosted AJAX call `$record` is populated (`MICATEST01`, type `string`)
+alongside `has_survey_hash = yes`, `instrument = mica_ed_session`,
+`event_id = 1008`. So identity never needed to come from the client.
+
+- New `resolveParticipantId($record, $payload)`, called once before the action
+  switch. If `$record` is present it is authoritative and the payload is ignored.
+  Only an authenticated REDCap user — who already has data access, and is the only
+  other principal the ajax guard admits — may name a record explicitly. Neither
+  ⇒ throw.
+- `callAI` uses it for the baseline injection **and** for the `mica_id` on both
+  transcript rows; `fetchSavedQueries` and `completeSession` have their
+  `participant_id` overwritten with it.
+- `handleUserInput()` now keeps only `role` and `content`. The per-message
+  `user_id` was both the identity source *and* a nonstandard key forwarded
+  verbatim to the model API; dropping it fixes both (and is the SOW conformance
+  item from `07` §Stage 1).
+
+**Verified by attempting the attack**, through a real authenticated survey
+session, 4/4:
+
+| Attempt | Result |
+|---|---|
+| `callAI` with `user_id: 'VICTIM_RECORD_1'` | reply echoes `user_id: "MICATEST01"`; a real answer still returned |
+| `fetchSavedQueries` with `participant_id: 'VICTIM_RECORD_1'` | returns the **authenticated** record's turns |
+| `completeSession` with `participant_id: 'VICTIM_RECORD_1'` | runs against the authenticated record (its own finalization-failure path) |
+
+Confirmed at the data layer afterwards: the only `mica_id` value written was
+`MICATEST01`, **zero** rows under the forged id, and record `1` had no
+`raw_chat_logs` / `session_info_complete` rows created.
+
+**Note on the client:** the SPA still attaches `user_id` to outgoing messages. It
+is now inert — the server drops it — so it is cosmetic cleanup for the SOW payload
+work rather than a security concern.
 
 ### D3 — Raw `$_POST` interpolated into `filterLogic` on a no-auth page
 
 **Severity:** high
+**Status: FIXED 2026-08-19** — injection attempts rejected before any `getData`
+call, unit-tested 11/11.
 
 `loginUser()` (`:560`) and `verifyEmail()` (`:640`) interpolate values straight
 into `REDCap::getData()` `filterLogic` strings, fed by unsanitized `$_POST` from
 `pages/chatbot.php:44-45, 63-65`. `fetchSavedQueries` (`:525`) is mitigated —
 its input passes the sanitizer at `:423`, and `htmlspecialchars(ENT_QUOTES)`
 encodes `'` — but the two login paths are not.
+
+#### Fix and verification
+
+- `verifyEmail()` — codes are `bin2hex(random_bytes(3))`, i.e. exactly six
+  lowercase hex characters, so the input is now shape-validated
+  (`/^[0-9a-f]{6}$/` after `strtolower`+`trim`) and anything else is rejected
+  before any `getData` call. A validated code cannot carry logic syntax.
+- `loginUser()` — only a **validated e-mail** reaches `filterLogic`
+  (`FILTER_VALIDATE_EMAIL`, plus an explicit reject of `' " \ [ ]`). The
+  free-text **name is compared in PHP** instead of being interpolated, so no
+  user-controlled string enters the logic string at all.
+- `fetchSavedQueries()` stopped using `filterLogic` entirely as part of the D6
+  fix — it now looks the record up via `records`.
+- Also hardened while in `verifyEmail()`: the result is null-checked before
+  subscripting, so a non-matching code no longer warns.
+
+Unit-tested through the module instance, 11/11: five `verifyEmail` inputs
+(`' OR [record_id] != ''`, too short, too long, quote-in-code, path traversal) and
+five `loginUser` e-mails (quoted injection, malformed, double quote, single quote,
+backslash) all rejected — each *before* reaching `getData` — while a well-formed
+address still proceeds to the lookup.
+
+**Known limitation, deliberate:** the e-mail validation rejects apostrophes, so a
+legitimate address like `o'brien@example.com` would be refused. Apostrophes are
+legal in local parts but rare. I chose a certain guarantee over guessing REDCap's
+`filterLogic` escaping semantics; if a real participant hits this, the fix is to
+match the e-mail in PHP as well (a full-project read on a no-auth login action,
+which is why it was not done pre-emptively).
 
 ### D4 — Unauthenticated session completion on the admin page
 
@@ -641,9 +706,10 @@ false, which means:
    mobile). Now unblocked. Note the baseline will show a reply with **no
    counselor persona** until the R01 session context exists (D22's "known
    remaining gap"), so record it as a send-path baseline, not a prompt baseline.
-4. **D2 + D3 + D4** as one security pass — they share the "trust the client's
-   participant id" root cause, and D2's fix is the same edit the SOW payload
-   change needs.
+4. **D2 + D3 done 2026-08-19**; **D4 still open** — `sessionSelector.php` runs
+   `completeSession` before `validatePermissions()`, with no CSRF token. It is a
+   page POST rather than part of the AJAX surface, so it was not covered by the
+   D2 fix.
 5. ~~**D6, D7, D8**~~ — **done 2026-08-19**, all three E2E-verified (D8's
    multi-entry case still needs a project that produces more than one context
    entry).
