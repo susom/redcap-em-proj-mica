@@ -80,7 +80,9 @@
                 if (parsed?.success) {
                     callback(parsed); // Ensure response contains `survey_link` if needed
                 } else {
-                    errorCallback("Unexpected response: " + res);
+                    // Surface the module's own message when it sent one, instead of handing the
+                    // caller a raw JSON blob to display.
+                    errorCallback(parsed?.error || ("Unexpected response: " + res));
                 }
             } catch (err) {
                 console.error("Error in completeSession: ", err);

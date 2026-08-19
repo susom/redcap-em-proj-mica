@@ -9,7 +9,7 @@ import useAuth from '../../Hooks/useAuth.jsx';
 
 export default function Header() {
     const navigate = useNavigate();
-    const { clearMessages } = useContext(ChatContext);
+    const { clearMessages, chatContext, updateChatContext } = useContext(ChatContext);
     const { logout } = useAuth();
 
     const handleSignOut = async () => {
@@ -45,10 +45,18 @@ export default function Header() {
                                 handleSignOut();
                             }
                         },
-                        (err) => {
+                        async (err) => {
+                            // Do NOT sign out here. Signing out on a finalization failure made a
+                            // lost session look like a normal exit: the participant was returned to
+                            // the login page with no message and no way to retry (docs 14 D16).
                             console.error('Error ending session:', err);
-                            // Handle sign out even if session ending fails
-                            handleSignOut();
+                            const msg = typeof err === 'string' && err.trim() !== ''
+                                ? err
+                                : 'Your session could not be finalized. Please contact the study team.';
+                            await updateChatContext([
+                                ...(chatContext || []),
+                                { user_content: null, assistant_content: msg, timestamp: new Date().getTime() },
+                            ]);
                         }
                     );
                 } else {

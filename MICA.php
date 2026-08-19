@@ -917,10 +917,24 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             throw new \Exception("Error with completing session: No participant ID provided");
         }
 
+        // calculateSessionInfo() returns null whenever it cannot resolve the pilot session events
+        // or the participant's consent_date. This used to fall straight through to
+        // ->getTimestamp() on null - a fatal that fired *before* saveData(), so the session was
+        // never finalized and the participant was signed out with no explanation (docs 14 D16).
         $calc = $this->calculateSessionInfo($participant_id);
-        $session = $calc['currentSession'];
-        $calcSessionStart = $calc["sessionStart"];
-        $sessionStart = $calcSessionStart->getTimestamp();
+        if (!is_array($calc) || empty($calc['sessionStart']) || !($calc['sessionStart'] instanceof \DateTime)) {
+            $this->emError('completeSession: could not resolve session info', [
+                'participant_id' => $participant_id,
+                'project_id'     => PROJECT_ID,
+            ]);
+            throw new \Exception(
+                'This session could not be finalized because the project is not configured for MICA '
+                . 'sessions. Your messages have been recorded - please contact the study team.'
+            );
+        }
+
+        $session      = $calc['currentSession'];
+        $sessionStart = $calc['sessionStart']->getTimestamp();
 
         $this->emDebug("payload and calc", $payload, $session, $sessionStart);
 
@@ -949,11 +963,19 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             'overwriteBehavior' => 'overwrite',
             'returnFormat' => 'json'
         ]);
-        if ($response['errors']) {
-            throw new \Exception($response['errors']);
+        // saveData() returns an array whose 'errors' key may be absent, a string, or an array.
+        // Subscripting it unconditionally warned on the happy path, and passing an array into
+        // Exception's string parameter was itself a TypeError (docs 14 D11).
+        if (!empty($response['errors'])) {
+            $errors = is_array($response['errors'])
+                ? implode('; ', array_map('strval', $response['errors']))
+                : (string) $response['errors'];
+            $this->emError('completeSession: saveData reported errors', $errors);
+            throw new \Exception('Your session could not be saved. Please contact the study team.');
         }
 
         $surveys = ["success" => true];
+        $event_id = null; // sessions 2-6 take neither branch below; it is still logged (docs 14 D10)
 
         if ($session === 'baseline') {
             $event_id = \REDCap::getEventIdFromUniqueEvent($eventName);

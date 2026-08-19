@@ -1,6 +1,8 @@
 # 14 — Live defects found during the SecureChatAI audit (2026-08-18)
 
-**Status:** FINDINGS — verified by code reading, **not yet reproduced E2E**
+**Status:** FINDINGS — most verified by code reading; **D1, D9, D16 and D22 were
+reproduced through the real participant path with Playwright and D1/D16/D22 are
+fixed** (D8 fixed alongside D22, D7 partly)
 **Scope:** defects in the code as it stands on `mica-phase-3` @ `ab81cca`.
 These are distinct from the SOW migration work in
 [`07-chatbot-cleanup-securechatai.md`](07-chatbot-cleanup-securechatai.md):
@@ -10,9 +12,9 @@ they are broken now and do not need the phase-3 architecture to be fixed.
 > Playwright E2E run as an end user *before* it is fixed, and the failing test
 > kept. Except where a defect is explicitly marked **Observed**, the evidence is
 > static analysis with line-level citations — treat those symptoms as predicted,
-> not observed. **D1, D9 and D22 were reproduced through the real participant
-> path with Playwright on 2026-08-19** (see D1's E2E section); the rest are still
-> static findings.
+> not observed. **D1, D9, D16 and D22 were reproduced through the real
+> participant path with Playwright on 2026-08-19**; D6's current behaviour was
+> observed too. The rest are still static findings.
 
 Refs are `MICA.php` unless another file is named. SPA paths are relative to
 `mica-chatbot/`. `SCA/` = `modules-local/secure_chat_ai_v9.9.9/`.
@@ -47,7 +49,9 @@ Two attribution notes, so nobody chases the wrong thing:
 
 Three gaps observed in the same run, all downstream of the PID 257 structure
 mismatch rather than of the chat code: no counselor persona (D22's known gap),
-reload loses the transcript (D6 below), and **End Session fatals** (D16 below).
+reload loses the transcript (D6 below), and **End Session fatals** (D16 below —
+since fixed; the fatal is gone, but finalization still cannot succeed on PID 257
+until the session engine is reworked).
 
 ## A. Blocking / security
 
@@ -422,8 +426,16 @@ context is dropped before the model sees it — with no error.
 
 ### D16 — End Session fatals and silently discards the session
 
-**Severity:** high — the participant's session is lost, and they are told nothing
-**Status:** reproduced E2E 2026-08-19 (promoted from the low-severity table)
+**Severity:** high — the session is not finalized, and the participant is told nothing
+**Status: FIXED 2026-08-19** — reproduced, fixed, re-verified E2E on desktop and
+mobile (8/8 checks). Promoted here from the low-severity table.
+
+> **Correction to an earlier draft of this entry:** it said the *whole
+> conversation* was discarded. That overstated it. `logMICAQuery()` writes each
+> turn to the EM log as it happens, so the per-turn rows survive; verified after
+> a failed finalization — 2 transcript rows present, `raw_chat_logs` rows: 0.
+> What is lost is the **session finalization**: the `raw_chat_logs` snapshot,
+> `session_timestamp`, and the `session_info_complete` flag.
 
 Clicking **End Session** on PID 257 returns:
 
@@ -443,11 +455,44 @@ with no message — and because the fatal happens before `REDCap::saveData()`,
 written**. The whole conversation is discarded. Observed: the URL moved to
 `pages/chatbot&NOAUTH` and no data row was written.
 
-**Fix direction:** guard `$calc` (and the same null return at `:851`) and raise a
-typed exception that the client renders as a real message, per the fail-closed
-rule in `06-implementation-plan/README.md`. Note the underlying `null` is again
-the R01/pilot event mismatch, so the guard is the durable part and the session
-engine rework (Stage 2) is what makes the happy path work.
+#### Fix and verification
+
+Three changes on the failure path, plus the two happy-path bugs that live in the
+same function:
+
+1. `MICA.php` `completeSession()` — guard the `calculateSessionInfo()` result
+   (`null`, or a non-`DateTime` `sessionStart`) and throw a participant-safe
+   `Exception` instead of dereferencing `null`. The technical detail goes to
+   `emError`; the participant gets plain language.
+2. `assets/jsmo.js` — `completeSession` now surfaces `parsed.error` rather than
+   handing the caller `"Unexpected response: " + <raw JSON>` to display.
+3. `header.jsx` — the error callback **no longer signs the participant out**. It
+   renders the message into the transcript and leaves them on the page, so a
+   failed finalization is visible and retryable instead of looking like a normal
+   exit.
+4. **D11** (same function) — `$response['errors']` is now `!empty()`-checked and
+   stringified before it reaches `Exception`; previously an array was passed to a
+   string parameter, and the key was subscripted unconditionally on the happy
+   path.
+5. **D10** (same function) — `$event_id` is initialized to `null`, so the
+   `emDebug` call for sessions 2-6 no longer reads an undefined variable.
+
+Verified E2E, desktop and iPhone 13, 8/8: no PHP fatal, no framework
+ajax-error wrapper, the participant-safe message returned and rendered in the
+transcript, no raw JSON leaked to the UI, participant **not** signed out (URL
+unchanged), no unexpected page errors.
+
+**Not verified: the happy path.** No project in this environment has the pilot
+structure, so `completeSession()`'s success branch — `saveData()`, the
+`raw_chat_logs` write, and the posttest / month3_fu survey-link lookup — was not
+exercised. The D10/D11 changes there are defensive and were checked by inspection
+and `php -l` only. That branch becomes testable when the Stage 2 session engine
+lands (or against a pilot-structured project).
+
+**Still the root cause:** the `null` comes from the R01/pilot event mismatch. This
+fix makes the failure honest and non-destructive; it does not make finalization
+*work* on PID 257. That is Stage 2 /
+[`09-pid-257-structure-audit.md`](09-pid-257-structure-audit.md).
 
 ### D9 — `renderMicaApp` does not exist: dead mount contract
 
@@ -473,8 +518,8 @@ false, which means:
 
 | # | Defect | Ref |
 |---|---|---|
-| D10 | `$event_id` is undefined when `emDebug`'d for sessions 2-6 — assigned only at `:925`/`:929` | `:934` |
-| D11 | `REDCap::saveData()` return is subscripted without a type check on three paths; `:919` passes whatever comes out into `Exception`'s string param | `:609`, `:618`, `:918` |
+| D10 | ~~`$event_id` undefined when `emDebug`'d for sessions 2-6~~ **FIXED 2026-08-19** with D16 | `:934` |
+| D11 | `REDCap::saveData()` return subscripted without a type check. **Fixed in `completeSession()` 2026-08-19 with D16**; the two OTP paths (`:609`, `:618`) are still open | `:609`, `:618`, `:918` |
 | D12 | `summarizeCatchUp` builds `session_0_arm_1` when `$i === 0`; `getEventIdFromUniqueEvent` returns null and `'events' => [null]` reaches `getData` | `:768-769` |
 | D13 | `fetchSavedQueries` compares `$check['record_id']` instead of the `$primary_field` it just fetched | `:533` |
 | D14 | `handleUserInput` reads `$data['user_id']` unconditionally though only `role`/`content` are validated ⇒ undefined-key warning and `user_id: null` on every assistant turn | `:109` |
