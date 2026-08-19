@@ -160,40 +160,56 @@
         },
         {
             "key": "llm-model",
-            "name": "LLM Model",
+            "name": "<b>LLM Model</b><br><i>Values must match a SecureChatAI model alias (its <code>api-settings</code> registry). An unregistered alias does not error visibly - SecureChatAI returns a canned apology that this module would store as a counselor turn.</i>",
             "required": false,
             "type": "dropdown",
             "choices": [
                 {
-                    "value": "gpt-4o",
-                    "name": "GPT-4o"
+                    "value": "gpt-4-1",
+                    "name": "GPT-4.1 (SecureChatAI prod default)"
                 },
                 {
-                    "value": "gpt-4.1",
-                    "name": "GPT-4.1"
+                    "value": "gpt-4-1-nano",
+                    "name": "GPT-4.1 nano"
                 },
                 {
-                    "value": "o1",
-                    "name": "GPT-o1"
+                    "value": "gpt-5-4",
+                    "name": "GPT-5.4 (json_schema-capable - phase-3 counselor)"
                 },
                 {
-                    "value": "o3-mini",
-                    "name": "GPT-o3-mini"
+                    "value": "gpt-5-4-nano",
+                    "name": "GPT-5.4 nano"
                 },
                 {
-                    "value": "claude",
-                    "name": "Claude 3.7 Sonnet"
+                    "value": "o3",
+                    "name": "o3 (reasoning)"
                 },
                 {
-                    "value": "gemini20flash",
-                    "name": "Gemini 2.0 Flash"
+                    "value": "o4-mini",
+                    "name": "o4-mini (reasoning)"
                 },
                 {
-                    "value": "llama-Maverick",
-                    "name": "Llama 4 Maverick"
+                    "value": "claude-sonnet-4.6",
+                    "name": "Claude Sonnet 4.6"
+                },
+                {
+                    "value": "claude-opus-4-7",
+                    "name": "Claude Opus 4.7"
+                },
+                {
+                    "value": "claude-haiku-4-5",
+                    "name": "Claude Haiku 4.5 (dev registry)"
+                },
+                {
+                    "value": "gemini-2.5-flash",
+                    "name": "Gemini 2.5 Flash"
+                },
+                {
+                    "value": "gemini-2.5-pro",
+                    "name": "Gemini 2.5 Pro"
                 }
             ],
-            "default": "gpt-4o"
+            "default": "gpt-4-1"
         },
         {
             "key": "gpt-temperature",

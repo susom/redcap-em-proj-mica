@@ -198,6 +198,39 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     }
 
     /**
+     * Fail loudly when `llm-model` names an alias SecureChatAI has not registered.
+     *
+     * Without this the failure is invisible: SecureChatAI throws internally, retries, and then
+     * converts the error into a friendly assistant message ("...experiencing network difficulties")
+     * that carries a `content` key - so formatResponse() treats it as a successful answer and
+     * logMICAQuery() stores it in the participant's transcript as a counselor turn.
+     *
+     * Only enforced when the registry is readable and non-empty, so a SecureChatAI
+     * misconfiguration cannot turn this guard into a second outage.
+     *
+     * @param $model
+     * @return void
+     * @throws \Exception
+     */
+    private function assertModelIsRegistered($model): void
+    {
+        if (empty($model)) {
+            throw new \Exception('No LLM model configured for this project (llm-model project setting is empty)');
+        }
+
+        $available = $this->getSecureChatInstance()->getAvailableModels();
+        if (empty($available) || !is_array($available)) {
+            $this->emError('Could not read the SecureChatAI model registry; skipping alias validation', $model);
+            return;
+        }
+
+        if (!in_array($model, $available, true)) {
+            $this->emError('Configured llm-model is not registered in SecureChatAI', $model, $available);
+            throw new \Exception("The configured AI model \"$model\" is not available. Please contact your administrator.");
+        }
+    }
+
+    /**
      * Is this instrument one of the instruments configured to host the chat UI?
      * Reads the comma-delimited `chat_host_instruments` project setting and falls back to the
      * original pilot instrument when the setting is empty/unset so existing projects are unchanged.
@@ -404,6 +437,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     // Alter model parameters if set by user
                     $this->setModelParameters($params);
 
+                    $this->assertModelIsRegistered($model);
                     $response = $this->getSecureChatInstance()->callAI($model, $params, PROJECT_ID );
                     $result = $this->formatResponse($response);
 
