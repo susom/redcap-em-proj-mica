@@ -84,18 +84,48 @@ final class SchemaValidator {
 - Keep `emLoggerTrait` logging in all new classes reachable from the module;
   pure classes receive a logger callable instead.
 
+### 0.5b Fix the live outage first (`../14-live-defects.md` D1)
+
+**Blocks 0.6 and every E2E task in this plan.** PID 257's `llm-model` is
+`gpt-4o`, which is registered in neither the dev nor the prod SecureChatAI
+registry, so every turn currently returns the provider's canned
+"network difficulties" apology *and persists it as a counselor turn*. Set a
+registered alias, confirm the production project's value too, then record the
+baseline. A baseline recorded before this fix captures the apology loop, not the
+product.
+
 ### 0.6 Chatbot cleanup (SOW: "Chatbot Cleanup & SecureChatAI Integration")
 
-Per `../07-chatbot-cleanup-securechatai.md` (decisions 2026-08-13) — all
-behavior-preserving, verified by a Playwright baseline recorded first:
+Per `../07-chatbot-cleanup-securechatai.md` (decisions 2026-08-13, **revised
+2026-08-18**) — all behavior-preserving, verified by a Playwright baseline
+recorded first. The full grep-verified inventory lives in that doc; summary:
 
 - `config.json`: drop Twilio system settings; drop dead `login`/`verifyEmail`
-  `no-auth-ajax-actions` entries.
-- `MICA.php`: delete commented `sendSMS()`; metadata-only `emDebug` (no
-  message content); escape/parameterize user input in `filterLogic` strings
-  (`loginUser`/`verifyEmail`/`fetchSavedQueries` — no-auth entry points).
-- `mica-chatbot/src`: remove unreferenced Cappy-inherited assets; rebuild
-  `dist/`.
+  `no-auth-ajax-actions` entries; resolve the two `required: true`-but-inert
+  settings (`chatbot_intro_text`, `chatbot_end_session_text` — nothing ever
+  assigns the globals the SPA reads); drop
+  `enable-every-page-hooks-on-system-pages` and the empty
+  `links.control-center`.
+- `MICA.php`: delete commented `sendSMS()`; delete write-only properties and
+  zero-caller getters; metadata-only `emDebug` (5 PHI sinks, not 1);
+  escape/parameterize `filterLogic` in `loginUser`/`verifyEmail` (`:525` in
+  `fetchSavedQueries` is already mitigated by the sanitizer); remove the dead
+  `renderMicaApp` mount contract (`../14-live-defects.md` D9 — behavior-*restoring*,
+  so it needs its own before/after E2E); correctness nits D10-D16, D21.
+- `classes/`: zero-caller `MICAQuery::getPayload()`/`getMICAQuery()`, commented
+  `payloadCheck()`; decide whether `ASEMLO` is vendored (if so, leave its
+  zero-caller methods and record that).
+- `composer.json`: drop unused `php-ai/php-ml` + `twilio/sdk` while adding
+  `opis/json-schema` (0.4).
+- `mica-chatbot/src`: remove the six confirmed-unreferenced Cappy-inherited
+  assets (`mica_logo.png` **is** in use), dead `App.jsx`, and the unreachable
+  `login`/`verifyEmail` bridges; **clear `dist/assets` before rebuilding** —
+  `generateAssetFiles()` emits a tag for every file it finds, so a stale hashed
+  bundle would be loaded alongside the new one.
+
+Security items D2/D3/D4 from `../14-live-defects.md` are *not* behavior-preserving
+and are sequenced as their own pass; D2's fix is the same edit as the Stage 1
+§1.6 payload/identity change, so they land together there.
 
 ## Tests (all new, PHPUnit)
 
@@ -115,4 +145,7 @@ behavior-preserving, verified by a Playwright baseline recorded first:
 - [ ] Tamper test fails closed
 - [ ] All vendored schemas load and validate fixtures (draft 2020-12)
 - [ ] `composer test` green in CI; PSR-12 clean on new files
+- [ ] `../14-live-defects.md` D1 fixed (dev **and** prod `llm-model` values
+      confirmed against `getAvailableModels()`) — a real model reply observed
+      before the baseline is recorded
 - [ ] Cleanup (0.6) landed; Playwright baseline passes before and after

@@ -74,6 +74,15 @@ Sub-components (each its own small class, unit-tested in isolation):
   latest user message. Call params: `json_schema` = counselor output schema
   (strict), `max_tokens` from `counselor-max-output-tokens` (1200),
   `reasoning_effort` from setting (medium), **no temperature**.
+- **Reading the response (verified 2026-08-18):** do not parse `content`. For a
+  schema'd reply the provider already decodes it — `normalizeResponse()` sets
+  `structured_output` (the decoded array) plus `preserve_structure`, and
+  `sanitizeOutputForUI()` then returns the envelope untouched
+  (`SecureChatAI.php:2139-2152`, `:1657-1660`). Read
+  `$response['structured_output']`, or call the public `extractResponseText()`
+  which returns exactly that. Two caveats: `reasoning_effort` is stripped for
+  `gpt-5-4` and `max_tokens` is overwritten regardless of setting — both are §1.5
+  PR items, so this stage must not assume either param took effect.
 
 ### 1.3 `TurnLogger` (`classes/TurnLogger.php`)
 
@@ -103,31 +112,81 @@ Sub-components (each its own small class, unit-tested in isolation):
 
 ### 1.5 SecureChatAI PR #1 (separate repo, backward-compatible)
 
-- Per-model registry sub-settings `supports-json-schema`,
-  `supports-reasoning-effort` (checkboxes); hardcoded `$schemaModels` /
-  reasoning lists (`['o1','o3-mini','gpt-5']`) become fallbacks.
-- Acceptance: `gpt-5-4` receives both `json_schema` and `reasoning_effort`;
-  existing consumers unaffected (their models' behavior identical with flags
-  unset). Reviewed by module owners; MICA `README` records the minimum
-  SecureChatAI version.
+**Scope revised 2026-08-18** against verified provider code — see
+`../13-securechatai-current-state-delta.md` §6.
+
+- **NEW, and the one item that blocks §1.2's `FailurePolicy`:** preserve a
+  machine-readable failure signal. `sanitizeOutputForUI()` currently strips
+  `error`/`type` and returns a friendly assistant message
+  (`SecureChatAI.php:1633-1636`), so a consumer **cannot tell a provider failure
+  from a real answer**. Without this, "no model text released on failure" and
+  the static `technical-fallback-text` promise in §1.2 are not implementable —
+  MICA today persists those apologies as counselor turns. Ask: keep `error` and
+  `type` on the error envelope (additive keys; no existing consumer reads them).
+- **KEPT:** per-model `supports-reasoning-effort`; the hardcoded
+  `['o1','o3-mini','gpt-5']` list (`:392-394`) becomes the fallback. `gpt-5-4` is
+  **not** in that list today. Fix the `o3`/`o4-mini` ordering bug in the same PR
+  (`:393` strips the key before `:411` reads it).
+- **DROPPED:** `supports-json-schema` — already satisfied; `gpt-5-4` **is** in
+  the schema allowlist (`:399`).
+- **Consider:** `max_tokens` is unset for non-reasoning models (`:423`) and then
+  overwritten by `computeDynamicMaxTokens()` (`:1171-1172`), so
+  `counselor-max-output-tokens` (§1.2) has no effect. Either accept
+  provider-computed limits and delete the setting, or add an honored override
+  here.
+- Acceptance: `gpt-5-4` receives `reasoning_effort`; a forced provider failure
+  returns a distinguishable envelope; existing consumers unaffected (behavior
+  identical with flags unset). Reviewed by module owners; MICA `README` records
+  the minimum SecureChatAI version.
+
+**Interim, if PR #1 lands after Stage 1:** treat
+`model === null && usage === null` as failure on the non-agent path. Sound only
+while MICA never sets `agent_mode` (agent turns share that shape) — document it
+as temporary.
+
+**Dev-environment prerequisite:** this instance's SecureChatAI registry holds one
+alias, `claude-haiku-4-5`, which is not schema-capable. A `gpt-4-1`/`gpt-5-4`
+alias must be added to `api-settings` before any `json_schema` turn can be
+tested at all.
 
 ### 1.6 SecureChatAI conformance — legacy path (SOW cleanup item)
 
-Per `../07-chatbot-cleanup-securechatai.md`; the v2 path gets this via
-`TurnService` by construction. Legacy (flag-off) path changes:
+Per `../07-chatbot-cleanup-securechatai.md` (revised 2026-08-18); the v2 path
+gets this via `TurnService` by construction. Legacy (flag-off) path changes:
 
-- SPA sends `{messages, session_id}` (Cappy shape; `sessionId` already exists
-  in `contexts/Chat.jsx`); backend accepts both shapes for compatibility.
+- **Payload shape and participant identity are one change** (07 decision 7). SPA
+  sends `{messages, session_id}` (Cappy shape; `sessionId` already exists in
+  `contexts/Chat.jsx:10` but is never sent); backend accepts both shapes for
+  compatibility. **The participant id is derived server-side** from `$record` /
+  `$survey_hash`; any payload-supplied `user_id` is ignored. This is a security
+  fix, not a shape nit — today `MICA.php:393` reads the id off the raw payload on
+  a no-auth action, which lets a caller read another participant's baseline data
+  through the prompt (`../14-live-defects.md` D2).
+- Strip every non-`role`/`content` key from messages before `callAI()` —
+  rebuild rather than filter (Cappy `REDCapChatBot.php:184-195`).
 - Pass `session_id` (params) + participant id (`$username` arg) to
-  `SecureChatAI::callAI()` → central turn log gains session grouping;
-  `MICAQuery` transcript kept unchanged (replaced in Stage 3).
-- Strip nonstandard `user_id` keys from messages before `callAI()`.
-- Remove `formatResponse()` raw pass-through branch (responses are always
-  normalized + sanitized by SecureChatAI).
-- `setIfNotBlank()` semantics for model params; refresh `llm-model` dropdown
-  to current registry aliases.
+  `SecureChatAI::callAI()`. Note this makes the provider's turn log *start
+  existing*: with no `session_id`, `logConversationTurn()` returns early
+  (`SecureChatAI.php:2242`) and writes nothing today. `MICAQuery` transcript kept
+  unchanged (replaced in Stage 3); `session_id` has **no consumer inside MICA**
+  until then, and adopting it as MICA's own session key needs a trust decision
+  (client `Date.now()` ids are guessable and collide across tabs).
+- Remove `formatResponse()`'s raw `choices[0]` branch — unreachable today, and
+  broken if reached (`extractResponseText()` no longer parses `choices[0]`).
+  Read `structured_output` for schema'd output. Expect `id` to always be `null`
+  — the provider never sets it.
+- Add failure detection (§1.5 interim heuristic or the PR flag) so provider
+  errors stop being stored as counselor turns.
+- Blank-means-absent for model params — implemented **locally**;
+  `setIfNotBlank()` is Cappy's helper, not a SecureChatAI feature. Drop or
+  relabel `gpt-max-tokens` and `reasoning-effort`: the provider discards both for
+  every model MICA can currently select.
+- Refresh the `llm-model` dropdown to current registry aliases **and** validate
+  the configured value against `getAvailableModels()` — the unvalidated setting
+  is what caused `../14-live-defects.md` D1.
 - System prompt handling **unchanged** on this path (client round-trip stays
-  until TurnService; decision 2026-08-13).
+  until TurnService; decision 2026-08-13) — but fix the `.pop()` context loss
+  (D8) and the empty-context send-button hang (D7) while it still exists.
 
 ## Tests
 
@@ -154,3 +213,8 @@ Per `../07-chatbot-cleanup-securechatai.md`; the v2 path gets this via
 - [ ] SecureChatAI PR #1 merged + version pin recorded
 - [ ] Legacy path passes `session_id`/username; MICA turns visible in
       SecureChatAI project logs grouped by session (1.6)
+- [ ] Participant identity is server-derived; a forged `user_id` in the payload
+      changes nothing (1.6 / `../14-live-defects.md` D2)
+- [ ] A forced provider failure (e.g. an unregistered alias) yields the static
+      technical fallback and is **not** written to the transcript as a counselor
+      turn (1.5 / `../14-live-defects.md` D1)
