@@ -640,18 +640,64 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
         $response = \REDCap::saveData('json', json_encode($saveData), 'overwrite');
 
-        if (empty($response['errors'])) {
-            $body = "<html><p>Your MICA Verification code is: <strong>$code</strong></p></html>";
-            $res = \REDCap::email($email, 'redcap@stanford.edu', 'Your MICA verification code', $body);
-            if(!$res){
-                $this->emError('Email hook failure');
-                throw new \Exception('Verification email could not be sent, please contact your administrator');
-            }
-
-        } else {
-            $this->emError('Save data failure, ', json_encode($response['errors']));
+        // Check the save before sending anything. `empty($response['errors'])` used to be the
+        // success condition, which fails OPEN: a non-array response makes the expression true, so
+        // the participant would be emailed a code that was never stored, leaving them unable to
+        // log in at all (docs 14 D11).
+        $saveErrors = $this->describeSaveDataErrors($response);
+        if ($saveErrors !== '') {
+            $this->emError('generateOneTimePassword: saveData failed', $saveErrors);
             throw new \Exception('Save data failure in generating one time password');
         }
+
+        $body = "<html><p>Your MICA Verification code is: <strong>$code</strong></p></html>";
+        $res = \REDCap::email($email, 'redcap@stanford.edu', 'Your MICA verification code', $body);
+        if (!$res) {
+            $this->emError('Email hook failure');
+            throw new \Exception('Verification email could not be sent, please contact your administrator');
+        }
+    }
+
+    /**
+     * Normalize a REDCap::saveData() result into an error description.
+     *
+     * The result is an array whose 'errors' key may be absent, a string, or an array - and with a
+     * json returnFormat saveData can hand back a string instead. Callers used to subscript it
+     * directly, which both mistook a non-array response for success and could pass an array into
+     * Exception's string parameter (docs 14 D11). Unrecognized shapes are treated as failure so
+     * this stays fail-closed.
+     *
+     * @param mixed $response
+     * @return string '' when the save reported no errors, otherwise a loggable description
+     */
+    private function describeSaveDataErrors($response): string
+    {
+        if (is_string($response)) {
+            $decoded = json_decode($response, true);
+            // A JSON body is the documented returnFormat=json shape; anything else is not a
+            // result we can interpret, so treat it as an error rather than assume success.
+            $response = is_array($decoded) ? $decoded : ['errors' => $response];
+        }
+
+        if (!is_array($response)) {
+            return 'Unexpected REDCap::saveData() response of type ' . get_debug_type($response);
+        }
+
+        $errors = $response['errors'] ?? null;
+        if (empty($errors)) {
+            return '';
+        }
+
+        if (!is_array($errors)) {
+            return is_scalar($errors) ? (string) $errors : json_encode($errors);
+        }
+
+        // REDCap can report errors as nested rows (e.g. [record, field, value, message]), so
+        // json_encode anything that is not scalar rather than stringifying an array.
+        return implode('; ', array_map(
+            fn($error) => is_scalar($error) ? (string) $error : json_encode($error),
+            $errors
+        ));
     }
 
     /**
@@ -963,14 +1009,9 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             'overwriteBehavior' => 'overwrite',
             'returnFormat' => 'json'
         ]);
-        // saveData() returns an array whose 'errors' key may be absent, a string, or an array.
-        // Subscripting it unconditionally warned on the happy path, and passing an array into
-        // Exception's string parameter was itself a TypeError (docs 14 D11).
-        if (!empty($response['errors'])) {
-            $errors = is_array($response['errors'])
-                ? implode('; ', array_map('strval', $response['errors']))
-                : (string) $response['errors'];
-            $this->emError('completeSession: saveData reported errors', $errors);
+        $saveErrors = $this->describeSaveDataErrors($response);
+        if ($saveErrors !== '') {
+            $this->emError('completeSession: saveData reported errors', $saveErrors);
             throw new \Exception('Your session could not be saved. Please contact the study team.');
         }
 

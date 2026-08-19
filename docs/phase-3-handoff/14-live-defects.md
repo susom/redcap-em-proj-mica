@@ -470,10 +470,8 @@ same function:
    renders the message into the transcript and leaves them on the page, so a
    failed finalization is visible and retryable instead of looking like a normal
    exit.
-4. **D11** (same function) — `$response['errors']` is now `!empty()`-checked and
-   stringified before it reaches `Exception`; previously an array was passed to a
-   string parameter, and the key was subscripted unconditionally on the happy
-   path.
+4. **D11** (same function) — the `saveData` result now goes through the shared
+   `describeSaveDataErrors()` helper; see the D11 entry below.
 5. **D10** (same function) — `$event_id` is initialized to `null`, so the
    `emDebug` call for sessions 2-6 no longer reads an undefined variable.
 
@@ -485,14 +483,54 @@ unchanged), no unexpected page errors.
 **Not verified: the happy path.** No project in this environment has the pilot
 structure, so `completeSession()`'s success branch — `saveData()`, the
 `raw_chat_logs` write, and the posttest / month3_fu survey-link lookup — was not
-exercised. The D10/D11 changes there are defensive and were checked by inspection
-and `php -l` only. That branch becomes testable when the Stage 2 session engine
+exercised. The D10 change there is defensive and was checked by inspection and
+`php -l` only; the D11 helper it calls is unit-tested (see D11 below). That branch becomes testable when the Stage 2 session engine
 lands (or against a pilot-structured project).
 
 **Still the root cause:** the `null` comes from the R01/pilot event mismatch. This
 fix makes the failure honest and non-destructive; it does not make finalization
 *work* on PID 257. That is Stage 2 /
 [`09-pid-257-structure-audit.md`](09-pid-257-structure-audit.md).
+
+### D11 — `saveData` results: the OTP path failed *open*
+
+**Severity:** medium-high — a participant could be locked out of their own study
+**Status: FIXED 2026-08-19 (all call sites), unit-tested 12/12**
+
+Originally logged as a low-severity type-check nit. It is worse than that in
+`generateOneTimePassword()`, because there the subscript **was the success
+condition**:
+
+```php
+$response = \REDCap::saveData('json', json_encode($saveData), 'overwrite');
+if (empty($response['errors'])) { /* email the code */ }
+else { /* throw */ }
+```
+
+`empty()` suppresses the illegal-offset diagnostic, so **any non-array response
+evaluates as success**. The participant would then be emailed a verification code
+that was never written to `two_factor_code` — and `verifyEmail()` looks the code
+up by `filterLogic` on that field, so the code can never match. The failure mode
+is a participant holding a valid-looking code that cannot possibly work, with
+nothing logged.
+
+**Fix.** One shared, fail-closed helper, `describeSaveDataErrors($response)`,
+returning `''` only when the save genuinely reported no errors:
+
+- normalizes the documented `returnFormat=json` string shape by decoding it;
+- treats an unparseable string or any non-array as an **error**, not success;
+- flattens `errors` whether it is a string, a list, or REDCap's nested rows
+  (`json_encode`-ing non-scalars rather than stringifying an array).
+
+`generateOneTimePassword()` now checks the save **before** sending any email, and
+`completeSession()` was refactored onto the same helper so there is one
+implementation rather than two.
+
+Unit-tested through reflection, 12/12: empty errors, absent `errors` key, string
+error, list of strings, nested error rows, JSON-string success, JSON-string with
+errors, unparseable string, `null`, `false`, `int` — plus an explicit assertion
+that a non-array response **fails closed** so no OTP would be sent. The End
+Session E2E was re-run after the refactor (8/8) to confirm no regression.
 
 ### D9 — `renderMicaApp` does not exist: dead mount contract
 
@@ -519,7 +557,7 @@ false, which means:
 | # | Defect | Ref |
 |---|---|---|
 | D10 | ~~`$event_id` undefined when `emDebug`'d for sessions 2-6~~ **FIXED 2026-08-19** with D16 | `:934` |
-| D11 | `REDCap::saveData()` return subscripted without a type check. **Fixed in `completeSession()` 2026-08-19 with D16**; the two OTP paths (`:609`, `:618`) are still open | `:609`, `:618`, `:918` |
+| D11 | ~~`REDCap::saveData()` return subscripted without a type check~~ **FIXED 2026-08-19 — all call sites.** See "D11 — saveData results" in section B | `:641`, `:960` |
 | D12 | `summarizeCatchUp` builds `session_0_arm_1` when `$i === 0`; `getEventIdFromUniqueEvent` returns null and `'events' => [null]` reaches `getData` | `:768-769` |
 | D13 | `fetchSavedQueries` compares `$check['record_id']` instead of the `$primary_field` it just fetched | `:533` |
 | D14 | `handleUserInput` reads `$data['user_id']` unconditionally though only `role`/`content` are validated ⇒ undefined-key warning and `user_id: null` on every assistant turn | `:109` |
