@@ -1,8 +1,8 @@
 # 14 — Live defects found during the SecureChatAI audit (2026-08-18)
 
-**Status:** FINDINGS — most verified by code reading; **D1, D9, D16 and D22 were
-reproduced through the real participant path with Playwright and D1/D16/D22 are
-fixed** (D8 fixed alongside D22, D7 partly)
+**Status:** FINDINGS — most verified by code reading. **Fixed and E2E-verified so
+far: D1, D6, D7, D8, D10, D11, D13, D16, D22.** Still open: D2, D3, D4, D5, D9,
+D12, D14, D15, D17-D21
 **Scope:** defects in the code as it stands on `mica-phase-3` @ `ab81cca`.
 These are distinct from the SOW migration work in
 [`07-chatbot-cleanup-securechatai.md`](07-chatbot-cleanup-securechatai.md):
@@ -12,9 +12,11 @@ they are broken now and do not need the phase-3 architecture to be fixed.
 > Playwright E2E run as an end user *before* it is fixed, and the failing test
 > kept. Except where a defect is explicitly marked **Observed**, the evidence is
 > static analysis with line-level citations — treat those symptoms as predicted,
-> not observed. **D1, D9, D16 and D22 were reproduced through the real
-> participant path with Playwright on 2026-08-19**; D6's current behaviour was
-> observed too. The rest are still static findings.
+> not observed. **D1, D6, D7, D9, D16 and D22 were reproduced through the real
+> participant path with Playwright on 2026-08-19**, and each fix re-verified the
+> same way. D7's gate message is the one partial: the server half is asserted
+> against real output, the client half against a simulated payload, because PID
+> 257 cannot raise that gate (see D7). The rest are still static findings.
 
 Refs are `MICA.php` unless another file is named. SPA paths are relative to
 `mica-chatbot/`. `SCA/` = `modules-local/secure_chat_ai_v9.9.9/`.
@@ -48,10 +50,11 @@ Two attribution notes, so nobody chases the wrong thing:
   gated: none".
 
 Three gaps observed in the same run, all downstream of the PID 257 structure
-mismatch rather than of the chat code: no counselor persona (D22's known gap),
-reload loses the transcript (D6 below), and **End Session fatals** (D16 below —
-since fixed; the fatal is gone, but finalization still cannot succeed on PID 257
-until the session engine is reworked).
+mismatch rather than of the chat code. Two have since been fixed: reload now
+restores both the transcript and the model's context (D6), and End Session fails
+honestly instead of fataling (D16 — though finalization still cannot *succeed* on
+PID 257 until the session engine is reworked). The remaining one is D22's known
+gap: no counselor persona, because `initial_system_context` is still `[]`.
 
 ## A. Blocking / security
 
@@ -366,8 +369,12 @@ Cappy's convention is the target: metadata only — role + content **length**
 ### D6 — Restoring a session does not restore the model's context
 
 **Severity:** high (silently degrades the intervention)
-**Observed 2026-08-19:** on PID 257 restore does not happen **at all** — after a
-reload mid-conversation the transcript is empty and only the intro bubble shows.
+**Status: FIXED 2026-08-19** — reproduced, fixed, re-verified E2E on desktop and
+mobile (9/9 each). See "Fix and verification" below.
+
+**As observed before the fix:** on PID 257 restore did not happen **at all** —
+after a reload mid-conversation the transcript was empty and only the intro
+bubble showed.
 `fetchSavedSession()` passes `b.name` (null on this structure) and the backend
 `fetchSavedQueries` requires a name and cross-checks it against
 `participant_name` (`MICA.php:515`, `:533`), so the call returns nothing. The
@@ -384,15 +391,43 @@ visible transcript while the model receives an **empty** history, and
 counselor behaves as if the session just began. Cappy rebuilds `apiContext` from
 saved turns (`redcap_chatbot_v9.9.9/chatbot_ui/src/contexts/Chat.js:94-105`).
 
+#### Fix and verification
+
+Restore was broken in two places — the call never succeeded on the R01 structure,
+and even when it did the model context was not rebuilt:
+
+1. `MICA.php` `fetchSavedQueries()` — the `participant_name` cross-check is now
+   applied **only where the project has that field**. The pilot's second-factor
+   gate is preserved wherever it exists; projects without it (R01) no longer have
+   restore made impossible by a name they cannot supply. Two long-standing bugs
+   in the same method went with it: the comparison now uses the project's real
+   primary field instead of a hardcoded `record_id` (**D13**), and the record is
+   fetched via `records` instead of interpolating user input into a `filterLogic`
+   string (same class as **D3**).
+2. `Chat.jsx` `replaceSession()` — rebuilds `apiContext` from the restored turns,
+   not just the display state. The system context is prepended **here** rather
+   than left to `callAjax()`, so it stays ahead of the history and every entry
+   carries `user_id` (the backend reads the participant id off the *first*
+   message).
+3. `Chat.jsx` `callAjax()` — the system-context injection now triggers on "no
+   system message present" instead of "context array is empty". After a restore
+   the array is non-empty, so the old condition would have skipped injection and
+   sent a restored conversation with no system prompt at all.
+
+Verified E2E, desktop and iPhone 13, 9/9 each. The decisive check is not that the
+transcript reappears but that the **model** has it: told a codeword, reloaded the
+page, then asked for the codeword back — and got it. Re-ran the full 23-check
+suite afterwards with no regressions.
+
 ### D7 — Send button hangs permanently on the "session already completed" gate
 
 **Severity:** medium-high (dead end with no message)
-**Status: PARTLY FIXED 2026-08-19.** The client-side crash is gone — `callAjax()`
-no longer `.pop()`s an empty array, so the send no longer throws and the spinner
-no longer sticks (see D22's fix). **The server's message is still lost:**
-`redcap_survey_page` catches the gate exception into `$error` (`:268-275`) and
-never sends it to the browser, so the participant is told nothing about *why*
-there is no session. Surfacing that text is the remaining half.
+**Status: FIXED 2026-08-19 (both halves).** The client-side crash went first, with
+D22: `callAjax()` no longer `.pop()`s an empty array, so the send does not throw
+and the spinner does not stick. The second half — the server's message being
+dropped — is now fixed too: `redcap_survey_page` forwards the caught gate message
+as `bootstrap.error`, and the SPA renders it on load instead of showing a chat
+that looks usable but cannot send. Verified E2E, 9/9 on desktop and mobile.
 
 `getSystemContextForRecord()` throws the completion gates (`:706`, `:728`,
 `:735`). `redcap_survey_page` catches and normalizes to `$ctx = []`
@@ -406,6 +441,30 @@ and `footer.jsx:27-31` is a no-op.
 **Predicted symptom:** spinner stuck on, no error text, no recovery. The
 participant is told nothing — even though the server had a specific, friendly
 message to deliver ("Return in N day(s) for your next session!").
+
+#### Fix and verification (second half)
+
+- `MICA.php` `redcap_survey_page()` — the caught message is forwarded as
+  `bootstrap.error` instead of being assigned to `$error` and dropped.
+- `useAuth.jsx` — when `bootstrap.error` is present the SPA renders it into the
+  transcript on load and does **not** start a chat session.
+- `Chat.jsx` `callAjax()` — the not-ready message now prefers the server's reason
+  over the generic "could not be started" text, so a participant who types anyway
+  gets the same explanation rather than a second, vaguer one.
+
+Verified E2E, desktop and iPhone 13, 9/9 each: the server emits an `error` key in
+the real bootstrap attribute (asserted via `hasOwnProperty`, so this half is
+verified against actual server output, not just the injected value); the client
+reads it; the message renders on load; and sending repeats the server's reason.
+
+**Testing note:** PID 257 cannot *produce* these gates — they need
+`session_info_complete` / `month3_fu_complete`, which the R01 structure lacks, and
+`calculateSessionInfo()` returns `null` there without throwing. The gate message
+was therefore simulated by intercepting the assignment the page's inline bootstrap
+script makes, which exercises the real client path against a realistic payload.
+The server side of it is asserted separately (the `error` key is present in the
+attribute PHP actually rendered). A project that can raise a real gate should
+re-confirm end to end.
 
 ### D8 — Only the *last* system-context element ever reaches the model
 
@@ -559,7 +618,7 @@ false, which means:
 | D10 | ~~`$event_id` undefined when `emDebug`'d for sessions 2-6~~ **FIXED 2026-08-19** with D16 | `:934` |
 | D11 | ~~`REDCap::saveData()` return subscripted without a type check~~ **FIXED 2026-08-19 — all call sites.** See "D11 — saveData results" in section B | `:641`, `:960` |
 | D12 | `summarizeCatchUp` builds `session_0_arm_1` when `$i === 0`; `getEventIdFromUniqueEvent` returns null and `'events' => [null]` reaches `getData` | `:768-769` |
-| D13 | `fetchSavedQueries` compares `$check['record_id']` instead of the `$primary_field` it just fetched | `:533` |
+| D13 | ~~`fetchSavedQueries` compares `$check['record_id']` instead of `$primary_field`~~ **FIXED 2026-08-19** with D6 | `:533` |
 | D14 | `handleUserInput` reads `$data['user_id']` unconditionally though only `role`/`content` are validated ⇒ undefined-key warning and `user_id: null` on every assistant turn | `:109` |
 | D15 | `$messages[sizeof($messages)-1]` becomes `$messages[-1]` when `handleUserInput` returns `[]` (non-array payload) | `:389` |
 | D16 | **Promoted to section B** — reproduced as a fatal that loses the session. See "D16 — End Session fatals" above | `:887-889` |
@@ -585,7 +644,8 @@ false, which means:
 4. **D2 + D3 + D4** as one security pass — they share the "trust the client's
    participant id" root cause, and D2's fix is the same edit the SOW payload
    change needs.
-5. **D6, D7, D8** — participant-visible behavior; each needs a failing E2E test
-   first.
+5. ~~**D6, D7, D8**~~ — **done 2026-08-19**, all three E2E-verified (D8's
+   multi-entry case still needs a project that produces more than one context
+   entry).
 6. **D5** with the Stage 0 §0.6 logging cleanup.
 7. **D9-D21** folded into Stage 0 §0.6 as behavior-preserving cleanup.

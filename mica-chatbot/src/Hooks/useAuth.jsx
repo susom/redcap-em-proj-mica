@@ -7,7 +7,7 @@ import { ChatContext } from '../contexts/Chat';
 const authContext = React.createContext();
 function useAuth() {
     const [authed, setAuthed] = React.useState(false);
-    const { replaceSession } = useContext(ChatContext);
+    const { replaceSession, chatContext, updateChatContext } = useContext(ChatContext);
 
     useEffect(() => {
         if (authed) return;
@@ -16,6 +16,19 @@ function useAuth() {
         // exist in the R01 project structure. Requiring it here aborted the whole bootstrap, so no
         // user was ever cached and every message was silently dropped downstream (docs 14 D22).
         if (!b || !b.participant_id) return;
+
+        // The server raises the session gates ("Session already completed", "Return in N day(s) for
+        // your next session!") as exceptions and now forwards the message. Show it and do not start
+        // a chat: previously the message was dropped and the participant got a chat that looked
+        // usable but silently could not send (docs 14 D7).
+        if (b.error) {
+            setAuthed(true);
+            updateChatContext([
+                ...(chatContext || []),
+                { user_content: null, assistant_content: b.error, timestamp: Date.now() },
+            ]);
+            return;
+        }
 
         // Mirror verifyEmail() side-effects
         setAuthed(true);

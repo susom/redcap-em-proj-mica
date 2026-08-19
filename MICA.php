@@ -334,6 +334,10 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             'current_session'        => $ctx['currentSession'] ?? null,
             'session_start_time'     => $ctx['session_start_time'] ?? null,
             'initial_system_context' => $ctx['system_context'] ?? [],
+            // The session gates ("Session already completed", "Return in N day(s)...") were raised
+            // as exceptions, caught here, and then dropped - the participant saw a normal, unusable
+            // chat instead of the reason (docs 14 D7).
+            'error'                  => $error ?? null,
             'login_url' => $this->getUrl('pages/chatbot.php', true, true)
         ];
         $json = json_encode($bootstrap, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT) ?: '{}';
@@ -546,28 +550,47 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      */
     public function fetchSavedQueries($payload, $sessionStart = null): array
     {
-        ['name' => $name, 'participant_id' => $participant_id] = $payload;
+        $participant_id = $payload['participant_id'] ?? null;
+        $name           = $payload['name'] ?? null;
 
-        // Correct the typo in the if statement
-        if (empty($participant_id) || empty($name)) {
-            throw new \Exception("Error with fetching queries: Participant ID / name combination not provided");
+        if (empty($participant_id)) {
+            throw new \Exception("Error with fetching queries: no participant ID provided");
         }
 
         $primary_field = $this->getPrimaryField();
-        $params = array(
-            "return_format" => "json",
-            "filterLogic" => "[$primary_field] = '$participant_id'",
-            "fields" => array($primary_field, "participant_name"),
-        );
-        // Find user and determine validity
-        $json = json_decode(\REDCap::getData($params), true);
-        $check = reset($json);
+        $hasNameField  = in_array('participant_name', $this->getProjectFieldNames(), true);
 
-        // Check across participant name and id
-        if($check['record_id'] === $participant_id && $check['participant_name'] === $name) {
-            return MICAQuery::getLogsFor($this, PROJECT_ID, $participant_id, $sessionStart);
+        // The pilot used participant_name as a second factor on this no-auth action. Keep that gate
+        // wherever the field exists, but do not *require* a name in projects that have no such field
+        // (the R01 structure): demanding one made restore impossible, so a reloaded session silently
+        // came back empty (docs 14 D6).
+        if ($hasNameField && empty($name)) {
+            throw new \Exception("Error with fetching queries: Participant ID / name combination not provided");
         }
-        return [];
+
+        $fields = [$primary_field];
+        if ($hasNameField) {
+            $fields[] = 'participant_name';
+        }
+
+        // Look the record up by `records` instead of interpolating user input into a filterLogic
+        // string (docs 14 D3, same class of issue).
+        $json  = json_decode((string) \REDCap::getData([
+            'records'       => [$participant_id],
+            'fields'        => $fields,
+            'return_format' => 'json',
+        ]), true);
+        $check = is_array($json) ? current($json) : false;
+
+        // Compare against the project's actual primary field, not a hardcoded 'record_id' (docs 14 D13).
+        if (!is_array($check) || ($check[$primary_field] ?? null) !== (string) $participant_id) {
+            return [];
+        }
+        if ($hasNameField && ($check['participant_name'] ?? null) !== $name) {
+            return [];
+        }
+
+        return MICAQuery::getLogsFor($this, PROJECT_ID, $participant_id, $sessionStart);
     }
 
     public function getPrimaryField(){

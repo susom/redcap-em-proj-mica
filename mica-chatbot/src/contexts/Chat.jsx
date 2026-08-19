@@ -119,9 +119,30 @@ export const ChatContextProvider = ({ children }) => {
 
     const replaceSession = async (session) => {
         setSessionId(session.session_id);
-        await updateChatContext(session.queries);
-        setMessages(session.queries); 
-        setMsgCount(session.queries.length);
+        const queries = session.queries || [];
+        await updateChatContext(queries);
+        setMessages(queries);
+        setMsgCount(queries.length);
+
+        // Rebuild the model-facing context as well. Restoring only the display state left the model
+        // with no history at all, so a participant who reloaded mid-session saw their conversation
+        // but the counselor had forgotten it (docs 14 D6).
+        //
+        // The system context is prepended here rather than left to callAjax, so that (a) it stays
+        // ahead of the history instead of being appended after it, and (b) every entry carries
+        // user_id - the backend reads the participant id off the *first* message.
+        const user_id = window.mica_bootstrap?.participant_id;
+        const initial = window.mica_jsmo_module?.getInitialSystemContext?.();
+        const systemEntries = (Array.isArray(initial) ? initial : (initial ? [initial] : []))
+            .filter(ctx => ctx && ctx.role && ctx.content)
+            .map((ctx, index) => ({ role: ctx.role, content: ctx.content, index, user_id }));
+
+        const rebuilt = [...systemEntries];
+        queries.forEach((q, index) => {
+            if (q.user_content) rebuilt.push({ role: 'user', content: q.user_content, index, user_id });
+            if (q.assistant_content) rebuilt.push({ role: 'assistant', content: q.assistant_content, index, user_id });
+        });
+        updateApiContext(rebuilt);
     };
 
     const callAjax = async (payload, callback) => {
@@ -130,11 +151,15 @@ export const ChatContextProvider = ({ children }) => {
         const currentUser = await getCurrentUser();
         if (!currentUser?.[0]?.id) {
             console.error('MICA: cannot send - no participant identity cached for this session', window.mica_bootstrap);
+            // When the server explained why there is no session (a completion gate), say that rather
+            // than a generic failure (docs 14 D7).
+            const serverReason = window.mica_bootstrap?.error;
             await updateChatContext([
                 ...chatContextRef.current,
                 {
                     user_content: payload.content,
-                    assistant_content: "Sorry - this chat session could not be started. Please reload the page, and contact the study team if this keeps happening.",
+                    assistant_content: serverReason
+                        || "Sorry - this chat session could not be started. Please reload the page, and contact the study team if this keeps happening.",
                     timestamp: new Date().getTime(),
                 },
             ]);
@@ -142,7 +167,9 @@ export const ChatContextProvider = ({ children }) => {
             return;
         }
 
-        if(apiContextRef.current.length === 0){
+        // Inject on "no system message yet" rather than "empty context": after a restore the context
+        // is non-empty but still has no system prompt, which would have skipped injection entirely.
+        if(!apiContextRef.current.some(entry => entry.role === 'system')){
             // getInitialSystemContext() may be empty (no session context resolved server-side) or
             // carry several entries (general context plus a catch-up summary). The previous .pop()
             // both crashed on the empty case and silently discarded all but the last entry
