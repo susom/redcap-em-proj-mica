@@ -111,6 +111,12 @@ case 'reset-lockout':
 
 case 'teardown':
     Records::deleteRecord(RECORD, $Proj->table_pk, false, false, '', $pid);
+    // deleteRecord() clears the record-list cache for ONE arm (its $arm_id parameter). This helper
+    // deliberately puts the participant in arm 2 as well, so without this loop the record keeps
+    // showing up in arm 2's Record Status Dashboard after teardown, with no data behind it.
+    foreach (array_keys($Proj->events) as $armNum) {
+        Records::deleteRecordFromRecordListCache($pid, RECORD, $armNum);
+    }
     db_query("delete l from redcap_surveys_login l
         join redcap_surveys_response r on r.response_id = l.response_id
         where r.record = '" . db_escape(RECORD) . "'");

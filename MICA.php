@@ -452,6 +452,166 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         printf("<script>%s</script>", sprintf($js, $this->getJavascriptModuleObjectName()));
     }
 
+    /**
+     * Put a record into the arm it was randomized to, so a CRC never has to create it there by hand.
+     *
+     * A REDCap record spans arms under the same record_id - there is nothing to "copy". A record
+     * simply *appears* in an arm once it has at least one saved value in an event of that arm, which
+     * is also what `REDCap::getSurveyLink()` checks before it will mint a link. So this writes the
+     * allocation value into the first event of the assigned arm and lets REDCap do the rest.
+     *
+     * Deliberately only the ASSIGNED arm. Materializing every record in every arm would give a
+     * Standard Care participant a valid `mica_ed_session` link (those host instruments are
+     * designated to arms 2 and 3), i.e. a control participant could receive the intervention.
+     *
+     * By convention the `study_group` value IS the arm number - see
+     * docs/phase-3-handoff/scripts/apply-study-group-field.php.
+     */
+    public function redcap_save_record($project_id, $record, $instrument, $event_id, $group_id,
+                                      $survey_hash, $response_id, $repeat_instance)
+    {
+        // Our own saveData() re-enters this hook; the idempotency check would stop it anyway, but
+        // guard explicitly so the intent is not left to ordering.
+        static $running = false;
+        if ($running) return;
+
+        $running = true;
+        try {
+            $this->ensureRecordInAssignedArm($project_id, $record);
+        } catch (\Throwable $t) {
+            // Never let this break the CRC's data entry.
+            $this->log('arm materialization threw', [
+                'record' => (string) $record, 'error' => $t->getMessage(),
+            ]);
+        } finally {
+            $running = false;
+        }
+    }
+
+    /**
+     * Ensure a record exists in the arm its allocation field points at.
+     *
+     * Public because `redcap_save_record` only fires on data-entry/survey saves through the UI
+     * (REDCap calls it from exactly one place: `Classes/DataEntry.php:6735`). Data imports, the API
+     * and other modules' `REDCap::saveData()` calls do NOT fire it, so the same logic has to be
+     * runnable on demand - see docs/phase-3-handoff/scripts/backfill-study-group-arms.php.
+     *
+     * @param $project_id
+     * @param $record
+     * @return string one of: disabled, no-field, not-randomized, bad-arm, already-present,
+     *                materialized, save-failed
+     */
+    public function ensureRecordInAssignedArm($project_id, $record): string
+    {
+        if (empty($this->getProjectSetting('materialize-assigned-arm'))) return 'disabled';
+
+        $groupField = trim((string) ($this->getProjectSetting('study-group-field') ?: 'study_group'));
+        $proj       = new \Project($project_id);
+        if (!isset($proj->metadata[$groupField])) {
+            $this->log('arm materialization skipped: allocation field missing', [
+                'field' => $groupField, 'record' => (string) $record,
+            ]);
+            return 'no-field';
+        }
+
+        // The allocation may be recorded at any event; take the first non-empty value.
+        $data  = \REDCap::getData([
+            'project_id' => $project_id, 'records' => [$record],
+            'fields' => [$groupField], 'return_format' => 'array',
+        ]);
+        $group = null;
+        foreach (($data[$record] ?? []) as $values) {
+            if (isset($values[$groupField]) && $values[$groupField] !== '') {
+                $group = $values[$groupField];
+                break;
+            }
+        }
+        if ($group === null) return 'not-randomized';
+
+        $arm = (int) $group;
+        $targetEventId = $this->getFirstEventIdForArm($proj, $arm);
+        if (!$targetEventId) {
+            $this->log('arm materialization failed: no such arm', [
+                'record' => (string) $record, 'study_group' => (string) $group, 'arm' => $arm,
+            ]);
+            return 'bad-arm';
+        }
+
+        if ($this->recordExistsInArm($project_id, $record, $arm)) return 'already-present';
+
+        $eventNames = \REDCap::getEventNames(true, false);
+        $response   = \REDCap::saveData([
+            'project_id'        => $project_id,
+            'dataFormat'        => 'json',
+            'data'              => json_encode([[
+                $proj->table_pk     => $record,
+                'redcap_event_name' => $eventNames[$targetEventId] ?? '',
+                $groupField         => $group,
+            ]]),
+            'overwriteBehavior' => 'normal',
+            'returnFormat'      => 'json',
+        ]);
+
+        $errors = $this->describeSaveDataErrors($response);
+        if ($errors !== '') {
+            $this->log('arm materialization failed: saveData reported errors', [
+                'record' => (string) $record, 'arm' => $arm, 'errors' => $errors,
+            ]);
+            return 'save-failed';
+        }
+
+        // Trial-relevant enough to keep an audit trail of.
+        $this->log('record added to its randomized arm', [
+            'record' => (string) $record, 'study_group' => (string) $group,
+            'arm' => $arm, 'event_id' => (string) $targetEventId,
+        ]);
+        return 'materialized';
+    }
+
+    /**
+     * Lowest-day_offset event of an arm - `eventInfo` carries arm_num/day_offset but no unique name.
+     *
+     * @param \Project $proj
+     * @param int $arm
+     * @return int|null
+     */
+    private function getFirstEventIdForArm($proj, int $arm): ?int
+    {
+        $best = null; $bestOffset = null;
+        foreach ($proj->eventInfo as $eventId => $info) {
+            if ((int) ($info['arm_num'] ?? 0) !== $arm) continue;
+            $offset = (int) ($info['day_offset'] ?? 0);
+            if ($bestOffset === null || $offset < $bestOffset) {
+                $bestOffset = $offset;
+                $best = (int) $eventId;
+            }
+        }
+        return $best;
+    }
+
+    /**
+     * Does this record already have data in any event of the given arm?
+     *
+     * @param $project_id
+     * @param $record
+     * @param int $arm
+     * @return bool
+     */
+    private function recordExistsInArm($project_id, $record, int $arm): bool
+    {
+        $dataTable = method_exists($this, 'getDataTable')
+            ? $this->getDataTable($project_id)
+            : 'redcap_data';
+
+        $sql = "select 1 from $dataTable d
+                  join redcap_events_metadata em on em.event_id = d.event_id
+                  join redcap_events_arms ea on ea.arm_id = em.arm_id
+                 where d.project_id = ? and d.record = ? and ea.project_id = ? and ea.arm_num = ?
+                 limit 1";
+        $result = $this->query($sql, [$project_id, $record, $project_id, $arm]);
+        return (bool) $result->fetch_row();
+    }
+
     public function redcap_module_ajax($action, $payload, $project_id, $record, $instrument, $event_id, $repeat_instance,
                                        $survey_hash, $response_id, $survey_queue_hash, $page, $page_full, $user_id, $group_id) {
         try {
