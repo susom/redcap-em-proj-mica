@@ -1,0 +1,18 @@
+{
+    "description": "Development toolchain, kept out of the module's own composer.json on purpose.",
+    "//": [
+        "The module's vendor/ is committed and deployed verbatim (a REDCap EM deploys by directory",
+        "copy), so it must never contain a test framework. Keeping PHPUnit here rather than in",
+        "require-dev makes that structural instead of procedural: the module has no dev",
+        "dependencies at all, so `composer install` in the module root cannot produce a tree that",
+        "differs from what ships, and nobody can commit PHPUnit to production by forgetting a flag.",
+        "",
+        "Install with `composer test:install` from the module root. tools/vendor is gitignored."
+    ],
+    "require": {
+        "phpunit/phpunit": "^11.5"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

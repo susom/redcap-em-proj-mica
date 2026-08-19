@@ -1,22 +1,23 @@
 {
+    "description": "REDCap external module: Project MICA. Runtime dependencies only - see tools/composer.json for the test toolchain.",
     "require": {
-        "php-ai/php-ml": "^0.10.0",
-        "twilio/sdk": "^8.2"
+        "php": ">=8.2",
+        "opis/json-schema": "^2.4"
     },
-    "require-dev": {
-        "phpunit/phpunit": "^11.5"
+    "config": {
+        "platform": {
+            "php": "8.2"
+        },
+        "sort-packages": true,
+        "optimize-autoloader": true
     },
     "autoload": {
         "psr-4": {
             "Stanford\\MICA\\": "classes/"
         }
     },
-    "autoload-dev": {
-        "psr-4": {
-            "Stanford\\MICA\\Tests\\": "tests/"
-        }
-    },
     "scripts": {
-        "test": "phpunit"
+        "test": "tools/vendor/bin/phpunit",
+        "test:install": "composer install --working-dir=tools"
     }
 }

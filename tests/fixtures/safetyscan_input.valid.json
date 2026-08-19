@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "session_id_pseudonymous": "s_7Fq2x-Kd91",
+  "session_type": "baseline",
+  "setting": "emergency_department",
+  "session_started_at": "2026-08-19T21:04:11+00:00",
+  "session_ended_at": "2026-08-19T21:18:52+00:00",
+  "transcript_finalized": true,
+  "messages": [
+    {
+      "message_id": "L1041",
+      "sequence": 1,
+      "speaker_role": "mica",
+      "timestamp": "2026-08-19T21:04:11+00:00",
+      "content": "Hi, I'm MICA. Thanks for talking with me."
+    },
+    {
+      "message_id": "L1042",
+      "sequence": 2,
+      "speaker_role": "participant",
+      "timestamp": "2026-08-19T21:05:02+00:00",
+      "content": "I guess I have been drinking more since the accident."
+    }
+  ]
+}

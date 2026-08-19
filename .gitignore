@@ -20,7 +20,18 @@
 *~
 
 *node_modules
+
+# The module's own vendor/ IS committed: a REDCap EM deploys by directory copy, and
+# opis/json-schema is a runtime dependency of the counselor turn path - a missing
+# vendor/ would be a fatal mid-turn rather than a deploy-time error. It is built
+# without dev dependencies; the test toolchain lives in tools/ so that a test
+# framework structurally cannot end up in the deployed tree.
 *vendor
+!/vendor/
+!/vendor/**
+
+# ...and the toolchain that must NOT ship.
+/tools/vendor/
 
 # PHPUnit result/coverage cache
 .phpunit.cache/
@@ -29,5 +40,5 @@
 # Playwright session state (contains REDCap session cookies)
 docs/project-structure
 
-# handoff/ is deliberately NOT ignored. Those artifacts are hash-pinned and the
-# running code refuses to work without them - see classes/ArtifactRegistry.php.
+# handoff/ is deliberately NOT ignored either. Those artifacts are hash-pinned and
+# the running code refuses to work without them - see classes/ArtifactRegistry.php.

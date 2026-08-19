@@ -37,9 +37,23 @@ Stage tracker: [`06-implementation-plan/README.md`](docs/phase-3-handoff/06-impl
   directory, or a malformed manifest. `getHash()` returns the hash actually
   computed, since that value is what later stages persist onto turn and scan
   rows.
+- **0.4** `SchemaValidator` over `opis/json-schema` (draft 2020-12 native), with
+  `SchemaValidationResult`. Invalid data is a result, not an exception — both
+  pipelines branch on it; only an unusable schema throws.
 - PHPUnit toolchain (part of 0.5): `phpunit.xml`, framework-free
-  `tests/bootstrap.php`, PSR-4 autoloading for `Stanford\MICA\`, `composer test`.
-  28 tests green on PHP 8.4 (host) and 8.3 (the container REDCap runs on).
+  `tests/bootstrap.php`, PSR-4 autoloading for `Stanford\MICA\`, fixtures.
+  **60 tests green on PHP 8.4 (host) and 8.3 (the container REDCap runs on).**
+
+**Dependency layout (decided 2026-08-19):** `vendor/` is committed and deploys
+with the module, built without dev dependencies, and `MICA.php` requires it
+unconditionally again. The test toolchain lives in `tools/` rather than in
+`require-dev`, so the module has no dev dependencies at all and a test framework
+cannot reach production by way of a forgotten flag —
+`composer test:install` populates `tools/vendor/` (gitignored). Composer resolves
+against `platform.php = 8.2` rather than the developer's PHP.
+
+`php-ml` and `twilio/sdk` were dropped: 2,598 files and 17.5 MB with zero
+references anywhere in the codebase. `vendor/` is 235 files / 1.3 MB.
 
 ### Earlier phase-3 work on this branch
 

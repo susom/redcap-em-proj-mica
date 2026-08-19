@@ -1,0 +1,29 @@
+{
+  "schema_version": "2.0",
+  "session_context": {
+    "session_id_pseudonymous": "s_7Fq2x-Kd91",
+    "session_type": "baseline",
+    "location": "ed",
+    "phase": "engage",
+    "minutes_remaining": 15,
+    "target_behavior": "alcohol",
+    "alcohol_summary": {
+      "drinking_days_past_30": 12,
+      "typical_drinks_per_drinking_day": 4,
+      "maximum_drinks_on_one_day": 9,
+      "participant_reported_consequences": ["missed work", "argument with partner"]
+    },
+    "readiness_score": 6,
+    "confidence_score": 4,
+    "prior_goal": null,
+    "prior_goal_status": "not_applicable",
+    "research_approved_resources": [
+      "Stanford Health Care alcohol treatment referral line"
+    ],
+    "message_history": [
+      { "role": "assistant", "content": "Hi, I'm MICA. Thanks for talking with me." },
+      { "role": "user", "content": "Sure." }
+    ]
+  },
+  "patient_message": "I guess I have been drinking more since the accident."
+}

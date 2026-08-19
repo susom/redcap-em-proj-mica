@@ -143,8 +143,7 @@ and are sequenced as their own pass; D2's fix is the same edit as the Stage 1
 - [x] `pilot-final` tag pushed; SHA recorded (2026-08-19 — `CHANGELOG.md`)
 - [x] `handoff/` complete; vendoring-time hash check documented (record below)
 - [x] Tamper test fails closed — and mutation-checked (record below)
-- [ ] All vendored schemas load and validate fixtures (draft 2020-12) — *loading*
-      is covered; **validating** needs `SchemaValidator` (0.4)
+- [x] All vendored schemas load and validate fixtures (draft 2020-12)
 - [ ] `composer test` green in CI; PSR-12 clean on new files — suite green
       locally on PHP 8.3 + 8.4; **no CI workflow yet, no phpcs yet** (see the
       PSR-12 baseline question below)
@@ -227,32 +226,103 @@ bundle, desktop + iPhone 13. The one known gap is also unchanged: End Session
 still reports that the project is not configured for MICA sessions, which is the
 Stage 2 / [`09`](../09-pid-257-structure-audit.md) G1/G4 work, not a regression.
 
+## Implementation record — 0.4 (2026-08-19)
+
+### Dependency and toolchain decisions (with Ihab, 2026-08-19)
+
+- **`vendor/` is committed**, built without dev dependencies. A REDCap EM deploys
+  by directory copy, and `opis/json-schema` is a runtime dependency of the turn
+  path, so a missing `vendor/` would be a fatal mid-turn rather than a
+  deploy-time error. `MICA.php`'s require is unconditional again, but with an
+  explicit message — it was briefly conditional because a missing `vendor/` made
+  the class file unloadable, which REDCap surfaces as an unrelated fatal on
+  enable, and the next person to hit that should read the cause.
+- **`config.platform.php = 8.2`** — Composer resolves on the host (8.4) while the
+  module runs on 8.3 here and an unknown version in production, so resolution is
+  pinned to a conservative floor rather than to whatever the developer's laptop
+  has.
+- **The test toolchain lives in `tools/`, not in `require-dev`.** This is what
+  makes "ships `--no-dev`" structural instead of procedural: the module's
+  `composer.json` has *no* dev dependencies, so `composer install` in the module
+  root cannot produce a tree that differs from what deploys, and nobody can
+  commit PHPUnit to production by forgetting a flag. `composer test:install`
+  populates `tools/vendor/` (gitignored); `composer test` runs from there.
+- **`php-ml` and `twilio/sdk` were dropped**, which the 0.6 cleanup already
+  called for and committing `vendor/` made urgent: they are **2,598 files and
+  17.5 MB** with zero references in the codebase — the only mentions are the
+  commented-out `sendSMS()` and three `config.json` settings. `vendor/` went from
+  4,336 files / 28 MB to **235 files / 1.3 MB**.
+
+⚠️ **Left for 0.6, deliberately:** the three `twilio-*` system settings still
+exist in `config.json`, and this instance has **values stored for all three** —
+a SID, an auth token and a from-number. Deleting the declarations would orphan
+them in `redcap_external_module_settings`, invisible in the UI but still in the
+database. If those are real Twilio credentials they want rotating, not just
+deleting; that is a decision, not a cleanup.
+
+### `SchemaValidator` / `SchemaValidationResult`
+
+Contract as specified. Two things it exists to get right, both found by testing
+rather than by reading the library docs:
+
+1. **PHP arrays are not JSON objects.** `Helper::getJsonType()` returns `null`
+   for an associative array, so validating `['a' => 1]` against
+   `{"type":"object"}` *fails* with a confusing error instead of passing. Every
+   caller in this codebase hands over associative arrays — `REDCap::getData()`,
+   `json_decode($x, true)`, SecureChatAI's `structured_output` — so this is the
+   default path, not an edge case. Everything is converted through
+   `Helper::convertAssocArrayToObject()` first.
+2. **`stopAtFirstError` must stay `true`.** The name is misleading: it means "stop
+   descending a subschema once it failed", not "report one error". With it
+   `false`, opis's evaluated-property bookkeeping breaks and
+   `additionalProperties` reports **declared, valid** properties as disallowed —
+   a wrapper with one out-of-range number came back also claiming
+   `schema_version`, `patient_message` and `session_context` were not allowed.
+   Those strings are exactly what Stage 1's `FailurePolicy` feeds back to the
+   model as a corrective nudge, so believing them would make it delete the fields
+   the schema requires. `true` with `maxErrors > 1` still yields one accurate
+   error per failing location, which is what was actually wanted.
+
+Also worth recording:
+
+- **Cross-file `$ref` resolves offline.** `MICA_wrapper_schema_v2.json` has
+  `$defs.model_response.$ref` pointing at `https://mica.example.org/...`, a host
+  that does not exist. Every pinned schema is registered with the resolver by its
+  own `$id`, and the resolver has no protocol handlers, so an unsatisfiable
+  `$ref` raises instead of attempting a request. (A revision to the keyword
+  inventory taken earlier: the vendored schemas **do** use `$ref`, in `$defs`.)
+- **`format: date-time` is asserted by opis**, though draft 2020-12 makes
+  `format` annotation-only by default. SafetyScan timestamps rely on it, so a
+  test pins it — an opis upgrade that stops asserting must fail loudly rather
+  than let junk timestamps into the scan input.
+- Invalid *data* never throws; only an unusable *schema* does. The two are
+  handled very differently downstream: the first is a retry, the second is a
+  configuration fault that must not be retried against the model.
+
+### Tests
+
+**60 tests / 158 assertions, green on PHP 8.4 and 8.3.** Includes the plan's
+`rejectsSafetyFlagResurgence` widened to five would-be triage fields
+(`safety_flag`, `escalation`, `risk_level`, `alert_care_team`, `staff_notified`),
+each vendored schema against a valid fixture plus mutated invalid ones, and a
+check that the shipped default notification policy still validates against its
+own shipped schema and still encodes both launch blockers
+(`critical_acknowledgment_minutes` null, pre-review notifications disabled).
+
+Three mutations were used to confirm the suite bites: flipping
+`stopAtFirstError`, removing the array→object conversion (25 failures), and
+removing the `$ref` registration. **The third initially failed to fail** — the
+`$ref` test was passing because nothing in the validation tree reaches `$defs`,
+so it never exercised the registration it claimed to cover. It was rewritten
+against a schema whose validation tree really does contain a cross-file `$ref`,
+and now fails when the registration is removed.
+
 ## Open decisions this work surfaced
 
-1. **`vendor/`** (blocks 0.4). `.gitignore` has `*vendor` and no vendor file is
-   tracked, while `MICA.php`'s vendor require is deliberately conditional — that
-   conditional is what fixed the module-enable fatal. `opis/json-schema` is a
-   *runtime* dependency: the day `SchemaValidator` needs it, a missing `vendor/`
-   stops being harmless and becomes a fatal inside the counselor turn path.
-   Either commit `vendor/` (normal for a REDCap EM, which deploys by directory
-   copy) or keep it ignored with a documented build step and a loud startup
-   check. Decide before `composer require`.
-
-   **Whichever is chosen, what ships must be built `--no-dev`.** Adding PHPUnit
-   pulled in 27 dev packages, and because `MICA.php` requires
-   `vendor/autoload.php` when present, the running module now registers autoload
-   rules for `phpunit`, `nikic/php-parser` and `sebastian/*` on every page load
-   that touches MICA. Harmless on a dev box; committing `vendor/` as it currently
-   sits on disk would put a test framework — a code-execution surface — on
-   production REDCap. This is the ordinary reason EMs ship `--no-dev`, and it is
-   the constraint that makes the question three-way rather than two-way.
-2. **PSR-12 baseline** (blocks the `composer test` checklist line). 0.5 specifies
+1. **PSR-12 baseline** (blocks the `composer test` checklist line). 0.5 specifies
    `phpcs --standard=PSR12 classes/ MICA.php`, which on today's legacy `MICA.php`
    would be red from the first run and stay red — the opposite of "every stage
    ends green". Scope phpcs to files this phase adds, and widen it as each legacy
    file is cleaned. `composer test` is phpunit-only until that is settled.
-3. **Composer platform pin.** Composer resolves on the host (PHP 8.4) while the
-   module runs on 8.3, so a dependency could resolve to a version the deployment
-   cannot load. `config.platform.php` should be pinned to the lowest PHP the
-   module must support — needs the production REDCap PHP version, which is not
-   known here. Set it during 0.4, when the tree is being re-resolved anyway.
+2. **Stored Twilio credentials** — see the warning above. Needs a decision before
+   0.6 removes the settings.

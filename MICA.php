@@ -8,12 +8,18 @@ require_once "classes/MICAQuery.php";
 // hash-pinned handoff artifacts must not become unreachable just because vendor/ is absent.
 require_once "classes/ArtifactRegistry.php";
 
-// Composer deps are optional (vendor/ is gitignored and nothing in the module currently uses
-// php-ml or the Twilio SDK) - a hard require here makes the module class file unloadable,
-// which surfaces as an unrelated fatal error when REDCap tries to enable the module.
-if (file_exists(__DIR__ . "/vendor/autoload.php")) {
-    require_once __DIR__ . "/vendor/autoload.php";
+// vendor/ is committed and deploys with the module, and opis/json-schema is a runtime dependency
+// of the turn contract, so this is a hard require again. It was briefly conditional because a
+// missing vendor/ made this class file unloadable, which REDCap surfaces as an unrelated fatal when
+// enabling the module - hence the explicit message rather than a bare require, so the next person
+// to hit it reads the cause instead of guessing.
+if (!file_exists(__DIR__ . "/vendor/autoload.php")) {
+    throw new \Exception(
+        'MICA: vendor/autoload.php is missing. This directory was deployed incomplete - '
+        . 'restore it from the repository, or run `composer install --no-dev` in the module directory.'
+    );
 }
+require_once __DIR__ . "/vendor/autoload.php";
 use Exception;
 use UserRights;
 
