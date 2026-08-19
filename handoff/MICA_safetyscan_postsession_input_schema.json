@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mica.example.org/schemas/safetyscan-postsession-input-v1.json",
+  "title": "SafetyScan post-session transcript input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "session_id_pseudonymous",
+    "session_type",
+    "setting",
+    "transcript_finalized",
+    "messages"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "session_id_pseudonymous": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "session_type": {
+      "enum": ["baseline", "booster"]
+    },
+    "setting": {
+      "enum": ["emergency_department", "remote_followup", "other_approved"]
+    },
+    "session_started_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "session_ended_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "transcript_finalized": {
+      "const": true
+    },
+    "messages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "message_id",
+          "sequence",
+          "speaker_role",
+          "content"
+        ],
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "speaker_role": {
+            "enum": ["participant", "mica", "other"]
+          },
+          "timestamp": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 12000
+          }
+        }
+      }
+    }
+  }
+}
+

@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mica.example.org/schemas/safetyscan-notification-policy-v1.json",
+  "title": "SafetyScan notification and digest policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "ra_review_policy",
+    "pre_review_notifications",
+    "digests"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "ra_review_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "critical_acknowledgment_minutes",
+        "notify_assigned_ra_when_ready"
+      ],
+      "properties": {
+        "critical_acknowledgment_minutes": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 1440,
+          "default": null
+        },
+        "notify_assigned_ra_when_ready": {
+          "const": true
+        }
+      }
+    },
+    "pre_review_notifications": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "eligible_urgencies",
+        "recipient_roles",
+        "delivery_channels",
+        "required_label",
+        "acknowledgment_minutes"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "eligible_urgencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["high", "critical"]
+          }
+        },
+        "recipient_roles": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "principal_investigator",
+              "protocol_lead",
+              "on_call_research_staff",
+              "care_team"
+            ]
+          }
+        },
+        "delivery_channels": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "secure_email",
+              "secure_messaging",
+              "dashboard",
+              "pager_or_on_call_system"
+            ]
+          }
+        },
+        "required_label": {
+          "const": "Unverified automated SafetyScan finding pending human review"
+        },
+        "acknowledgment_minutes": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 1440
+        }
+      }
+    },
+    "digests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "digest_id",
+          "enabled",
+          "cadence",
+          "recipient_roles",
+          "delivery_channel",
+          "include_participant_level_detail"
+        ],
+        "properties": {
+          "digest_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "cadence": {
+            "enum": ["daily", "weekly"]
+          },
+          "recipient_roles": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "principal_investigator",
+                "protocol_lead",
+                "research_assistant",
+                "data_safety_reviewer"
+              ]
+            }
+          },
+          "delivery_channel": {
+            "enum": ["secure_email", "secure_messaging", "dashboard"]
+          },
+          "include_participant_level_detail": {
+            "const": false
+          },
+          "timezone": {
+            "type": "string",
+            "default": "America/Los_Angeles"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mica.example.org/schemas/r01-counselor-output-v2.json",
+  "title": "MICA R01 counselor output without live safety routing",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "assistant_text",
+    "next_phase",
+    "response_strategy",
+    "end_session"
+  ],
+  "properties": {
+    "assistant_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1200
+    },
+    "next_phase": {
+      "enum": ["engage", "focus", "evoke", "plan", "close"]
+    },
+    "response_strategy": {
+      "enum": [
+        "engage",
+        "reflect",
+        "validate_evoke",
+        "discrepancy_evoke",
+        "confidence_support",
+        "information_with_permission",
+        "plan",
+        "summary"
+      ]
+    },
+    "end_session": {
+      "type": "boolean"
+    }
+  }
+}
+

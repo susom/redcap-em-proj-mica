@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mica.example.org/schemas/safetyscan-review-workflow-v1.json",
+  "title": "SafetyScan human review and action record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scan_id",
+    "session_id_pseudonymous",
+    "scan_status",
+    "findings",
+    "audit"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "scan_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "session_id_pseudonymous": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "scan_status": {
+      "enum": [
+        "queued",
+        "scanning",
+        "ready_for_review",
+        "under_review",
+        "review_complete",
+        "scan_failed",
+        "manual_review_required"
+      ]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "finding_id",
+          "model_finding",
+          "review_status",
+          "actions"
+        ],
+        "properties": {
+          "finding_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "model_finding": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "finding_index",
+              "source_role",
+              "concern_type",
+              "urgency",
+              "finding_summary",
+              "evidence",
+              "recommended_actions",
+              "recommended_notification_targets",
+              "confidence"
+            ],
+            "properties": {
+              "finding_index": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 12
+              },
+              "source_role": {
+                "enum": ["participant", "mica", "multiple"]
+              },
+              "concern_type": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "urgency": {
+                "enum": ["quality", "moderate", "high", "critical"]
+              },
+              "finding_summary": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 800
+              },
+              "evidence": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 6,
+                "items": {
+                  "type": "object"
+                }
+              },
+              "recommended_actions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "recommended_notification_targets": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          },
+          "review_status": {
+            "enum": [
+              "pending_ra_review",
+              "confirmed",
+              "dismissed",
+              "needs_second_review",
+              "escalated",
+              "resolved"
+            ]
+          },
+          "reviewer_id": {
+            "type": ["string", "null"],
+            "maxLength": 128
+          },
+          "reviewed_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "validated_concern_type": {
+            "type": ["string", "null"],
+            "maxLength": 128
+          },
+          "validated_urgency": {
+            "enum": [null, "none", "quality", "moderate", "high", "critical"]
+          },
+          "reviewer_rationale": {
+            "type": ["string", "null"],
+            "maxLength": 2000
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action_id",
+                "action_type",
+                "status",
+                "initiated_by",
+                "created_at"
+              ],
+              "properties": {
+                "action_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "action_type": {
+                  "enum": [
+                    "alert_care_team",
+                    "alert_principal_investigator",
+                    "alert_protocol_lead",
+                    "request_second_review",
+                    "document_no_action",
+                    "open_privacy_review",
+                    "open_model_quality_review"
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "draft",
+                    "sent",
+                    "delivered",
+                    "acknowledged",
+                    "failed",
+                    "cancelled",
+                    "complete"
+                  ]
+                },
+                "initiated_by": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "completed_at": {
+                  "type": ["string", "null"],
+                  "format": "date-time"
+                },
+                "notes": {
+                  "type": ["string", "null"],
+                  "maxLength": 2000
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transcript_hash",
+        "prompt_hash",
+        "model_identifier",
+        "schema_hash",
+        "created_at"
+      ],
+      "properties": {
+        "transcript_hash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64
+        },
+        "prompt_hash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64
+        },
+        "model_identifier": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "schema_hash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

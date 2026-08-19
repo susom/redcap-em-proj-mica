@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mica.example.org/schemas/r01-turn-v2.json",
+  "title": "MICA R01 single-turn contract without live safety routing",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "session_context", "patient_message"],
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "session_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "session_id_pseudonymous",
+        "session_type",
+        "location",
+        "phase",
+        "minutes_remaining",
+        "target_behavior",
+        "research_approved_resources"
+      ],
+      "properties": {
+        "session_id_pseudonymous": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{6,64}$"
+        },
+        "session_type": {
+          "enum": ["baseline", "booster"]
+        },
+        "location": {
+          "enum": ["ed", "remote_followup"]
+        },
+        "phase": {
+          "enum": ["engage", "focus", "evoke", "plan", "close"]
+        },
+        "minutes_remaining": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 15
+        },
+        "target_behavior": {
+          "const": "alcohol"
+        },
+        "alcohol_summary": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "drinking_days_past_30": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 30
+            },
+            "typical_drinks_per_drinking_day": {
+              "type": ["number", "null"],
+              "minimum": 0
+            },
+            "maximum_drinks_on_one_day": {
+              "type": ["number", "null"],
+              "minimum": 0
+            },
+            "participant_reported_consequences": {
+              "type": ["array", "null"],
+              "items": {
+                "type": "string",
+                "maxLength": 160
+              }
+            }
+          }
+        },
+        "readiness_score": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 10
+        },
+        "confidence_score": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 10
+        },
+        "prior_goal": {
+          "type": ["string", "null"],
+          "maxLength": 500
+        },
+        "prior_goal_status": {
+          "enum": [
+            "not_applicable",
+            "not_reviewed",
+            "met",
+            "partly_met",
+            "not_met",
+            "not_attempted"
+          ]
+        },
+        "research_approved_resources": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "message_history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["role", "content"],
+            "properties": {
+              "role": {
+                "enum": ["user", "assistant"]
+              },
+              "content": {
+                "type": "string",
+                "maxLength": 4000
+              }
+            }
+          }
+        }
+      }
+    },
+    "patient_message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    }
+  },
+  "$defs": {
+    "model_response": {
+      "$ref": "https://mica.example.org/schemas/r01-counselor-output-v2.json"
+    }
+  }
+}

@@ -22,5 +22,12 @@
 *node_modules
 *vendor
 
+# PHPUnit result/coverage cache
+.phpunit.cache/
+.phpunit.result.cache
+
 # Playwright session state (contains REDCap session cookies)
 docs/project-structure
+
+# handoff/ is deliberately NOT ignored. Those artifacts are hash-pinned and the
+# running code refuses to work without them - see classes/ArtifactRegistry.php.

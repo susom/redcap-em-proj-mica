@@ -1,0 +1,57 @@
+{
+  "_comment": "Hash-pinned handoff artifacts. Keys are logical names used in code; sha256 values are copied from the source handoff manifest, not recomputed here. ArtifactRegistry recomputes on every load and fails closed on any difference.",
+  "source": {
+    "package": "MICA_Stanford_IT_Handoff_Package",
+    "manifest": "MICA_Stanford_IT_handoff_manifest.json",
+    "created_date": "2026-07-25",
+    "status": "postsession_architecture_regression_passed_pending_human_protocol_and_environment_gates",
+    "vendored_date": "2026-08-19"
+  },
+  "artifacts": {
+    "counselor_prompt": {
+      "file": "MICA_Prompt_R01_v2_postsession_safety.txt",
+      "type": "text",
+      "sha256": "eb3f775207df33ff46d1f9f0e2b53d9fcdec960dd5d072752eefdf79f5fb8942"
+    },
+    "counselor_output_schema": {
+      "file": "MICA_counselor_output_schema_v2.json",
+      "type": "json",
+      "sha256": "78c676890dac0d0d1a97f8230f6a1f5d1e81303f8b77a674d0298acfa99be40e"
+    },
+    "wrapper_schema": {
+      "file": "MICA_wrapper_schema_v2.json",
+      "type": "json",
+      "sha256": "222f05b7cca44aec0c08f5306e6efe3ae3c0b0b77d11974915a79dd3f2657059"
+    },
+    "safetyscan_prompt": {
+      "file": "MICA_SafetyScan_PostSession_prompt.txt",
+      "type": "text",
+      "sha256": "8aa8f9de53297e09cb2929cc1c100ed7bf6a1abdcaf7218e00a4f9b1867e9786"
+    },
+    "safetyscan_input_schema": {
+      "file": "MICA_safetyscan_postsession_input_schema.json",
+      "type": "json",
+      "sha256": "3a2edc2c2576a0d25bca2f8491b7946d3d3201bd534c4ca7a71e81233c48abf7"
+    },
+    "safetyscan_output_schema": {
+      "file": "MICA_safetyscan_postsession_model_output_schema.json",
+      "type": "json",
+      "sha256": "57df62da72701103eae3400bc2062b870d47541fff611e0ae6b4b7422eb1e050"
+    },
+    "review_workflow_schema": {
+      "file": "MICA_safetyscan_review_workflow_schema.json",
+      "type": "json",
+      "sha256": "444ff89e979a27e4485d648a8311355f277a6525b7f4cdc1696b217df4eaf6cd"
+    },
+    "notification_policy_schema": {
+      "file": "MICA_safetyscan_notification_policy_schema.json",
+      "type": "json",
+      "sha256": "95b404953f48ca1d3080373f0a5a674b0053ebdc209263a964059f562951b692"
+    },
+    "notification_policy_default": {
+      "file": "MICA_safetyscan_notification_policy.default.json",
+      "type": "json",
+      "sha256": "301b0755ecf953ddd3bca71120954a5d6b4137ccc8db1c3f08502355420b235d"
+    }
+  }
+}

@@ -10,7 +10,7 @@ acceptance checklist.
 
 | Stage | File | Depends on | Status |
 |---|---|---|---|
-| 0 — Foundations | [`stage-0-foundations.md`](stage-0-foundations.md) | — | **in progress** — 0.5b done; 0.1–0.5 + 0.6 not started |
+| 0 — Foundations | [`stage-0-foundations.md`](stage-0-foundations.md) | — | **in progress** — 0.1, 0.2, 0.3, 0.5b done + PHPUnit half of 0.5; 0.4 blocked on the `vendor/` decision; 0.6 not started |
 | 1 — Counselor v2 turn contract | [`stage-1-turn-contract.md`](stage-1-turn-contract.md) | 0 | **in progress** — parts of 1.6 done (see below); 1.1–1.5 not started |
 | 2 — R01 session engine + frontend | [`stage-2-session-engine.md`](stage-2-session-engine.md) | 1 | not started — auth half (2.3) partly done, see `10-auth-implementation-pid257.md` |
 | 3 — Transcript finalization + scan queue | [`stage-3-transcripts-and-queue.md`](stage-3-transcripts-and-queue.md) | 2 | not started |

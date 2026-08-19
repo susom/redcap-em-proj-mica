@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "ra_review_policy": {
+    "critical_acknowledgment_minutes": null,
+    "notify_assigned_ra_when_ready": true
+  },
+  "pre_review_notifications": {
+    "enabled": false,
+    "eligible_urgencies": ["critical"],
+    "recipient_roles": [],
+    "delivery_channels": ["dashboard"],
+    "required_label": "Unverified automated SafetyScan finding pending human review",
+    "acknowledgment_minutes": null
+  },
+  "digests": []
+}

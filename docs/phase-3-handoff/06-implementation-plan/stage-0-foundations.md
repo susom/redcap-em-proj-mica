@@ -140,12 +140,97 @@ and are sequenced as their own pass; D2's fix is the same edit as the Stage 1
 
 ## Acceptance checklist
 
-- [ ] `pilot-final` tag pushed; SHA recorded
-- [ ] `handoff/` complete; vendoring-time hash check documented in PR
-- [ ] Tamper test fails closed
-- [ ] All vendored schemas load and validate fixtures (draft 2020-12)
-- [ ] `composer test` green in CI; PSR-12 clean on new files
-- [ ] `../14-live-defects.md` D1 fixed (dev **and** prod `llm-model` values
-      confirmed against `getAvailableModels()`) — a real model reply observed
-      before the baseline is recorded
+- [x] `pilot-final` tag pushed; SHA recorded (2026-08-19 — `CHANGELOG.md`)
+- [x] `handoff/` complete; vendoring-time hash check documented (record below)
+- [x] Tamper test fails closed — and mutation-checked (record below)
+- [ ] All vendored schemas load and validate fixtures (draft 2020-12) — *loading*
+      is covered; **validating** needs `SchemaValidator` (0.4)
+- [ ] `composer test` green in CI; PSR-12 clean on new files — suite green
+      locally on PHP 8.3 + 8.4; **no CI workflow yet, no phpcs yet** (see the
+      PSR-12 baseline question below)
+- [x] `../14-live-defects.md` D1 fixed on dev (`e407183`); PID 257 holds
+      `claude-opus-4-7`, which matches the dev registry — **prod value still
+      unverified**, two read-only checks in `../14-live-defects.md` §D1
 - [ ] Cleanup (0.6) landed; Playwright baseline passes before and after
+
+## Implementation record — 0.1 / 0.2 / 0.3 (2026-08-19)
+
+### 0.1 — pilot pin
+
+No tags existed in the repo, local or remote, so the pilot had been pinned to
+nothing while `mica-phase-3` ran 13 commits ahead. `main` was identical to
+`origin/main` and is a clean ancestor of `mica-phase-3`. Annotated tag
+`pilot-final` → `5e56073`, pushed.
+
+### 0.2 — vendoring
+
+The package's hashed files were verified **before** copying and the copies
+re-verified after: 10/10 matched, so the source package is intact. Nine of the
+ten are vendored into `handoff/`.
+
+**Not vendored, deliberately:** `MICA_Final_Clinical_Review_Package.xlsx` (a
+human review artifact for the clinical team, not loaded by any code path) and the
+six unhashed reference documents (counselor handoff, dashboard spec,
+configuration memo, model-evaluation summary, lifecycle decision, candidate
+freeze record). Those inform these plan docs; putting unhashed prose behind an
+integrity gate would only invite the gate to be relaxed. They stay in the source
+package.
+
+**Deviation from 0.2:** the manifest is keyed by *logical name*
+(`counselor_prompt`, `wrapper_schema`, …) with `{file, type, sha256}` per entry,
+not "filename → SHA-256". Code refers to a role rather than to
+`MICA_Prompt_R01_v2_postsession_safety.txt` in a dozen places, so a future v3
+prompt is a manifest change plus a re-verification instead of a sweep through the
+codebase — and `type` lets `getJson()` reject a text artifact as a caller bug
+rather than a mystery decode failure. The manifest also carries a `source` block
+naming the package and its `created_date`, so provenance travels with the pin.
+
+### 0.3 — `ArtifactRegistry`
+
+Contract as specified, plus:
+
+- **`verifyAll()`**, which additionally refuses any *unpinned* file in
+  `handoff/`. A per-artifact read can only verify what it was asked for, so on
+  its own it would never notice a tenth file appearing in the directory. This is
+  the half of "missing manifest entry" that `getText()` structurally cannot
+  cover, and it is also the check a launch-readiness gate wants.
+- The manifest is validated as the root of trust: a `file` value must be a plain
+  basename (a pin that can reach outside `handoff/` describes a file the deployer
+  never reviewed), `sha256` must be 64 hex, `type` must be `text` or `json`.
+- **Caching semantics, worth being explicit about:** an artifact verified once is
+  served from memory for the rest of the request, so corrupting the file
+  mid-request does *not* invalidate the cached copy. That is intentional — the
+  bytes were vouched for when they were read, and re-hashing a 6 KB prompt on
+  every counselor turn buys nothing. A fresh registry (i.e. the next request)
+  catches it. Both halves are asserted.
+- `getJson()` on an artifact pinned as text throws `\InvalidArgumentException`,
+  not `ArtifactIntegrityException`: the artifact is fine, the caller is wrong,
+  and a caller bug must not be catchable as an integrity failure.
+
+**28 tests, green on PHP 8.4 (host) and 8.3 (the container REDCap runs on).**
+The suite was mutation-checked: replacing the `hash_equals` comparison with
+`if (false)` fails 3 tests. That check found a weak assertion — the
+empty-file test had been passing on an incidental JSON-decode error rather than
+on the pin — which is now asserted on the pin message.
+
+## Open decisions this work surfaced
+
+1. **`vendor/`** (blocks 0.4). `.gitignore` has `*vendor` and no vendor file is
+   tracked, while `MICA.php`'s vendor require is deliberately conditional — that
+   conditional is what fixed the module-enable fatal. PHPUnit is dev-only so
+   nothing is forced yet, but `opis/json-schema` is a *runtime* dependency: the
+   day `SchemaValidator` needs it, a missing `vendor/` stops being harmless and
+   becomes a fatal inside the counselor turn path. Either commit `vendor/`
+   (normal for a REDCap EM, which deploys by directory copy) or keep it ignored
+   with a documented build step and a loud startup check. Decide before
+   `composer require`.
+2. **PSR-12 baseline** (blocks the `composer test` checklist line). 0.5 specifies
+   `phpcs --standard=PSR12 classes/ MICA.php`, which on today's legacy `MICA.php`
+   would be red from the first run and stay red — the opposite of "every stage
+   ends green". Scope phpcs to files this phase adds, and widen it as each legacy
+   file is cleaned. `composer test` is phpunit-only until that is settled.
+3. **Composer platform pin.** Composer resolves on the host (PHP 8.4) while the
+   module runs on 8.3, so a dependency could resolve to a version the deployment
+   cannot load. `config.platform.php` should be pinned to the lowest PHP the
+   module must support — needs the production REDCap PHP version, which is not
+   known here. Set it during 0.4, when the tree is being re-resolved anyway.

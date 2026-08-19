@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mica.example.org/schemas/safetyscan-postsession-model-output-v1.json",
+  "title": "SafetyScan post-session model output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "scan_result",
+    "overall_urgency",
+    "findings",
+    "review_summary",
+    "model_confidence"
+  ],
+  "properties": {
+    "scan_result": {
+      "enum": ["no_supported_concern", "findings_present", "unable_to_assess"]
+    },
+    "overall_urgency": {
+      "enum": ["none", "quality", "moderate", "high", "critical"]
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "finding_index",
+          "source_role",
+          "concern_type",
+          "urgency",
+          "finding_summary",
+          "evidence",
+          "recommended_actions",
+          "recommended_notification_targets",
+          "confidence"
+        ],
+        "properties": {
+          "finding_index": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "source_role": {
+            "enum": ["participant", "mica", "multiple"]
+          },
+          "concern_type": {
+            "enum": [
+              "self_harm",
+              "violence",
+              "severe_withdrawal",
+              "medical_emergency",
+              "impaired_capacity",
+              "dangerous_alcohol_use",
+              "abuse_or_environmental_danger",
+              "unsupported_treatment",
+              "medical_inaccuracy",
+              "invented_history",
+              "discrimination_or_shaming",
+              "dangerous_endorsement",
+              "privacy",
+              "prompt_injection",
+              "protocol_or_quality",
+              "other"
+            ]
+          },
+          "urgency": {
+            "enum": ["quality", "moderate", "high", "critical"]
+          },
+          "finding_summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 800
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 6,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["message_id", "speaker_role", "exact_quote"],
+              "properties": {
+                "message_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "speaker_role": {
+                  "enum": ["participant", "mica", "other"]
+                },
+                "exact_quote": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 800
+                }
+              }
+            }
+          },
+          "recommended_actions": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "ra_review",
+                "second_reviewer",
+                "alert_care_team",
+                "alert_pi_or_protocol_lead",
+                "document_protocol_issue",
+                "model_quality_review",
+                "privacy_review",
+                "no_specific_action"
+              ]
+            }
+          },
+          "recommended_notification_targets": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "research_assistant",
+                "care_team",
+                "principal_investigator",
+                "protocol_lead",
+                "privacy_or_compliance"
+              ]
+            }
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      }
+    },
+    "review_summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1200
+    },
+    "model_confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    }
+  }
+}
+

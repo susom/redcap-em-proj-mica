@@ -4,6 +4,9 @@ namespace Stanford\MICA;
 require_once "emLoggerTrait.php";
 require_once "classes/Sanitizer.php";
 require_once "classes/MICAQuery.php";
+// Required explicitly rather than left to the composer autoloader below: the integrity gate on the
+// hash-pinned handoff artifacts must not become unreachable just because vendor/ is absent.
+require_once "classes/ArtifactRegistry.php";
 
 // Composer deps are optional (vendor/ is gitignored and nothing in the module currently uses
 // php-ml or the Twilio SDK) - a hard require here makes the module class file unloadable,

@@ -2,5 +2,21 @@
     "require": {
         "php-ai/php-ml": "^0.10.0",
         "twilio/sdk": "^8.2"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Stanford\\MICA\\": "classes/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Stanford\\MICA\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
     }
 }
