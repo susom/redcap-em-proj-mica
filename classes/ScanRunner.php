@@ -400,7 +400,14 @@ class ScanRunner
             'model_output'    => $output,
             'error'           => $error,
             'schema_was_sent' => $result['schemaWasSent'] ?? null,
+            // Only present when it is true, so an OpenAI-path row is unchanged. It says the shape
+            // came from the prompt rather than from enforced structured output - which is a weaker
+            // guarantee, and a reader comparing two findings needs to know which they have.
         ];
+
+        if (($result['schemaInPrompt'] ?? false) === true) {
+            $payload['schema_in_prompt'] = true;
+        }
 
         /**
          * What the project's thresholds held back, recorded beside the output they applied to.

@@ -54,12 +54,33 @@ class SecureChatSafetyScanCaller implements SafetyScanCallerInterface
         $schemaWasSent = $this->schemaWouldBeSent($modelAlias);
         $startedAt = microtime(true);
 
+        /**
+         * When structured output is unavailable, the schema goes in the prompt instead.
+         *
+         * The pinned prompt does not describe the output shape - it relies entirely on `json_schema`
+         * - so on a deployment whose only model is outside SecureChatAI's OpenAI allowlist the model
+         * has no way to know the shape and the scan fails as `schema_invalid` every single time. Not
+         * a model-quality problem: observed on PID 257, where Claude produced a genuinely good
+         * clinical read under invented key names (`concern: "self_harm_risk"` for
+         * `concern_type: "self_harm"`, bare quote strings where verifiable evidence objects are
+         * required) and was correctly rejected in full.
+         *
+         * This is a fallback, not a replacement. It fires only when the alternative is guaranteed
+         * failure, the pinned artifact is untouched and its hash still recorded, and the run row
+         * records `schema_in_prompt` so a finding says how its shape was obtained - a finding
+         * produced this way is not strictly comparable to one produced with real structured output.
+         * SecureChatAI PR #2 remains the durable fix.
+         */
+        $prompt = $schemaWasSent
+            ? $systemPrompt
+            : $this->promptWithSchema($systemPrompt, $outputSchema);
+
         try {
             $response = $this->module->getSecureChatInstance()->callAI(
                 $modelAlias,
                 [
                     'messages' => [
-                        ['role' => 'system', 'content' => $systemPrompt],
+                        ['role' => 'system', 'content' => $prompt],
                         ['role' => 'user', 'content' => $transcriptJson],
                     ],
                     'json_schema' => $outputSchema,
@@ -141,7 +162,42 @@ class SecureChatSafetyScanCaller implements SafetyScanCallerInterface
             'promptTokens'      => $this->intOrNull($response['usage']['prompt_tokens'] ?? null),
             'completionTokens'  => $this->intOrNull($response['usage']['completion_tokens'] ?? null),
             'schemaWasSent'     => $schemaWasSent,
+            // How the model was told the shape. False/false together means it was not told
+            // at all, which is a configuration fault rather than a model failure.
+            'schemaInPrompt'    => !$schemaWasSent,
         ];
+    }
+
+    /**
+     * The pinned prompt plus the output schema, for a model that will never be sent one.
+     *
+     * Deliberately verbatim JSON Schema rather than a prose summary: a summary is a second
+     * description of the contract that can drift from the pinned artifact, and the artifact is the
+     * thing the research team validated. The wording calls out near-misses specifically, because that
+     * is what actually happens - an invented key name or a bare string where an object is required
+     * is rejected in full rather than partially accepted, and the model cannot know that unless told.
+     */
+    private function promptWithSchema(string $systemPrompt, array $outputSchema): string
+    {
+        return $systemPrompt . "\n\n" . implode("\n", [
+            '## OUTPUT FORMAT (REQUIRED)',
+            '',
+            'Structured output is not available for this model on this deployment, so the required '
+            . 'schema is given here instead.',
+            '',
+            'Reply with a SINGLE JSON object and nothing else: no prose before or after it, no '
+            . 'markdown code fence, no explanation.',
+            '',
+            'It must validate against the JSON Schema below. Use the property names and enum values '
+            . 'verbatim. A near-miss is rejected in full rather than partially accepted - an invented '
+            . 'key name, or a bare string where an object with named fields is required, loses the '
+            . 'entire scan.',
+            '',
+            json_encode(
+                $outputSchema,
+                JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+            ) ?: '{}',
+        ]);
     }
 
     /**
@@ -265,6 +321,7 @@ class SecureChatSafetyScanCaller implements SafetyScanCallerInterface
             'promptTokens'     => $this->intOrNull($response['usage']['prompt_tokens'] ?? null),
             'completionTokens' => $this->intOrNull($response['usage']['completion_tokens'] ?? null),
             'schemaWasSent'    => $schemaWasSent,
+            'schemaInPrompt'   => !$schemaWasSent,
         ];
     }
 

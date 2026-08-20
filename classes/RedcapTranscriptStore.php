@@ -2,6 +2,7 @@
 
 namespace Stanford\MICA;
 
+require_once __DIR__ . "/ProjectContext.php";
 require_once __DIR__ . "/TranscriptStoreInterface.php";
 require_once __DIR__ . "/TranscriptException.php";
 
@@ -189,12 +190,13 @@ class RedcapTranscriptStore implements TranscriptStoreInterface
     ): void {
         $recordData = [
             'record_id'                  => $record,
-            'redcap_event_name'          => \REDCap::getEventNames(true, false, $eventId),
+            'redcap_event_name'          => ProjectContext::uniqueEventName($projectId, (int) $eventId),
             'redcap_repeat_instance'     => $instance,
         ] + $fields;
 
         // The primary field is whatever this project calls it, not necessarily record_id.
-        $primary = \REDCap::getRecordIdField();
+        // See ProjectContext: the global-reading helper throws wherever PROJECT_ID is undefined.
+        $primary = ProjectContext::for($projectId);
         if ($primary !== 'record_id') {
             $recordData[$primary] = $record;
             unset($recordData['record_id']);

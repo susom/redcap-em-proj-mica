@@ -2,6 +2,7 @@
 
 namespace Stanford\MICA;
 
+require_once __DIR__ . "/ProjectContext.php";
 require_once __DIR__ . "/ScanResultStoreInterface.php";
 require_once __DIR__ . "/RedcapEntityLoader.php";
 require_once __DIR__ . "/TranscriptException.php";
@@ -108,8 +109,10 @@ class RedcapScanResultStore implements ScanResultStoreInterface
             return;
         }
 
-        $primary = \REDCap::getRecordIdField();
-        $eventName = \REDCap::getEventNames(true, false, $eventId);
+        // Not REDCap::getRecordIdField(): that reads a global and throws from cron, which is
+        // exactly where the scan worker writes findings. See ProjectContext.
+        $primary = ProjectContext::for($projectId);
+        $eventName = ProjectContext::uniqueEventName($projectId, (int) $eventId);
         $rows = [];
 
         foreach ($instances as $offset => $fields) {

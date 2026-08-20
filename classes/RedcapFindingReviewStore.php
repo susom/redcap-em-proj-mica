@@ -2,6 +2,7 @@
 
 namespace Stanford\MICA;
 
+require_once __DIR__ . "/ProjectContext.php";
 require_once __DIR__ . "/FindingReviewStoreInterface.php";
 require_once __DIR__ . "/RedcapScanResultStore.php";
 require_once __DIR__ . "/TranscriptException.php";
@@ -88,8 +89,8 @@ class RedcapFindingReviewStore implements FindingReviewStoreInterface
         }
 
         $row = [
-            \REDCap::getRecordIdField()      => $record,
-            'redcap_event_name'              => \REDCap::getEventNames(true, false, $eventId),
+            ProjectContext::for($projectId)   => $record,
+            'redcap_event_name'              => ProjectContext::uniqueEventName($projectId, (int) $eventId),
             'redcap_repeat_instrument'       => self::INSTRUMENT,
             'redcap_repeat_instance'         => $instance,
         ] + $fields;

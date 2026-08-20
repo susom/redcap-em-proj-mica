@@ -1,6 +1,5 @@
 <?php
 /** @var \Stanford\MICA\MICA $module */
-use REDCap;
 
 header('Content-Type: text/html; charset=utf-8');
 session_start();
@@ -122,8 +121,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     color:#000;
     font-size:88%;
   }
-  .legend { 
-    font-weight:500; 
+  .legend {
+    font-weight:500;
     color:#868E96;
     margin-bottom:14px;
   }
@@ -140,9 +139,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   .center { display:flex; justify-content:center; }
   .error { background:#fee2e2; color:#991b1b; border:1px solid #fecaca; padding:10px 12px; border-radius:10px; margin-bottom:10px; }
   .fineprint { text-align:center; color:#878F98; font-size:78%; margin-top:15px; }
-  @media (max-width: 768px){ 
-    .grid { flex-direction:column; } 
-    .splash{ width:160px; height:160px; } 
+  @media (max-width: 768px){
+    .grid { flex-direction:column; }
+    .splash{ width:160px; height:160px; }
     .login-card {
       margin-top: 2vh;
       padding: 18px;

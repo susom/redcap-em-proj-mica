@@ -908,7 +908,12 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     $data['participant_id'] = $participant_id; // authoritative, not client-supplied
                     // $instrument comes from the framework, not the payload - see
                     // resolveSessionHostInstrument() on why that distinction matters.
-                    return json_encode($this->completeSession($data, (string) $instrument));
+                    return json_encode($this->completeSession(
+                        $data,
+                        (string) $instrument,
+                        (int) $event_id,
+                        (int) $repeat_instance
+                    ));
 
                 default:
                     throw new Exception("Action $action is not defined");
@@ -1714,7 +1719,12 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * @return true[]|void
      * @throws \Exception
      */
-    public function completeSession($payload, ?string $hostInstrument = null) {
+    public function completeSession(
+        $payload,
+        ?string $hostInstrument = null,
+        ?int $hostEventId = null,
+        ?int $hostInstance = null
+    ) {
         ['participant_id' => $participant_id] = $payload;
 
         if (empty($participant_id)) {
@@ -1779,7 +1789,13 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 $surveys['survey_link'] = $override;
             }
 
-            return array_merge($surveys, $this->finalizeSessionTranscript($participant_id, $payload, $hostInstrument));
+            return array_merge($surveys, $this->finalizeSessionTranscript(
+            $participant_id,
+            $payload,
+            $hostInstrument,
+            $hostEventId,
+            $hostInstance
+        ));
         }
 
         $session      = $calc['currentSession'];
@@ -1838,7 +1854,13 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         // R01 engine, but that engine is Stage 2 and its fields do not exist on PID 257 yet (audit
         // G4). Doing it this way makes the post-session scan pipeline work today without breaking
         // the pilot flow that still runs from this branch. Stage 2 deletes the half above.
-        $surveys = array_merge($surveys, $this->finalizeSessionTranscript($participant_id, $payload, $hostInstrument));
+        $surveys = array_merge($surveys, $this->finalizeSessionTranscript(
+            $participant_id,
+            $payload,
+            $hostInstrument,
+            $hostEventId,
+            $hostInstance
+        ));
 
         return $surveys;
     }
@@ -1860,7 +1882,9 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     private function finalizeSessionTranscript(
         $participant_id,
         $payload,
-        ?string $hostInstrument = null
+        ?string $hostInstrument = null,
+        ?int $hostEventId = null,
+        ?int $hostInstance = null
     ): array {
         if (!$this->getProjectSetting('enable-transcript-finalization')) {
             return [];
@@ -1875,8 +1899,14 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 (string) PROJECT_ID,
                 (string) $participant_id,
                 (string) $participant_id,
-                (int) ($payload['repeat_instance'] ?? 1),
-                (int) (\REDCap::getEventIdFromUniqueEvent($payload['event_name'] ?? '') ?: 0),
+                // Both from the framework, falling back to the payload only if it did not supply
+                // them. The SPA never sends `event_name`, so this used to resolve to event 0 - and a
+                // longitudinal project refuses a save with an empty `redcap_event_name`, so a scan
+                // that had already produced verified findings failed at the last step with "The
+                // record event name is missing". The framework knew the event all along.
+                $hostInstance ?: (int) ($payload['repeat_instance'] ?? 1),
+                $hostEventId
+                    ?: (int) (\REDCap::getEventIdFromUniqueEvent($payload['event_name'] ?? '') ?: 0),
                 $resolved['session_type'],
                 $resolved['setting']
             );
