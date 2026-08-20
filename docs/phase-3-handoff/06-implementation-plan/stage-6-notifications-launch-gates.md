@@ -338,6 +338,28 @@ told. The veto moved into `ScanJobStateMachine::afterAttempt()` as a fourth
 parameter (defaulting off, so existing callers are unchanged), so both call
 sites now agree by construction instead of by matching comments.
 
+**Every notice sent from cron carried a dashboard link with no project on
+it.** `getUrl()` derives the project from `PROJECT_ID`, which is undefined in
+cron — and the digest, the acknowledgment monitor and the scan worker's
+"findings ready" notice all run there. The link is the only actionable thing in
+a minimum-necessary body, so this made the whole message decorative, quietly:
+`notifyReviewersIfSettled()` catches and `emError`s, so nothing else would have
+complained.
+
+Every live check up to that point had run inside a project context — the
+verifier sets `$_GET['pid']` before `redcap_connect` — so the cron path had
+never executed. Proven by running it with no project request at all;
+`MICA::reviewDashboardUrl()` now sets the pid explicitly, overwriting rather
+than appending so a cron iterating projects cannot inherit whichever project a
+surrounding request was in. The verifier asserts the pid appears exactly once,
+in-project, where `PROJECT_ID` *is* defined.
+
+Checked at the same time and **not** a problem: `mica_notification.project_id`
+is the `project` entity type, which validates via `RedCapDB::getProject($value)`
+— against the value, not `PROJECT_ID`. Unlike the `record` and `user` types,
+which is why `mica_audit_event.actor` and `mica_notification.record` are `text`.
+A row writes cleanly from cron.
+
 **The digest's `overdue_acknowledgment` bucket counted the wrong thing.**
 `RedcapNotificationStore` filled it, but "overdue" depends on the policy's
 window and a store has no policy — so it was counting *every* unacknowledged

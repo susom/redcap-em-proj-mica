@@ -373,6 +373,20 @@ try {
     check('the participant\'s words', str_contains($body, 'probe quote') ? 'LEAKED' : 'absent', 'absent');
     check('the reviewer\'s rationale', str_contains($body, 'exercise the send path') ? 'LEAKED' : 'absent', 'absent');
     check('the record id is present (staff need it)', str_contains($body, "Record: $RECORD") ? 'yes' : 'no', 'yes');
+
+    // The link is the only actionable thing in the body, and it is assembled by the module rather
+    // than by this script. getUrl() derives the project from PROJECT_ID, which is undefined in cron -
+    // so MICA::reviewDashboardUrl() sets the pid explicitly. Exactly once: appending rather than
+    // overwriting would give `pid=257&pid=257` here, where PROJECT_ID *is* defined.
+    $realUrl = (function () use ($module, $PID): string {
+        $m = new \ReflectionMethod($module, 'reviewDashboardUrl');
+        $m->setAccessible(true);
+
+        return (string) $m->invoke($module, $PID);
+    })();
+    note('dashboard link', $realUrl);
+    check('the link names this project', substr_count($realUrl, 'pid=' . $PID), 1);
+    check('and names no other', substr_count($realUrl, 'pid='), 1);
     check(
         'the subject holds no record id',
         preg_match('/\b' . preg_quote($RECORD, '/') . '\b/', $channel->sent[0]['subject']) ? 'LEAKED' : 'absent',

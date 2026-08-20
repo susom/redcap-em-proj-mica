@@ -1012,8 +1012,28 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             new RedcapFindingReviewStore($this),
             $audit,
             (string) $projectId,
-            $this->getUrl('pages/review.php', false, false)
+            $this->reviewDashboardUrl($projectId)
         );
+    }
+
+    /**
+     * The review dashboard link that goes in every notification body.
+     *
+     * `getUrl()` derives the project from `PROJECT_ID`, which is **undefined in cron** - and the
+     * digest, the acknowledgment monitor and the scan worker's "findings ready" notice all run there.
+     * Left alone, every notice those send would carry a link with no project on it, which is the only
+     * actionable thing in the body. The link is where a reviewer goes; a broken one makes the whole
+     * message decorative.
+     *
+     * The pid is *overwritten* rather than appended, because a cron iterating projects must not
+     * inherit whichever project a surrounding request happened to be in.
+     */
+    private function reviewDashboardUrl(int $projectId): string
+    {
+        $url = (string) $this->getUrl('pages/review.php', false, false);
+        $url = rtrim((string) preg_replace('/([?&])pid=[^&]*/', '$1', $url), '?&');
+
+        return $url . (str_contains($url, '?') ? '&' : '?') . 'pid=' . $projectId;
     }
 
     public function launchReadinessFor(int $projectId, ?RoleService $roles = null): LaunchReadiness
