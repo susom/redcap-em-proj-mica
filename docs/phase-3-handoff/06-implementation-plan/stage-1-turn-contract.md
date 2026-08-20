@@ -103,6 +103,23 @@ final class EntitySchemaManager {
 >    so a forced rebuild looked like it duplicated every index. The failure was in the
 >    fake, not the manager. It is stateful now, and says so.
 >
+> ### Follow-up, 2026-08-20: redcap_entity cannot ALTER, and schema-version alone did not notice
+>
+> Adding `event_id` to two entity types, bumping `schema-version` and running `buildSchema()` did
+> **nothing** to the existing tables. `EntityDB::buildSchema()` is `CREATE TABLE IF NOT EXISTS` and
+> there is **no ALTER path anywhere in redcap_entity** — so every future property addition would
+> have silently done nothing. Worse, `verify-entity-schema.php` reported **PASS**, because it only
+> ever checked tables and indexes.
+>
+> `EntitySchemaManager` now migrates **columns** as well as indexes (columns first — an index on a
+> missing column cannot be created), and the verifier checks every declared property against
+> `information_schema`. Columns are only ever *added*: dropping one on a version bump would delete
+> data, and an unused column costs nothing. The property→column-type map is transcribed from
+> `EntityDB`'s switch, with a test that every type this module declares has a mapping, so a
+> divergence fails in the suite instead of in production.
+>
+> **`SCHEMA_VERSION` is `2`.** Anyone with a v1 schema gets the columns on the next enable or cron.
+>
 > ### Verified against live REDCap
 >
 > `verify-entity-schema.php`: **PASS** — four tables present, six indexes with the

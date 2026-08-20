@@ -164,6 +164,33 @@ real transcripts use `L<log_id>`, so **every** mock scan failed as `citation_mis
 and the release path was untestable. Fixtures now cite `#1` and the caller resolves it
 against the transcript — an *identifier* only; `exact_quote` is never rewritten.
 
+### Post-review fixes (2026-08-20)
+
+Two real bugs, from a review pass after the runner landed:
+
+1. **`event_id` was never on the scan job.** `ScanRunner` read `$job['event_id']` from a row that
+   had no such property, so **every finding would have been written to event 0** —
+   `REDCap::getEventNames()` for event 0 yields a name that is either wrong or rejected. Invisible
+   in every green run because the review instrument does not exist, so the write never executed.
+   Same omission class as `instance`, which *was* caught; the difference is that nothing asserted
+   `event_id` survived from `enqueue()` to the finding write. That test exists now, and fixing this
+   is what surfaced the redcap_entity ALTER limitation recorded in
+   [`stage-1-turn-contract.md`](stage-1-turn-contract.md).
+
+2. **`nextFindingInstance` had a dead branch.** `MAX` over an empty set returns a row containing
+   NULL, never no row, so its `$row === null` guard could not fire. It worked, for a different
+   reason than its comment claimed. Now `MAX` + `COUNT` in one query, because `MAX` alone cannot
+   distinguish an empty record from one holding only REDCap's NULL-numbered first instance —
+   `COALESCE(MAX, 0) + 1` returns 1 for both and collides. The residual same-record cross-pass race
+   is stated rather than engineered around.
+
+And one design change: **the run row's status now describes the whole attempt.** The predictable
+release failure is checked *before* the row is written, so it records `service_error` rather than an
+`ok` a reviewer would read as a completed scan. Provenance forces run-row-before-findings, so this
+has to be a look-ahead. The residual exception — instrument exists, `saveData` refuses — is the one
+place `run_status` and job status genuinely diverge, and is why **Stage 5's session view must show
+job status and `last_error` beside `run_status`** rather than the run row alone.
+
 ### Verified
 
 `scripts/verify-safetyscan.php`: **PASS** — all six fixtures driven through seed →
@@ -172,7 +199,7 @@ finalize → real cron pass → assert, on the live instance:
 | Fixture | run_status | job | released |
 |---|---|---|---|
 | `no_supported_concern` | `ok` | `ready_for_review` | nothing, correctly |
-| `self_harm_critical` | `ok` | `manual_review_required` (no instrument yet) | nothing; `last_error` names the instrument |
+| `self_harm_critical` | `service_error` | `manual_review_required` (first attempt — terminal) | nothing; names the missing instrument, verbatim output still preserved |
 | `fabricated_quote` | `citation_mismatch` | `manual_review_required` (first attempt) | **nothing** |
 | `unable_to_assess` | `refusal` | `manual_review_required` (first attempt) | nothing |
 | `content_filter` | `content_filter` | `manual_review_required` (first attempt) | nothing |
