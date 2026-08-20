@@ -140,6 +140,36 @@
             "type": "textarea"
         },
         {
+            "key": "enable-transcript-finalization",
+            "name": "<b>Finalize transcripts and queue safety scans</b><br><i>When a session completes, snapshot an immutable transcript into the EM log and queue a post-session SafetyScan job. Off leaves the pilot behaviour untouched.</i>",
+            "required": false,
+            "type": "checkbox"
+        },
+        {
+            "key": "session-host-map",
+            "name": "<b>Session host map</b><br><i>One <code>instrument:session_type:setting</code> per line. <code>session_type</code> is <code>baseline</code> or <code>booster</code>; <code>setting</code> is <code>emergency_department</code>, <code>remote_followup</code> or <code>other_approved</code> (the pinned SafetyScan schema's vocabulary). Blank uses the R01 defaults: <code>mica_ed_session:baseline:emergency_department</code> and <code>mica_booster_session:booster:remote_followup</code>.</i>",
+            "required": false,
+            "type": "textarea"
+        },
+        {
+            "key": "safetyscan-model-alias",
+            "name": "<b>SafetyScan model alias</b><br><i>Must match a SecureChatAI registry alias. The handoff names <code>gemini-3.5-flash</code> for production; dev uses <code>gemini-2.5-flash</code>.</i>",
+            "required": false,
+            "type": "text"
+        },
+        {
+            "key": "safetyscan-max-attempts",
+            "name": "<b>SafetyScan attempts before manual review</b><br><i>Default 3. Transient failures retry with backoff; once attempts are exhausted the job becomes a visible manual-review task - never a clean screen.</i>",
+            "required": false,
+            "type": "text"
+        },
+        {
+            "key": "scan-mock-mode",
+            "name": "<b>Scan mock mode</b> <span style=\"color:#c00\">(development only)</span><br><i>Replay fixtures instead of calling a model. Must be off in production; the launch-readiness gate refuses production while it is on.</i>",
+            "required": false,
+            "type": "checkbox"
+        },
+        {
             "key": "enable-project-debug-logging",
             "name": "<b>Enable Debug Logging</b><br><i>(optional)</i> Requires installation and configuration of emLogger",
             "required": false,
@@ -298,5 +328,14 @@
         "php-version-max": "",
         "redcap-version-min": "",
         "redcap-version-max": ""
-    }
+    },
+    "crons": [
+        {
+            "cron_name": "mica_scan_worker",
+            "cron_description": "Runs queued post-session SafetyScan jobs and returns jobs abandoned by dead workers to the queue. Every minute, bounded to a small batch and a wall-clock budget so a slow pass cannot overrun its own interval and stack workers.",
+            "method": "micaScanWorkerCron",
+            "cron_frequency": "60",
+            "cron_max_run_time": "300"
+        }
+    ]
 }

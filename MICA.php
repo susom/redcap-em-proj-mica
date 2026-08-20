@@ -12,6 +12,13 @@ require_once "classes/ArtifactRegistry.php";
 // enabled, and an unloadable class there is reported as a bare fatal with no cause attached.
 require_once "classes/EntitySchemaManager.php";
 require_once "classes/RedcapEntityPlatform.php";
+// The post-session pipeline. Required explicitly for the same reason as the rest: this module has
+// to work when vendor/ is absent, and a class that cannot load is reported as an unrelated fatal.
+require_once "classes/RedcapScanQueueStore.php";
+require_once "classes/RedcapTranscriptStore.php";
+require_once "classes/ScanWorker.php";
+require_once "classes/SessionHostMap.php";
+require_once "classes/TranscriptFinalizer.php";
 
 // vendor/ is committed and deploys with the module, and opis/json-schema is a runtime dependency
 // of the turn contract, so this is a hard require again. It was briefly conditional because a
@@ -1349,7 +1356,217 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
         $this->emDebug("return surveys object ", $participant_id, $session, $event_id, $surveys);
 
+        // Finalize the transcript and queue the safety scan. Additive rather than a rewrite of the
+        // pilot path above: Stage 3.4 calls for replacing this method's session resolution with the
+        // R01 engine, but that engine is Stage 2 and its fields do not exist on PID 257 yet (audit
+        // G4). Doing it this way makes the post-session scan pipeline work today without breaking
+        // the pilot flow that still runs from this branch. Stage 2 deletes the half above.
+        $surveys = array_merge($surveys, $this->finalizeSessionTranscript($participant_id, $payload));
+
         return $surveys;
+    }
+
+    /**
+     * Snapshot the finished conversation and queue its safety scan.
+     *
+     * Deliberately cannot fail the session. The participant has already finished talking and their
+     * messages are already stored; refusing to close the session because a scan could not be queued
+     * would strand them on a screen they cannot leave, and would not make the scan happen. So this
+     * reports the problem to staff and returns - the failure is visible in the module log and, once
+     * Stage 5 exists, in the RA dashboard's queue counts.
+     *
+     * The one thing it must never do is report success it did not achieve, because "no scan queued"
+     * that looks like "scan queued" is a participant whose disclosure is never read.
+     *
+     * @return array<string,mixed> keys merged into the completeSession response
+     */
+    private function finalizeSessionTranscript($participant_id, $payload): array
+    {
+        if (!$this->getProjectSetting('enable-transcript-finalization')) {
+            return [];
+        }
+
+        try {
+            $instrument = $this->resolveSessionHostInstrument($payload);
+            $hosts = SessionHostMap::fromSetting($this->getProjectSetting('session-host-map'));
+            $resolved = $hosts->resolve($instrument);
+
+            $result = $this->transcriptFinalizer()->finalize(
+                (string) PROJECT_ID,
+                (string) $participant_id,
+                (string) $participant_id,
+                (int) ($payload['repeat_instance'] ?? 1),
+                (int) (\REDCap::getEventIdFromUniqueEvent($payload['event_name'] ?? '') ?: 0),
+                $resolved['session_type'],
+                $resolved['setting']
+            );
+
+            foreach ($result->warnings as $warning) {
+                $this->emError('completeSession: transcript finalized with a warning', $warning);
+            }
+
+            return ['transcript' => $result->toArray()];
+        } catch (\Throwable $e) {
+            // Never rethrown - see the docblock. Logged as an error, not a debug line: a session
+            // whose transcript was not queued for scanning is a safety-relevant gap, and the study
+            // team needs to find it without turning debug logging on first.
+            $this->emError('completeSession: transcript finalization FAILED - no scan is queued', [
+                'participant_id' => $participant_id,
+                'project_id'     => PROJECT_ID,
+                'error'          => $e->getMessage(),
+            ]);
+
+            return ['transcript' => [
+                'queued' => false,
+                'error'  => 'This session was recorded but its safety review could not be queued. '
+                          . 'The study team has been notified.',
+            ]];
+        }
+    }
+
+    /**
+     * Which instrument hosted this chat, which is what decides baseline-vs-booster and the clinical
+     * setting (see classes/SessionHostMap.php).
+     *
+     * Taken from the request rather than the payload where possible: the payload is client-supplied
+     * on a no-auth action, and letting a caller name its own instrument would let them label an ED
+     * baseline as a remote booster - which changes how a SafetyScan finding reads clinically.
+     */
+    private function resolveSessionHostInstrument($payload): string
+    {
+        // REDCap sets this on a survey request; it is server-derived and not spoofable.
+        if (isset($_GET['page']) && is_string($_GET['page']) && $_GET['page'] !== '') {
+            return (string) $_GET['page'];
+        }
+
+        $configured = array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) $this->getProjectSetting('chat_host_instruments'))
+        )));
+
+        // A single configured host is unambiguous, so an admin-initiated finalize does not need to
+        // guess. More than one and there is nothing to infer from.
+        if (count($configured) === 1) {
+            return $configured[0];
+        }
+
+        throw new TranscriptException(
+            'The chat host instrument could not be determined from the request, so the session type '
+            . 'and clinical setting are unknown and nothing was finalized. This happens when '
+            . 'completeSession is called outside a survey context on a project with more than one '
+            . 'configured chat host.'
+        );
+    }
+
+    /** Wired here so the finalizer's dependencies are constructed in exactly one place. */
+    public function transcriptFinalizer(): TranscriptFinalizer
+    {
+        $this->entitySchemaManager()->assertSchemaCurrent();
+
+        $registry = new ArtifactRegistry();
+        $states = new ScanJobStateMachine(
+            (int) ($this->getProjectSetting('safetyscan-max-attempts') ?: ScanJobStateMachine::DEFAULT_MAX_ATTEMPTS)
+        );
+
+        return new TranscriptFinalizer(
+            new RedcapTranscriptStore($this),
+            new TranscriptBuilder(),
+            new SchemaValidator($registry),
+            new ScanQueue(
+                new RedcapScanQueueStore($this),
+                $states,
+                null,
+                fn(string $m) => $this->emDebug("scan queue: $m")
+            ),
+            $this->sessionPseudoIdSalt(),
+            null,
+            fn(string $m) => $this->emDebug("finalizer: $m")
+        );
+    }
+
+    /**
+     * The pseudo-id salt, generated once on first use and never rotated.
+     *
+     * Lazily created rather than required as a setup step, because a study whose first session is
+     * refused for a missing salt is worse than one that generates it - but it is generated *once*,
+     * with a hard refusal to overwrite: rotating it re-pseudonymises every id already issued and
+     * severs the link between existing findings and the sessions they came from.
+     */
+    private function sessionPseudoIdSalt(): string
+    {
+        $salt = (string) $this->getSystemSetting(SessionPseudoId::SALT_SETTING);
+
+        if ($salt !== '') {
+            return $salt;
+        }
+
+        $salt = SessionPseudoId::generateSalt();
+        $this->setSystemSetting(SessionPseudoId::SALT_SETTING, $salt);
+        $this->emDebug('generated the session pseudo-id salt (one time only; never rotated)');
+
+        return $salt;
+    }
+
+    /**
+     * Cron entry point: run one scan-worker pass per project that has MICA enabled.
+     *
+     * Each project is isolated in its own try/catch. One project with a broken configuration must
+     * not stop every other project's scans - which is exactly what an uncaught throw here would do,
+     * silently, since nobody reads a cron that appears to have run.
+     */
+    public function micaScanWorkerCron($cronInfo = []): string
+    {
+        $summary = [];
+
+        foreach ($this->getProjectsWithModuleEnabled() as $projectId) {
+            try {
+                $result = $this->scanWorkerFor((int) $projectId)->runPass();
+
+                if ($result['claimed'] > 0 || $result['reaped'] > 0) {
+                    $summary[] = sprintf(
+                        'pid %d: %d claimed, %d reaped, %s',
+                        $projectId,
+                        $result['claimed'],
+                        $result['reaped'],
+                        json_encode($result['outcomes'])
+                    );
+                }
+            } catch (\Throwable $e) {
+                $summary[] = "pid $projectId: FAILED - " . $e->getMessage();
+                $this->emError('mica_scan_worker cron failed for one project', [
+                    'project_id' => $projectId,
+                    'error'      => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $summary === [] ? 'nothing to do' : implode('; ', $summary);
+    }
+
+    private function scanWorkerFor(int $projectId): ScanWorker
+    {
+        $this->entitySchemaManager()->ensureSchema();
+
+        $states = new ScanJobStateMachine(
+            (int) ($this->getProjectSetting('safetyscan-max-attempts', $projectId)
+                ?: ScanJobStateMachine::DEFAULT_MAX_ATTEMPTS)
+        );
+
+        $queue = new ScanQueue(
+            new RedcapScanQueueStore($this),
+            $states,
+            null,
+            fn(string $m) => $this->emDebug("scan queue (pid $projectId): $m")
+        );
+
+        // No runner yet - ScanWorker's default reports service_error, which keeps an unscanned job
+        // visibly unscanned. Stage 4 injects ScanRunner here.
+        return new ScanWorker(
+            $queue,
+            null,
+            null,
+            fn(string $m) => $this->emDebug("scan worker (pid $projectId): $m")
+        );
     }
 
     /**
