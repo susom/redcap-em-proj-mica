@@ -33,11 +33,24 @@ namespace Stanford\MICA;
  * 5. `record` and `user` types carry runtime validation that reaches into REDCap
  *    (Records::recordExists() needs PROJECT_ID defined; the user type needs the username to exist
  *    in redcap_user_information). That is why `mica_audit_event.actor` is `text` - see below.
+ * 6. The `project` type is unusable from a participant request, and fails in the least obvious way
+ *    available. Entity::validateProperty()'s project branch is:
+ *
+ *        if ((!defined('USERID') || SUPER_USER || ACCOUNT_MANAGER || ...) == false)
+ *
+ *    On a CLI or cron request USERID is undefined, so `||` short-circuits and SUPER_USER is never
+ *    evaluated. On a SURVEY request REDCap defines USERID but not SUPER_USER - that one is set at
+ *    login - so PHP evaluates an undefined constant and throws. Every entity write from a
+ *    participant's finished session therefore died with `Undefined constant
+ *    "REDCapEntity\SUPER_USER"`, which meant no scan was ever queued for a real session. Every
+ *    verification script missed it because they all run from the CLI, where the short-circuit hides
+ *    it. So `project_id` is declared `integer` everywhere. The column is INT either way
+ *    (see columnTypes()), so this changes validation, not storage.
  */
 class EntityTypes
 {
     /** Bumped whenever a type or index below changes; gates the migration. */
-    public const SCHEMA_VERSION = '3';
+    public const SCHEMA_VERSION = '4';
 
     /**
      * Secondary indexes and UNIQUE constraints, which redcap_entity does not create at all
@@ -241,7 +254,11 @@ class EntityTypes
             'properties'   => [
                 'project_id' => [
                     'name'     => 'Project',
-                    'type'     => 'project',
+                    // `integer`, NOT `project`. See the note on the `project` type in the class
+                    // docblock: the framework's validation for it dereferences SUPER_USER, which
+                    // REDCap only defines on an authenticated request - so this is what stopped a
+                    // participant's finished session from ever queueing its own scan.
+                    'type'     => 'integer',
                     'required' => true,
                 ],
                 'record' => [
@@ -418,7 +435,11 @@ class EntityTypes
             'properties'   => [
                 'project_id' => [
                     'name'     => 'Project',
-                    'type'     => 'project',
+                    // `integer`, NOT `project`. See the note on the `project` type in the class
+                    // docblock: the framework's validation for it dereferences SUPER_USER, which
+                    // REDCap only defines on an authenticated request - so this is what stopped a
+                    // participant's finished session from ever queueing its own scan.
+                    'type'     => 'integer',
                     'required' => true,
                 ],
                 'record' => [
@@ -650,7 +671,11 @@ class EntityTypes
                 ],
                 'project_id' => [
                     'name'     => 'Project',
-                    'type'     => 'project',
+                    // `integer`, NOT `project`. See the note on the `project` type in the class
+                    // docblock: the framework's validation for it dereferences SUPER_USER, which
+                    // REDCap only defines on an authenticated request - so this is what stopped a
+                    // participant's finished session from ever queueing its own scan.
+                    'type'     => 'integer',
                     'required' => true,
                 ],
                 // `text` not `record`, for the same reason as mica_audit_event.actor: the `record`

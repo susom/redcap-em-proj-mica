@@ -104,36 +104,39 @@ note_(
 /**
  * The session engine, which is still the pilot's.
  *
- * `completeSession()` calls `calculateSessionInfo()`, which needs an event literally named
- * `baseline_arm_1` and a `consent_date` on the record at that event. The R01 structure on PID 257 has
- * neither - its arm-1 events are `day_1_ed_arm_1`, `month_3_arm_1` and so on - so every End Session
- * throws "the project is not configured for MICA sessions" before a transcript is written.
+ * `completeSession()` still contains the pilot's save - `raw_chat_logs` at a `baseline_arm_1` event.
+ * A project with that scaffolding uses it; a project without it (PID 257's arm-1 events are
+ * `day_1_ed_arm_1`, `month_3_arm_1`, and the pilot fields are absent from the dictionary) skips the
+ * save and goes straight to finalizing the transcript.
  *
- * That is Stage 2 (the R01 session engine), deliberately deferred - not a Stage 6 defect. It is
- * checked here because it is the difference between "seed a fixture" and "just have a chat", and
- * discovering it by having a chat costs an hour.
+ * Reported rather than gated, because neither answer blocks the pipeline. `consent_date` is
+ * deliberately NOT part of this: a blank or missing one does not fail, because `new DateTime('')`
+ * returns *now* rather than throwing. An earlier version of this check required it and would have
+ * reported a blocker on a project that works.
  */
-$events = \REDCap::getEventNames(true, false);
-$hasBaselineArm1 = (bool) array_search('baseline_arm_1', $events, true);
+$hasBaselineArm1 = (bool) array_search('baseline_arm_1', \REDCap::getEventNames(true, false), true);
 
-$consented = (int) $module->query(
-    'SELECT COUNT(DISTINCT record) c FROM ' . \Records::getDataTable($PID)
-    . " WHERE project_id = ? AND field_name = 'consent_date' AND value <> ''",
-    [$PID]
-)->fetch_assoc()['c'];
+$pilotFields = [];
+foreach (['raw_chat_logs', 'session_timestamp'] as $field) {
+    $present = (int) $module->query(
+        'SELECT COUNT(*) c FROM redcap_metadata WHERE project_id = ? AND field_name = ?',
+        [$PID, $field]
+    )->fetch_assoc()['c'];
 
-link_(
-    'pilot session engine usable',
-    $hasBaselineArm1 && $consented > 0,
-    sprintf(
-        'baseline_arm_1 event: %s; records with consent_date: %d',
-        $hasBaselineArm1 ? 'present' : 'ABSENT',
-        $consented
-    ),
-    'completeSession() needs a `baseline_arm_1` event and a `consent_date` on the record - the '
-    . 'pilot\'s scaffolding. Without both, End Session throws before writing a transcript, so a real '
-    . 'chat cannot drive this pipeline. Stage 2 replaces this; until then use '
-    . 'e2e-review-fixture.php, which finalizes a transcript directly.'
+    if ($present) {
+        $pilotFields[] = $field;
+    }
+}
+
+note_(
+    'session engine',
+    ($hasBaselineArm1 && count($pilotFields) === 2)
+        ? 'pilot - baseline_arm_1 and raw_chat_logs present, so the pilot save runs'
+        : sprintf(
+            'R01 - the pilot save is skipped (baseline_arm_1: %s; pilot fields: %s)',
+            $hasBaselineArm1 ? 'present' : 'absent',
+            $pilotFields === [] ? 'none' : implode(', ', $pilotFields)
+        )
 );
 
 // ------------------------------------------------------------------ 2. transcript -> scan

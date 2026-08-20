@@ -905,7 +905,9 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 case "completeSession":
                     $data = $this->sanitizeInput($payload);
                     $data['participant_id'] = $participant_id; // authoritative, not client-supplied
-                    return json_encode($this->completeSession($data));
+                    // $instrument comes from the framework, not the payload - see
+                    // resolveSessionHostInstrument() on why that distinction matters.
+                    return json_encode($this->completeSession($data, (string) $instrument));
 
                 default:
                     throw new Exception("Action $action is not defined");
@@ -1621,6 +1623,40 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 //            )
 //        );
 //}
+    /**
+     * Does this project have the pilot's session scaffolding at all?
+     *
+     * Both halves are required, and each was independently fatal on PID 257:
+     *
+     *   1. an event whose unique name is literally `baseline_arm_1` - `calculateSessionInfo()` does
+     *      `array_search('baseline_arm_1', REDCap::getEventNames(true, false))` and returns null
+     *      without it;
+     *   2. the two real fields the save below writes.
+     *
+     * Two things deliberately NOT checked. `consent_date`, because an absent or blank one does not
+     * fail: `new DateTime('')` returns *now* rather than throwing, so the pilot treats it as a
+     * day-zero session. And `session_info_complete`, because REDCap generates `<form>_complete`
+     * fields rather than storing them in `redcap_metadata` - requiring it would have returned false
+     * on the pilot project itself and skipped a save that works there, which is the one regression
+     * this method exists to avoid.
+     */
+    private function hasPilotSessionScaffolding(): bool
+    {
+        if (!array_search('baseline_arm_1', \REDCap::getEventNames(true, false), true)) {
+            return false;
+        }
+
+        $fields = $this->getProjectFieldNames();
+
+        foreach (['raw_chat_logs', 'session_timestamp'] as $required) {
+            if (!in_array($required, $fields, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private function calculateSessionInfo($recordId): ?array {
         $events = \REDCap::getEventNames(true, false);
         $baselineEventId = array_search("baseline_arm_1", $events);
@@ -1677,7 +1713,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * @return true[]|void
      * @throws \Exception
      */
-    public function completeSession($payload) {
+    public function completeSession($payload, ?string $hostInstrument = null) {
         ['participant_id' => $participant_id] = $payload;
 
         if (empty($participant_id)) {
@@ -1688,8 +1724,32 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         // or the participant's consent_date. This used to fall straight through to
         // ->getTimestamp() on null - a fatal that fired *before* saveData(), so the session was
         // never finalized and the participant was signed out with no explanation (docs 14 D16).
-        $calc = $this->calculateSessionInfo($participant_id);
-        if (!is_array($calc) || empty($calc['sessionStart']) || !($calc['sessionStart'] instanceof \DateTime)) {
+        /**
+         * A project without the pilot's scaffolding skips the pilot save rather than failing.
+         *
+         * The block below writes `raw_chat_logs` to a `baseline_arm_1` event. On an R01 project none
+         * of that exists - PID 257's arm-1 events are `day_1_ed_arm_1`, `month_3_arm_1`, and the three
+         * pilot fields are absent from the dictionary - so it used to throw here and take the
+         * transcript finalization at the bottom of this method down with it. The result was a project
+         * where a participant could talk to MICA and **no session could ever be screened**, reported
+         * as "the project is not configured for MICA sessions".
+         *
+         * Two different failures were being treated as one. A pilot project whose session cannot be
+         * resolved is a real fault and still throws - that is docs 14 D16, and swallowing it would
+         * sign the participant out with no explanation again. A project that was never a pilot project
+         * has nothing to resolve, and the honest thing is to skip a save that does not apply and get
+         * on with the part that does.
+         *
+         * Stage 2 deletes the pilot half outright. This is what makes the scan pipeline usable before
+         * then.
+         */
+        $pilotScaffolding = $this->hasPilotSessionScaffolding();
+        $calc = $pilotScaffolding ? $this->calculateSessionInfo($participant_id) : null;
+        $pilotResolved = is_array($calc)
+            && !empty($calc['sessionStart'])
+            && $calc['sessionStart'] instanceof \DateTime;
+
+        if ($pilotScaffolding && !$pilotResolved) {
             $this->emError('completeSession: could not resolve session info', [
                 'participant_id' => $participant_id,
                 'project_id'     => PROJECT_ID,
@@ -1698,6 +1758,27 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 'This session could not be finalized because the project is not configured for MICA '
                 . 'sessions. Your messages have been recorded - please contact the study team.'
             );
+        }
+
+        if (!$pilotScaffolding) {
+            $this->emDebug(
+                'completeSession: no pilot session scaffolding on this project, so the raw_chat_logs '
+                . 'save is skipped. The transcript is still finalized and the safety scan still '
+                . 'queued.',
+                ['participant_id' => $participant_id, 'project_id' => PROJECT_ID]
+            );
+
+            $surveys = ['success' => true];
+            $override = trim((string) $this->getProjectSetting('chatbot_end_session_url_override'));
+
+            // Without a link the SPA signs the participant out with no message, which is the shape of
+            // docs 14 D16. An R01 project has no `posttest` survey to send them to, so the override is
+            // the only honest source of one.
+            if ($override !== '') {
+                $surveys['survey_link'] = $override;
+            }
+
+            return array_merge($surveys, $this->finalizeSessionTranscript($participant_id, $payload, $hostInstrument));
         }
 
         $session      = $calc['currentSession'];
@@ -1756,7 +1837,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         // R01 engine, but that engine is Stage 2 and its fields do not exist on PID 257 yet (audit
         // G4). Doing it this way makes the post-session scan pipeline work today without breaking
         // the pilot flow that still runs from this branch. Stage 2 deletes the half above.
-        $surveys = array_merge($surveys, $this->finalizeSessionTranscript($participant_id, $payload));
+        $surveys = array_merge($surveys, $this->finalizeSessionTranscript($participant_id, $payload, $hostInstrument));
 
         return $surveys;
     }
@@ -1775,14 +1856,17 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      *
      * @return array<string,mixed> keys merged into the completeSession response
      */
-    private function finalizeSessionTranscript($participant_id, $payload): array
-    {
+    private function finalizeSessionTranscript(
+        $participant_id,
+        $payload,
+        ?string $hostInstrument = null
+    ): array {
         if (!$this->getProjectSetting('enable-transcript-finalization')) {
             return [];
         }
 
         try {
-            $instrument = $this->resolveSessionHostInstrument($payload);
+            $instrument = $this->resolveSessionHostInstrument($payload, $hostInstrument);
             $hosts = SessionHostMap::fromSetting($this->getProjectSetting('session-host-map'));
             $resolved = $hosts->resolve($instrument);
 
@@ -1811,6 +1895,19 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 'error'          => $e->getMessage(),
             ]);
 
+            // Also to the EM log, because emError routes through emLogger and emLogger is an
+            // optional module that is disabled by default - so on a stock install the one message
+            // explaining why a session was never screened went nowhere at all.
+            try {
+                $this->log('mica_finalize_failed', [
+                    'record'     => (string) $participant_id,
+                    'project_id' => (int) PROJECT_ID,
+                    'reason'     => substr($e->getMessage(), 0, 1000),
+                ]);
+            } catch (\Throwable $ignored) {
+                // A logging failure must not become the participant's problem.
+            }
+
             return ['transcript' => [
                 'queued' => false,
                 'error'  => 'This session was recorded but its safety review could not be queued. '
@@ -1827,8 +1924,20 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * on a no-auth action, and letting a caller name its own instrument would let them label an ED
      * baseline as a remote booster - which changes how a SafetyScan finding reads clinically.
      */
-    private function resolveSessionHostInstrument($payload): string
+    private function resolveSessionHostInstrument($payload, ?string $hostInstrument = null): string
     {
+        // The framework tells the module which instrument the request came from, and it is as
+        // server-derived as $_GET['page'] - it just was not being passed in. Without it, a project
+        // with TWO configured chat hosts (which the R01 has: an ED session and a booster) could
+        // never finalize a real participant session at all: the inference below only works for a
+        // single host, so every End Session threw and no session was ever screened.
+        //
+        // Validated against the configured hosts rather than trusted outright. That costs nothing
+        // and means a future caller passing something from a payload cannot widen this.
+        if ($hostInstrument !== null && $hostInstrument !== '' && $this->isChatHostInstrument($hostInstrument)) {
+            return $hostInstrument;
+        }
+
         // REDCap sets this on a survey request; it is server-derived and not spoofable.
         if (isset($_GET['page']) && is_string($_GET['page']) && $_GET['page'] !== '') {
             return (string) $_GET['page'];
@@ -1845,12 +1954,16 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             return $configured[0];
         }
 
-        throw new TranscriptException(
-            'The chat host instrument could not be determined from the request, so the session type '
-            . 'and clinical setting are unknown and nothing was finalized. This happens when '
-            . 'completeSession is called outside a survey context on a project with more than one '
-            . 'configured chat host.'
-        );
+        throw new TranscriptException(sprintf(
+            'The chat host instrument could not be determined, so the session type and clinical '
+            . 'setting are unknown and nothing was finalized. Tried: framework instrument "%s", '
+            . '$_GET[page] "%s", and the %d configured host(s) [%s] - which can only be inferred '
+            . 'from when there is exactly one.',
+            (string) $hostInstrument,
+            isset($_GET['page']) && is_string($_GET['page']) ? $_GET['page'] : '',
+            count($configured),
+            implode(', ', $configured)
+        ));
     }
 
     /** Wired here so the finalizer's dependencies are constructed in exactly one place. */

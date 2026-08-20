@@ -282,7 +282,39 @@ try {
     $module->setProjectSetting('role-ra-reviewer', [], $PID);
     $unmapped = RoleService::fromModule($module, $PID);
     check('an UNMAPPED REDCap role has no access', $unmapped->hasAnyRole($REVIEWER) ? 'yes' : 'no', 'no');
-    check('...and the module reports itself unconfigured', $unmapped->isUnconfigured() ? 'yes' : 'no', 'yes');
+
+    /**
+     * `isUnconfigured()` is a property of ALL THREE role settings, so testing it means controlling
+     * all three.
+     *
+     * This used to clear only `role-ra-reviewer` and then assert the module called itself
+     * unconfigured - which was true on a clean project and false on any project where an
+     * administrator had mapped an auditor or PI role, because one mapping is enough to make it
+     * configured. It failed on PID 257 the moment `role-auditor` was set, reporting a defect in
+     * RoleService when the fault was this script's assumption about the project.
+     */
+    $otherRoles = [];
+    foreach (['role-pi-lead', 'role-auditor'] as $key) {
+        $otherRoles[$key] = $module->getProjectSetting($key, $PID);
+        $module->setProjectSetting($key, [], $PID);
+    }
+
+    check(
+        '...and with NO role mapped it reports itself unconfigured',
+        RoleService::fromModule($module, $PID)->isUnconfigured() ? 'yes' : 'no',
+        'yes'
+    );
+
+    foreach ($otherRoles as $key => $value) {
+        $value === null || $value === [] ? $module->removeProjectSetting($key, $PID)
+                                        : $module->setProjectSetting($key, $value, $PID);
+    }
+
+    check(
+        'and one mapped role is enough to be configured again',
+        RoleService::fromModule($module, $PID)->isUnconfigured() ? 'yes' : 'no',
+        ($otherRoles['role-pi-lead'] || $otherRoles['role-auditor']) ? 'no' : 'yes'
+    );
 
     // (c) Restored: mapped role, access back. Proves the negatives were the mapping and not
     // something incidental that happened to break access for the rest of the run.
