@@ -264,6 +264,7 @@ class ComposerStaticInit75d890558dc1e976efb11b28f8360706
         'Stanford\\MICA\\RedcapEntityLoader' => __DIR__ . '/../..' . '/classes/RedcapEntityLoader.php',
         'Stanford\\MICA\\RedcapEntityPlatform' => __DIR__ . '/../..' . '/classes/RedcapEntityPlatform.php',
         'Stanford\\MICA\\RedcapFindingReviewStore' => __DIR__ . '/../..' . '/classes/RedcapFindingReviewStore.php',
+        'Stanford\\MICA\\RedcapReviewQueryStore' => __DIR__ . '/../..' . '/classes/RedcapReviewQueryStore.php',
         'Stanford\\MICA\\RedcapScanQueueStore' => __DIR__ . '/../..' . '/classes/RedcapScanQueueStore.php',
         'Stanford\\MICA\\RedcapScanResultStore' => __DIR__ . '/../..' . '/classes/RedcapScanResultStore.php',
         'Stanford\\MICA\\RedcapTranscriptStore' => __DIR__ . '/../..' . '/classes/RedcapTranscriptStore.php',

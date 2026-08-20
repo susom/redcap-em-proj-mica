@@ -1,0 +1,768 @@
+/*
+ * MICA Safety Review — design tokens and layout.
+ *
+ * Two constraints shape everything here.
+ *
+ * 1. It renders INSIDE a REDCap page, which brings its own Bootstrap. So every rule is scoped under
+ *    .mica-review-root and the root re-establishes the properties Bootstrap would otherwise leak in
+ *    (font, line-height, box-sizing). Without that the layout shifts depending on which REDCap
+ *    version is hosting it.
+ *
+ * 2. Urgency is never encoded in colour alone. Every level carries a text label and a distinct
+ *    left-edge weight as well as a hue, because roughly 1 in 12 men has a colour-vision deficiency
+ *    and this is a list whose ORDER is a safety feature. A reviewer who cannot distinguish the red
+ *    row from the orange one must still be able to see which is which.
+ */
+
+.mica-review-root {
+  /* Neutrals: a slightly cool grey, so the urgency hues read as deliberate rather than as noise. */
+  --mica-bg: #f7f8fa;
+  --mica-surface: #ffffff;
+  --mica-border: #dfe3e8;
+  --mica-border-strong: #c3cad3;
+  --mica-ink: #1c2430;
+  --mica-ink-soft: #56606d;
+  --mica-ink-faint: #7d8794;
+
+  /* Urgency. Each is paired with a tint used only for backgrounds, never for text. */
+  --mica-unscreened: #9a5b00;
+  --mica-unscreened-tint: #fdf3e3;
+  --mica-critical: #a1132b;
+  --mica-critical-tint: #fdeef0;
+  --mica-high: #a9500a;
+  --mica-high-tint: #fdf2e8;
+  --mica-moderate: #1c5d99;
+  --mica-moderate-tint: #eef4fb;
+  --mica-quality: #4a5563;
+  --mica-quality-tint: #f1f3f6;
+
+  --mica-confirmed: #1a6b45;
+  --mica-confirmed-tint: #eaf5ef;
+
+  --mica-focus: #1c5d99;
+
+  --mica-radius: 6px;
+  --mica-gap: 0.75rem;
+
+  /* Re-established rather than inherited — see the header comment. */
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--mica-ink);
+  background: var(--mica-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+.mica-review-root *,
+.mica-review-root *::before,
+.mica-review-root *::after {
+  box-sizing: inherit;
+}
+
+/* ---------------------------------------------------------------- layout */
+
+.mica-shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 1rem 1rem 4rem;
+}
+
+.mica-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--mica-gap);
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--mica-border);
+  margin-bottom: 1rem;
+}
+
+.mica-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.mica-whoami {
+  margin-left: auto;
+  font-size: 0.8125rem;
+  color: var(--mica-ink-soft);
+}
+
+.mica-whoami code {
+  font-size: 0.8125rem;
+  color: var(--mica-ink);
+}
+
+.mica-tabs {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+/*
+ * Refresh sits with the tabs rather than pushed to the far right. The top-right corner of a REDCap
+ * page is where its own dev/status ribbon lands, which clipped the control on every localhost
+ * screenshot — and a button whose right half is under a ribbon is a button people miss.
+ */
+.mica-tab--refresh { margin-left: 0.5rem; }
+
+.mica-tab {
+  appearance: none;
+  border: 1px solid transparent;
+  background: none;
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--mica-radius);
+  font: inherit;
+  color: var(--mica-ink-soft);
+  cursor: pointer;
+}
+
+.mica-tab:hover {
+  background: var(--mica-surface);
+  border-color: var(--mica-border);
+  color: var(--mica-ink);
+}
+
+.mica-tab[aria-current='page'] {
+  background: var(--mica-surface);
+  border-color: var(--mica-border-strong);
+  color: var(--mica-ink);
+  font-weight: 600;
+}
+
+/* Focus is visible and consistent everywhere. A keyboard reviewer working down a long queue is a
+   real user of this tool, not a hypothetical one. */
+.mica-review-root :focus-visible {
+  outline: 2px solid var(--mica-focus);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- summary strip */
+
+.mica-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.mica-stat {
+  background: var(--mica-surface);
+  border: 1px solid var(--mica-border);
+  border-radius: var(--mica-radius);
+  padding: 0.6rem 0.75rem;
+}
+
+.mica-stat-value {
+  font-size: 1.4rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.mica-stat-label {
+  font-size: 0.75rem;
+  color: var(--mica-ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mica-stat--alarm .mica-stat-value { color: var(--mica-unscreened); }
+.mica-stat--critical .mica-stat-value { color: var(--mica-critical); }
+
+/* ---------------------------------------------------------------- queue */
+
+.mica-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-end;
+  margin-bottom: 0.75rem;
+}
+
+.mica-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.mica-field > label {
+  font-size: 0.75rem;
+  color: var(--mica-ink-soft);
+  font-weight: 600;
+}
+
+.mica-review-root select,
+.mica-review-root input[type='date'],
+.mica-review-root input[type='text'],
+.mica-review-root textarea {
+  font: inherit;
+  color: var(--mica-ink);
+  background: var(--mica-surface);
+  border: 1px solid var(--mica-border-strong);
+  border-radius: var(--mica-radius);
+  padding: 0.35rem 0.5rem;
+  min-height: 2.25rem;
+}
+
+.mica-review-root textarea {
+  min-height: 5rem;
+  resize: vertical;
+  width: 100%;
+}
+
+.mica-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+/*
+ * A queue row is a button, not a table row: it is the primary action on this screen and it has to be
+ * reachable by keyboard and comfortably tappable on a phone. Tables were tried and are worse here —
+ * a reviewer on call needs one legible block per session, not eight columns scrolled sideways.
+ */
+.mica-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.25rem 0.75rem;
+  width: 100%;
+  text-align: left;
+  align-items: baseline;
+  background: var(--mica-surface);
+  border: 1px solid var(--mica-border);
+  border-left-width: 4px;
+  border-radius: var(--mica-radius);
+  padding: 0.625rem 0.75rem;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.mica-row:hover {
+  border-color: var(--mica-border-strong);
+}
+
+.mica-row--unscreened { border-left-color: var(--mica-unscreened); background: var(--mica-unscreened-tint); }
+.mica-row--critical { border-left-color: var(--mica-critical); background: var(--mica-critical-tint); }
+.mica-row--high { border-left-color: var(--mica-high); }
+.mica-row--moderate { border-left-color: var(--mica-moderate); }
+.mica-row--quality { border-left-color: var(--mica-quality); }
+.mica-row--none { border-left-color: var(--mica-border-strong); }
+
+/* Settled work recedes but stays legible — it is kept so a reviewer can see their own recent work. */
+.mica-row--settled {
+  background: var(--mica-bg);
+  border-left-color: var(--mica-confirmed);
+}
+
+.mica-row-main {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.mica-row-summary {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.mica-row-meta {
+  grid-column: 2;
+  font-size: 0.8125rem;
+  color: var(--mica-ink-soft);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.mica-row-meta code {
+  font-size: 0.8125rem;
+}
+
+.mica-row-aside {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  text-align: right;
+  font-size: 0.8125rem;
+  color: var(--mica-ink-soft);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- badges */
+
+/*
+ * Every badge carries its label as text. The colour is a second channel, never the only one.
+ */
+.mica-badge {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.4rem;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.mica-badge--unscreened { color: var(--mica-unscreened); background: var(--mica-unscreened-tint); }
+.mica-badge--critical { color: var(--mica-critical); background: var(--mica-critical-tint); }
+.mica-badge--high { color: var(--mica-high); background: var(--mica-high-tint); }
+.mica-badge--moderate { color: var(--mica-moderate); background: var(--mica-moderate-tint); }
+.mica-badge--quality { color: var(--mica-quality); background: var(--mica-quality-tint); }
+.mica-badge--none { color: var(--mica-ink-faint); background: var(--mica-surface); }
+
+.mica-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--mica-border-strong);
+  background: var(--mica-surface);
+  color: var(--mica-ink-soft);
+}
+
+.mica-chip--confirmed { color: var(--mica-confirmed); border-color: currentColor; background: var(--mica-confirmed-tint); }
+.mica-chip--dismissed { color: var(--mica-ink-soft); }
+.mica-chip--pending { color: var(--mica-high); border-color: currentColor; }
+.mica-chip--needs_second_review { color: var(--mica-moderate); border-color: currentColor; }
+
+/* ---------------------------------------------------------------- session view */
+
+.mica-back {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 0;
+  margin-bottom: 0.75rem;
+  font: inherit;
+  color: var(--mica-focus);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.mica-session {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 62rem) {
+  .mica-session {
+    /* Transcript and findings side by side once there is room — a reviewer checks a quote against
+       the conversation, and making them scroll between the two is the whole job made harder. */
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  /*
+   * The transcript column sticks. With two or three findings the right column is far taller than
+   * the left, so scrolling to the second finding's disposition form scrolled the conversation off
+   * screen — and checking a quote against the transcript is the entire job. Sticky keeps the
+   * evidence and the decision on screen together.
+   */
+  .mica-session > :first-child {
+    position: sticky;
+    top: 0.5rem;
+    max-height: calc(100vh - 1rem);
+    overflow-y: auto;
+  }
+}
+
+.mica-panel {
+  background: var(--mica-surface);
+  border: 1px solid var(--mica-border);
+  border-radius: var(--mica-radius);
+  padding: 0.875rem;
+  min-width: 0;
+}
+
+.mica-panel-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 650;
+}
+
+.mica-meta-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.2rem 0.75rem;
+  font-size: 0.8125rem;
+  margin: 0;
+}
+
+.mica-meta-grid dt {
+  color: var(--mica-ink-soft);
+  white-space: nowrap;
+}
+
+.mica-meta-grid dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.mica-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125em;
+}
+
+/* ---------------------------------------------------------------- transcript */
+
+.mica-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 34rem;
+  overflow-y: auto;
+  /* Scroll shadows, so it is obvious there is more conversation above and below. */
+  background:
+    linear-gradient(var(--mica-surface) 30%, rgba(255, 255, 255, 0)) top / 100% 1rem no-repeat,
+    linear-gradient(rgba(255, 255, 255, 0), var(--mica-surface) 70%) bottom / 100% 1rem no-repeat,
+    var(--mica-surface);
+}
+
+.mica-msg {
+  border: 1px solid var(--mica-border);
+  border-radius: var(--mica-radius);
+  padding: 0.5rem 0.625rem;
+  scroll-margin-top: 1rem;
+}
+
+/* Participant and MICA are visually distinct without either looking like a chat bubble — this is a
+   document being read as evidence, not a conversation being had. */
+.mica-msg--participant { border-left: 3px solid var(--mica-moderate); }
+.mica-msg--mica { border-left: 3px solid var(--mica-border-strong); background: var(--mica-bg); }
+
+.mica-msg--cited {
+  border-color: var(--mica-critical);
+  box-shadow: 0 0 0 1px var(--mica-critical-tint);
+}
+
+.mica-msg-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.75rem;
+  color: var(--mica-ink-soft);
+  margin-bottom: 0.25rem;
+}
+
+.mica-msg-who {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--mica-ink);
+}
+
+.mica-msg-body {
+  margin: 0;
+  /* pre-wrap, so the newlines the participant typed survive — the transcript is stored verbatim and
+     reflowing it here would show the reviewer something other than what was said. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  font-size: 0.875rem;
+}
+
+.mica-mark {
+  background: #ffe9a8;
+  /* An underline as well as a tint: highlight-by-colour-alone is invisible to some readers and
+     disappears entirely in print or a screenshot converted to greyscale. */
+  border-bottom: 2px solid var(--mica-unscreened);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* ---------------------------------------------------------------- findings */
+
+.mica-finding {
+  border: 1px solid var(--mica-border);
+  border-left-width: 4px;
+  border-radius: var(--mica-radius);
+  padding: 0.75rem;
+  margin-bottom: 0.625rem;
+}
+
+.mica-finding--unscreened { border-left-color: var(--mica-unscreened); background: var(--mica-unscreened-tint); }
+.mica-finding--critical { border-left-color: var(--mica-critical); }
+.mica-finding--high { border-left-color: var(--mica-high); }
+.mica-finding--moderate { border-left-color: var(--mica-moderate); }
+.mica-finding--quality { border-left-color: var(--mica-quality); }
+
+.mica-finding-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.mica-finding-summary {
+  margin: 0 0 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.mica-evidence {
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.mica-quote {
+  border-left: 3px solid var(--mica-unscreened);
+  background: var(--mica-bg);
+  padding: 0.3rem 0.5rem;
+  font-size: 0.875rem;
+}
+
+.mica-quote-src {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--mica-focus);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.mica-recs {
+  font-size: 0.8125rem;
+  color: var(--mica-ink-soft);
+}
+
+/* ---------------------------------------------------------------- disposition */
+
+.mica-disposition {
+  border-top: 1px solid var(--mica-border);
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.mica-radio-set {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.mica-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  /* Comfortable tap target on a phone. */
+  min-height: 2.25rem;
+}
+
+.mica-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.mica-btn {
+  appearance: none;
+  font: inherit;
+  font-weight: 600;
+  border-radius: var(--mica-radius);
+  border: 1px solid var(--mica-border-strong);
+  background: var(--mica-surface);
+  color: var(--mica-ink);
+  padding: 0.45rem 0.9rem;
+  min-height: 2.5rem;
+  cursor: pointer;
+}
+
+.mica-btn:hover:not(:disabled) { border-color: var(--mica-ink-soft); }
+
+.mica-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.mica-btn--primary {
+  background: var(--mica-ink);
+  border-color: var(--mica-ink);
+  color: #fff;
+}
+
+.mica-btn--primary:hover:not(:disabled) { background: #000; }
+
+/* ---------------------------------------------------------------- notices */
+
+.mica-notice {
+  border: 1px solid var(--mica-border-strong);
+  border-left-width: 4px;
+  border-radius: var(--mica-radius);
+  padding: 0.625rem 0.75rem;
+  margin-bottom: 0.75rem;
+  background: var(--mica-surface);
+}
+
+.mica-notice--error { border-left-color: var(--mica-critical); background: var(--mica-critical-tint); }
+.mica-notice--warn { border-left-color: var(--mica-unscreened); background: var(--mica-unscreened-tint); }
+.mica-notice--info { border-left-color: var(--mica-moderate); background: var(--mica-moderate-tint); }
+.mica-notice--ok { border-left-color: var(--mica-confirmed); background: var(--mica-confirmed-tint); }
+
+.mica-notice-title {
+  font-weight: 650;
+  margin: 0 0 0.2rem;
+}
+
+.mica-notice p { margin: 0; }
+
+/*
+ * An empty queue is the one screen that must never be ambiguous: "nothing to review" and "nothing
+ * loaded" look identical if you let them, and this whole pipeline exists so that a clean screen is
+ * distinguishable from an absent one.
+ */
+.mica-empty {
+  border: 1px dashed var(--mica-border-strong);
+  border-radius: var(--mica-radius);
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--mica-ink-soft);
+  background: var(--mica-surface);
+}
+
+.mica-empty strong { color: var(--mica-ink); }
+
+.mica-skeleton {
+  height: 3.5rem;
+  border-radius: var(--mica-radius);
+  background: linear-gradient(90deg, var(--mica-surface) 25%, #eef1f4 50%, var(--mica-surface) 75%);
+  background-size: 200% 100%;
+  animation: mica-shimmer 1.2s ease-in-out infinite;
+  margin-bottom: 0.375rem;
+}
+
+@keyframes mica-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mica-skeleton { animation: none; }
+  .mica-review-root * { transition: none !important; }
+}
+
+.mica-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------------------------------------------------------- narrow screens */
+
+@media (max-width: 40rem) {
+  .mica-shell { padding: 0.75rem 0.625rem 3rem; }
+
+  /*
+   * On a phone the QUEUE is the point, and six stat tiles plus six stacked filters pushed it
+   * entirely below the fold — a reviewer had to scroll past the summary to reach the thing they
+   * opened the page for. Nothing is hidden; it is just denser.
+   */
+  .mica-summary {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.375rem;
+  }
+
+  .mica-stat { padding: 0.4rem 0.45rem; }
+  .mica-stat-value { font-size: 1.15rem; }
+  .mica-stat-label { font-size: 0.625rem; letter-spacing: 0.02em; }
+
+  /* Two filters per row rather than one, which halves the height of the block. */
+  .mica-filters { gap: 0.4rem 0.5rem; }
+
+  .mica-filters > .mica-field {
+    flex: 1 1 calc(50% - 0.25rem);
+    min-width: 0;
+  }
+
+  .mica-filters > .mica-field select,
+  .mica-filters > .mica-field input[type='date'] { width: 100%; }
+
+  .mica-row {
+    /* The badge moves above the text rather than shrinking the text column to nothing. */
+    grid-template-columns: 1fr;
+  }
+
+  .mica-badge,
+  .mica-row-main,
+  .mica-row-meta,
+  .mica-row-aside {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .mica-badge { justify-self: start; }
+  .mica-row-aside { text-align: left; white-space: normal; }
+
+  .mica-whoami { margin-left: 0; width: 100%; }
+
+  .mica-meta-grid { grid-template-columns: minmax(0, 1fr); }
+  .mica-meta-grid dt { margin-top: 0.35rem; }
+
+  .mica-transcript { max-height: none; }
+}
+
+/* ---------------------------------------------------------------- audit table */
+
+/*
+ * A table here, unlike the queue: the audit trail is scanned for patterns ACROSS rows ("who read
+ * what, when"), and aligned columns are what make that possible. The queue is the opposite — one
+ * decision per row, so a table there would be eight columns scrolled sideways on a phone.
+ */
+.mica-audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.mica-audit-table th,
+.mica-audit-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.4rem 0.6rem 0.4rem 0;
+  border-bottom: 1px solid var(--mica-border);
+}
+
+.mica-audit-table th {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--mica-ink-soft);
+  white-space: nowrap;
+  border-bottom-color: var(--mica-border-strong);
+}
+
+.mica-audit-table td:first-child { white-space: nowrap; }
+
+/* A refusal is the row an auditor is looking for, so it is findable at a glance. */
+.mica-audit-denied td { background: var(--mica-critical-tint); }
+.mica-audit-denied td:first-child { box-shadow: inset 3px 0 0 var(--mica-critical); }

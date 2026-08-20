@@ -231,6 +231,7 @@ return array(
     'Stanford\\MICA\\RedcapEntityLoader' => $baseDir . '/classes/RedcapEntityLoader.php',
     'Stanford\\MICA\\RedcapEntityPlatform' => $baseDir . '/classes/RedcapEntityPlatform.php',
     'Stanford\\MICA\\RedcapFindingReviewStore' => $baseDir . '/classes/RedcapFindingReviewStore.php',
+    'Stanford\\MICA\\RedcapReviewQueryStore' => $baseDir . '/classes/RedcapReviewQueryStore.php',
     'Stanford\\MICA\\RedcapScanQueueStore' => $baseDir . '/classes/RedcapScanQueueStore.php',
     'Stanford\\MICA\\RedcapScanResultStore' => $baseDir . '/classes/RedcapScanResultStore.php',
     'Stanford\\MICA\\RedcapTranscriptStore' => $baseDir . '/classes/RedcapTranscriptStore.php',

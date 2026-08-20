@@ -106,6 +106,36 @@ function logMessage($module, string $participant, array $payload): int
 
 echo "Transcript store + finalizer against live REDCap (pid $PID)\n";
 
+// Pre-clean the session slot this probe uses.
+//
+// It asserts on version numbers, which are relative to whatever transcript already exists for
+// (record, session_type, instance) - so a transcript left by another fixture in the same slot makes
+// "version 1" arrive as version 4 and four assertions fail for a reason that has nothing to do with
+// the code. It cleans up after itself too, but a probe that only passes when it runs first is a
+// probe people stop trusting.
+$pre = $module->query(
+    'SELECT DISTINCT l.log_id FROM redcap_external_modules_log l '
+    . 'JOIN redcap_external_modules_log_parameters p ON p.log_id = l.log_id '
+    . 'WHERE l.project_id = ? AND l.record = ? AND p.name = ? AND p.value = ?',
+    [$PID, $RECORD, 'log_type', 'mica_transcript']
+);
+$stale = [];
+while ($row = $pre->fetch_assoc()) {
+    $stale[] = (int) $row['log_id'];
+}
+foreach ($stale as $logId) {
+    try {
+        $module->removeLogs('log_id = ? and project_id = ?', [$logId, $PID]);
+    } catch (\Throwable $e) {
+        // Reported, not fatal: the assertions below will fail loudly if it mattered.
+        printf("  [WARN] could not clear stale transcript %d: %s\n", $logId, $e->getMessage());
+    }
+}
+$module->query('DELETE FROM redcap_entity_mica_scan_job WHERE project_id = ? AND record = ?', [$PID, $RECORD]);
+if ($stale !== []) {
+    note('cleared stale transcripts for this slot', count($stale) . ' row(s)');
+}
+
 try {
     echo "\n1. Seed a conversation the way callAI writes it\n";
 

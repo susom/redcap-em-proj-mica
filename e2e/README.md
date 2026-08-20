@@ -1,12 +1,13 @@
 # E2E
 
-Playwright specs for the participant-facing path. Desktop (1400×950) and iPhone 13.
+Playwright specs, desktop (1400×950) and iPhone 13.
 
-| File | Covers |
-|---|---|
-| `full-path.js` | Survey Login gate (incl. scoping and a wrong-credential attempt), chatbot load, multi-turn conversation with context retention, bundle hygiene, reload/restore, End Session, mobile layout |
+| File | Covers | Signs in as |
+|---|---|---|
+| `full-path.js` | Survey Login gate (incl. scoping and a wrong-credential attempt), chatbot load, multi-turn conversation with context retention, bundle hygiene, reload/restore, End Session, mobile layout | a **participant**, via native Survey Login |
+| `review-dashboard.js` | RA queue and its ordering, session review, evidence highlighting, jump-to-evidence, the disposition gate, audit, mobile layout and tap targets | a **REDCap user** — the dashboard is an authenticated module page |
 
-## Running
+## Running the participant path
 
 ```bash
 php docs/phase-3-handoff/scripts/manual-test-auth.php 257 setup      # prints the links
@@ -14,31 +15,42 @@ node e2e/full-path.js <edSessionLink> <baseline1ControlLink>
 php docs/phase-3-handoff/scripts/manual-test-auth.php 257 teardown
 ```
 
-The teardown is not optional — it removes the test participant, its survey responses
-and its record-list cache rows in every arm. It does **not** remove the module's EM-log
-transcript rows; delete those separately if you care about a clean log.
+## Running the review dashboard
+
+```bash
+docker exec <web> php .../scripts/apply-safety-finding-instrument.php 257   # once, if not built
+docker exec <web> php .../scripts/e2e-review-fixture.php 257 setup          # creds + seeded findings
+node e2e/review-dashboard.js
+docker exec <web> php .../scripts/e2e-review-fixture.php 257 teardown
+```
+
+**Re-seed between runs.** The spec records a real disposition, and a settled finding correctly sorts
+below a pending one — so a second run against the same data sees a different (still correct) order.
+The ordering assertion compares only pending rows for that reason, but re-seeding is cheaper than
+reasoning about it.
+
+The fixture creates a **throwaway user** (`e2e_mica_reviewer`) with **no design and no user-rights**
+privileges. That is deliberate: the dashboard has to work for an ordinary reviewer, and running as an
+admin hid a real bug where the framework's design-rights default meant only a project *designer*
+could open the safety-review page.
 
 ## Two things to know before trusting a red run
 
-1. **A changed bundle hash is not a regression.** `B6` prints the loaded bundle. If the
-   SPA was rebuilt between runs, selectors may have moved. Composer selectors here are
-   element-agnostic for exactly that reason.
-2. **`offsetHeight` page errors are REDCap core, not MICA.** They fire on non-MICA survey
-   pages too and the stack lands in `redcap_vNN/Resources/webpack/js/bundle.js`. The suite
-   counts them separately and never attributes them to the module.
+1. **A changed bundle hash is not a regression.** If a SPA was rebuilt between runs, selectors may
+   have moved. Selectors here are element-agnostic for exactly that reason.
+2. **`offsetHeight` page errors are REDCap core, not MICA.** They fire on non-MICA pages too and the
+   stack lands in `redcap_vNN/Resources/webpack/js/bundle.js`. Both suites count them separately and
+   never attribute them to the module.
+
+## Hostname matters for the review spec
+
+REDCap builds absolute asset URLs from its **configured** base URL, so a browser on a different
+hostname makes the module's own JS a cross-origin request. The spec resolves the name in-browser
+(`--host-resolver-rules`) rather than requiring an `/etc/hosts` entry; override with `MICA_BASE` and
+`MICA_HOST_RULES` if your instance differs.
 
 ## Known non-failures
 
-`E. END SESSION` reports that the project is not configured for MICA sessions. That is
-real, expected, and tracked: PID 257 lacks the session/transcript fields the finalizer
-needs (`docs/phase-3-handoff/09-pid-257-structure-audit.md`, gaps G1/G4). It is Stage 2
-work, not a defect in the turn path.
-
-## Why this is run by hand
-
-There is no CI job, by decision: the module is packaged into the REDCap docker image, and
-a GitHub runner has no REDCap to test against anyway. See the 0.5 record in
-`docs/phase-3-handoff/06-implementation-plan/stage-0-foundations.md`.
-
-Still open: this is a plain node script rather than a `@playwright/test` suite, so there is
-no retry/reporter/trace support. Converting it is a loose end, not a blocker.
+- The finalizer warns that four session-form fields are missing (`mica_session_status`,
+  `mica_session_end_ts`, `mica_transcript_ref`, `mica_transcript_hash`). That is audit G4 — Stage 2
+  builds them. The scan is queued regardless.

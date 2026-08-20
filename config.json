@@ -31,6 +31,12 @@
                 "icon": "gear",
                 "url": "pages/sessionSelector.php",
                 "show-header-and-footer": true
+            },
+            {
+                "name": "MICA Safety Review",
+                "icon": "report",
+                "url": "pages/review.php",
+                "show-header-and-footer": true
             }
         ],
         "control-center": []

@@ -31,6 +31,8 @@ require_once "classes/DispositionService.php";
 require_once "classes/RedcapAuditStore.php";
 require_once "classes/RedcapFindingReviewStore.php";
 require_once "classes/RoleService.php";
+require_once "classes/RedcapReviewQueryStore.php";
+require_once "classes/ReviewEndpoints.php";
 
 // vendor/ is committed and deploys with the module, and opis/json-schema is a runtime dependency
 // of the turn contract, so this is a hard require again. It was briefly conditional because a
@@ -140,6 +142,56 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     }
 
     /**
+     * Asset tags for the review SPA.
+     *
+     * Its own method rather than a parameter on generateAssetFiles() because the two builds fail
+     * differently and the callers want different things: the chat SPA's absence is a broken
+     * participant session, while this one's is a staff page that must say "not built" rather than
+     * render an empty dashboard. An empty dashboard reads as "no findings" to exactly the person
+     * least able to tell the difference.
+     *
+     * Returns [] when the directory is absent, so pages/review.php can say so plainly.
+     *
+     * @return string[]
+     */
+    public function reviewAssetFiles(): array
+    {
+        $dir = 'mica-review/dist/assets';
+        $path = $this->getModulePath() . $dir . '/';
+
+        if (!is_dir($path)) {
+            return [];
+        }
+
+        $files = scandir($path);
+        if ($files === false) {
+            $this->emError("Failed to open the review asset directory: $path");
+            return [];
+        }
+
+        $assets = [];
+        foreach (array_diff($files, ['.', '..']) as $file) {
+            $url = $this->getUrl("$dir/$file");
+
+            // str_ends_with, not str_contains: a Vite build emits `index-<hash>.js` alongside
+            // `index-<hash>.js.map`, and a substring match would load the source map as a script.
+            if (str_ends_with($file, '.js')) {
+                // No `crossorigin`. Vite's template emits it and it buys nothing here - the bundle is
+                // always same-origin with the module - while turning any host mismatch into a hard
+                // CORS failure: REDCap builds asset URLs from its configured base URL, so reaching
+                // the page by IP, by an alternate hostname, or through a proxy that rewrites Host
+                // makes the browser refuse the script and the dashboard renders blank. Found by an
+                // E2E run against 127.0.0.1 on an instance configured as redcap.local.
+                $assets[] = "<script type='module' src='{$url}'></script>";
+            } elseif (str_ends_with($file, '.css')) {
+                $assets[] = "<link rel='stylesheet' href='{$url}'>";
+            }
+        }
+
+        return $assets;
+    }
+
+    /**
      * @param $project_id
      * @param $link
      * @return mixed|null
@@ -153,6 +205,27 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         // access to the project could open "Mica Session Admin". Combined with the missing rights
         // check in pages/sessionSelector.php, that let them close any participant's session.
         // See docs/phase-3-handoff/14-live-defects.md D4.
+        // The review dashboard is gated by MICA role, NOT by design rights.
+        //
+        // The framework's default is design rights, and applying it here meant only a project
+        // DESIGNER could open the safety-review dashboard. That is the wrong control: a research
+        // assistant reviewing findings is not a project designer, and the two ways out of it are
+        // both bad - give every RA design rights over the study's data dictionary, or let only
+        // designers review safety findings. Found by running the E2E as an ordinary reviewer with
+        // design = 0, which is exactly the user the dashboard exists for.
+        //
+        // Checked BEFORE the parent call, so the role grants access rather than merely surviving a
+        // check it would fail. The page re-checks the role itself and renders a refusal for anyone
+        // without one, so this is not the only gate.
+        if (array_key_exists('url', $link) && str_contains($link['url'], 'review')) {
+            return RoleService::fromModule($this, (int) $project_id)
+                ->hasAnyRole(\ExternalModules\ExternalModules::getUsername())
+                ? $link
+                : null;
+        }
+
+        // Everything else keeps the framework's default. In particular "Mica Session Admin" must
+        // stay behind design rights - relaxing that is the D4 defect this method was fixed for.
         $link = parent::redcap_module_link_check_display($project_id, $link);
         if (empty($link)) {
             return null;
@@ -708,6 +781,22 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             }
             header('Content-Type: application/json; charset=utf-8');
 
+            // The review dashboard is dispatched FIRST, before any participant is resolved.
+            //
+            // resolveParticipantId() throws when it cannot work out whose session a request is for,
+            // which is correct for the chat and wrong here: a staff request has no participant, so
+            // every review action failed with "Unable to determine which participant this request is
+            // for" - a message about the wrong thing entirely.
+            //
+            // It also returns an ARRAY rather than a JSON string. The framework puts the hook's
+            // return value straight into the response's `payload`, so encoding here would nest a
+            // JSON string inside JSON and the client would read a string where it expected an
+            // object. The participant actions below keep their existing json_encode() shape; the
+            // chatbot depends on it.
+            if (in_array($action, $this->getConfig()['auth-ajax-actions'] ?? [], true)) {
+                return $this->handleReviewAction($action, $payload);
+            }
+
             // Never take the participant's identity from the payload - see resolveParticipantId().
             $participant_id = $this->resolveParticipantId($record, $payload);
 
@@ -774,6 +863,69 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 "success" => false
             ]);
         }
+    }
+
+    /**
+     * Dispatch one review-dashboard action.
+     *
+     * Requires a real logged-in user, explicitly, rather than relying on the outer guard. That guard
+     * accepts EITHER a survey hash or a session user, because the participant chat runs on a survey
+     * - so a review action arriving with a survey hash would satisfy it. RoleService would then
+     * refuse it anyway (an empty username holds no roles), but "refused for the right reason" is
+     * worth more than "refused as a side effect": the participant path and the staff path have
+     * different authentication, and saying so here means a future change to one cannot quietly
+     * weaken the other.
+     *
+     * @return array<string,mixed>
+     */
+    private function handleReviewAction(string $action, $payload): array
+    {
+        $username = \ExternalModules\ExternalModules::getUsername();
+
+        if (empty($username)) {
+            $this->emError("review action $action attempted with no authenticated user");
+            http_response_code(403);
+
+            return [
+                'ok'     => false,
+                'status' => 403,
+                'error'  => 'The review dashboard requires a signed-in REDCap user.',
+            ];
+        }
+
+        $response = $this->reviewEndpoints()->handle(
+            $action,
+            $username,
+            is_array($payload) ? $payload : []
+        );
+
+        // The status is carried in the body as well as the header: REDCap's AJAX helper does not
+        // surface a non-200 body to the caller reliably, and the SPA needs the 409's payload (the
+        // current lock version) more than it needs the status line.
+        if (isset($response['status']) && $response['status'] !== 200) {
+            http_response_code((int) $response['status']);
+        }
+
+        return $response;
+    }
+
+    /** Constructed in one place, so every review action shares the same wiring. */
+    public function reviewEndpoints(): ReviewEndpoints
+    {
+        $roles = RoleService::fromModule($this);
+        $audit = new AuditLogger(
+            new RedcapAuditStore($this),
+            $roles,
+            fn(string $m) => $this->emError("audit: $m")
+        );
+
+        return new ReviewEndpoints(
+            new RedcapReviewQueryStore($this),
+            new DispositionService(new RedcapFindingReviewStore($this), $roles, $audit),
+            $roles,
+            $audit,
+            (string) PROJECT_ID
+        );
     }
 
     /**
