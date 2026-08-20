@@ -251,9 +251,12 @@ class ComposerStaticInit75d890558dc1e976efb11b28f8360706
         'Stanford\\MICA\\EntitySchemaException' => __DIR__ . '/../..' . '/classes/EntitySchemaException.php',
         'Stanford\\MICA\\EntitySchemaManager' => __DIR__ . '/../..' . '/classes/EntitySchemaManager.php',
         'Stanford\\MICA\\EntityTypes' => __DIR__ . '/../..' . '/classes/EntityTypes.php',
+        'Stanford\\MICA\\FinalizeResult' => __DIR__ . '/../..' . '/classes/FinalizeResult.php',
         'Stanford\\MICA\\MICAQuery' => __DIR__ . '/../..' . '/classes/MICAQuery.php',
+        'Stanford\\MICA\\RedcapEntityLoader' => __DIR__ . '/../..' . '/classes/RedcapEntityLoader.php',
         'Stanford\\MICA\\RedcapEntityPlatform' => __DIR__ . '/../..' . '/classes/RedcapEntityPlatform.php',
         'Stanford\\MICA\\RedcapScanQueueStore' => __DIR__ . '/../..' . '/classes/RedcapScanQueueStore.php',
+        'Stanford\\MICA\\RedcapTranscriptStore' => __DIR__ . '/../..' . '/classes/RedcapTranscriptStore.php',
         'Stanford\\MICA\\Sanitizer' => __DIR__ . '/../..' . '/classes/Sanitizer.php',
         'Stanford\\MICA\\ScanJobStateMachine' => __DIR__ . '/../..' . '/classes/ScanJobStateMachine.php',
         'Stanford\\MICA\\ScanQueue' => __DIR__ . '/../..' . '/classes/ScanQueue.php',
@@ -263,6 +266,8 @@ class ComposerStaticInit75d890558dc1e976efb11b28f8360706
         'Stanford\\MICA\\SessionPseudoId' => __DIR__ . '/../..' . '/classes/SessionPseudoId.php',
         'Stanford\\MICA\\TranscriptBuilder' => __DIR__ . '/../..' . '/classes/TranscriptBuilder.php',
         'Stanford\\MICA\\TranscriptException' => __DIR__ . '/../..' . '/classes/TranscriptException.php',
+        'Stanford\\MICA\\TranscriptFinalizer' => __DIR__ . '/../..' . '/classes/TranscriptFinalizer.php',
+        'Stanford\\MICA\\TranscriptStoreInterface' => __DIR__ . '/../..' . '/classes/TranscriptStoreInterface.php',
         'Stanford\\MICA\\UserRightsCheck' => __DIR__ . '/../..' . '/classes/UserRightsCheck.php',
     );
 

@@ -214,10 +214,36 @@ foreach ($cases as $label => $payload) {
 }
 
 // Clean up. A probe that leaves rows behind is a probe nobody runs twice.
+//
+// project_id is in the where clause because removeLogs() REFUSES to run without one - it throws
+// rather than risk deleting another project's logs. The first version of this script omitted it and
+// still printed "removed N rows", because the count came from the loop rather than from the
+// database. Rows were left behind for two runs before anyone looked.
+$removed = 0;
 foreach ($written as $logId) {
-    $module->removeLogs('log_id = ?', [$logId]);
+    try {
+        $module->removeLogs('log_id = ? and project_id = ?', [$logId, $PID]);
+        $removed++;
+    } catch (\Throwable $e) {
+        printf("  [WARN] could not remove probe row %d: %s\n", $logId, $e->getMessage());
+    }
 }
-printf("\n  removed %d probe row(s)\n", count($written));
+
+// Report what the database says, not what the loop did.
+$stillThere = 0;
+if ($written !== []) {
+    $check = $module->query(
+        'SELECT COUNT(*) AS n FROM redcap_external_modules_log WHERE log_id IN ('
+        . implode(',', array_map('intval', $written)) . ')',
+        []
+    );
+    $stillThere = (int) ($check->fetch_assoc()['n'] ?? 0);
+}
+
+printf("\n  removed %d of %d probe row(s); %d still present\n", $removed, count($written), $stillThere);
+if ($stillThere > 0) {
+    $fails++;
+}
 
 $straddled = array_keys(array_filter($boundaryTested));
 if ($straddled === []) {

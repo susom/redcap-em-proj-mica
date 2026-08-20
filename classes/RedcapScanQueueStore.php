@@ -4,6 +4,7 @@ namespace Stanford\MICA;
 
 require_once __DIR__ . "/ScanQueueStoreInterface.php";
 require_once __DIR__ . "/ScanJobStateMachine.php";
+require_once __DIR__ . "/RedcapEntityLoader.php";
 
 /**
  * mica_scan_job access, in direct parameterized SQL rather than through the Entity framework.
@@ -38,6 +39,11 @@ class RedcapScanQueueStore implements ScanQueueStoreInterface
 
     public function insertJob(array $data): ?int
     {
+        // Not optional: on a survey page - which is where completeSession runs - nothing has
+        // loaded redcap_entity, and naming its classes directly is a bare "Class not found" at the
+        // worst possible moment (transcript written, scan job not).
+        RedcapEntityLoader::ensureLoaded();
+
         $factory = new \REDCapEntity\EntityFactory();
         $entity = $factory->create(self::ENTITY, $data);
 

@@ -4,6 +4,7 @@ namespace Stanford\MICA;
 
 require_once __DIR__ . "/EntityPlatformInterface.php";
 require_once __DIR__ . "/EntitySchemaException.php";
+require_once __DIR__ . "/RedcapEntityLoader.php";
 
 /**
  * The real EntityPlatformInterface: REDCap and redcap_entity, with no decisions of its own.
@@ -39,18 +40,7 @@ class RedcapEntityPlatform implements EntityPlatformInterface
 
     public function buildSchema(): void
     {
-        // Force redcap_entity's module file to load before naming its classes. It requires its own
-        // classes/ at file scope, but nothing guarantees the framework has loaded that file in
-        // *this* request - a cron entry point in particular may never have touched it.
-        \ExternalModules\ExternalModules::getModuleInstance(EntitySchemaManager::DEPENDENCY);
-
-        if (!class_exists('\REDCapEntity\EntityDB')) {
-            throw new EntitySchemaException(
-                'The REDCap Entity module reports itself as enabled but \\REDCapEntity\\EntityDB '
-                . 'could not be loaded. Its module directory is probably incomplete or its version '
-                . 'in redcap_external_module_settings does not match a directory on disk.'
-            );
-        }
+        RedcapEntityLoader::ensureLoaded();
 
         \REDCapEntity\EntityDB::buildSchema($this->module->PREFIX);
     }
