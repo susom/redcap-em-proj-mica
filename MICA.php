@@ -205,7 +205,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         // access to the project could open "Mica Session Admin". Combined with the missing rights
         // check in pages/sessionSelector.php, that let them close any participant's session.
         // See docs/phase-3-handoff/14-live-defects.md D4.
-        // The review dashboard is gated by MICA role, NOT by design rights.
+        // The review dashboard is gated by the user's REDCap ROLE, not by design rights.
         //
         // The framework's default is design rights, and applying it here meant only a project
         // DESIGNER could open the safety-review dashboard. That is the wrong control: a research
@@ -214,8 +214,13 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         // designers review safety findings. Found by running the E2E as an ordinary reviewer with
         // design = 0, which is exactly the user the dashboard exists for.
         //
+        // What replaces it is REDCap's own role management (see RoleService): the module configures
+        // which REDCap role counts as a reviewer, and people are added by being put in that role.
+        // So this is not a looser control than design rights, it is a different and more
+        // appropriate one - governed and logged by the same mechanism as project access itself.
+        //
         // Checked BEFORE the parent call, so the role grants access rather than merely surviving a
-        // check it would fail. The page re-checks the role itself and renders a refusal for anyone
+        // check it would fail. The page re-checks it and renders a specific refusal for anyone
         // without one, so this is not the only gate.
         if (array_key_exists('url', $link) && str_contains($link['url'], 'review')) {
             return RoleService::fromModule($this, (int) $project_id)

@@ -188,23 +188,23 @@
         },
         {
             "key": "role-ra-reviewer",
-            "name": "<b>Research assistants (reviewers)</b><br><i>Who reviews SafetyScan findings. Under the RA-first policy these are the users who actually decide - nothing reaches a care team, PI or protocol lead until one of them confirms a finding.</i>",
+            "name": "<b>Reviewer role(s)</b><br><i>Which <b>REDCap user role</b> reviews SafetyScan findings. Under the RA-first policy these users are the ones who actually decide - nothing reaches a care team, PI or protocol lead until one of them confirms a finding.<br>Assign people by putting them in the REDCap role, as you already do; this only says which role counts. A user with <b>no</b> REDCap role gets no MICA access.</i>",
             "required": false,
-            "type": "user-list",
+            "type": "user-role-list",
             "repeatable": true
         },
         {
             "key": "role-pi-lead",
-            "name": "<b>PI / protocol lead</b><br><i>Everything a reviewer can do, plus the audit trail.</i>",
+            "name": "<b>PI / protocol-lead role(s)</b><br><i>Everything a reviewer can do, plus the audit trail.</i>",
             "required": false,
-            "type": "user-list",
+            "type": "user-role-list",
             "repeatable": true
         },
         {
             "key": "role-auditor",
-            "name": "<b>Auditors</b><br><i>Read-only and de-identified: history aggregates and the audit trail, never a transcript and never a disposition.</i>",
+            "name": "<b>Auditor role(s)</b><br><i>Read-only and de-identified: history aggregates and the audit trail, never a transcript and never a disposition.</i>",
             "required": false,
-            "type": "user-list",
+            "type": "user-role-list",
             "repeatable": true
         },
         {

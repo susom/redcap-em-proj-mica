@@ -54,6 +54,7 @@ use Stanford\MICA\RedcapScanResultStore;
 
 const USER = 'e2e_mica_reviewer';
 const PASS = 'E2eReview!2026';
+const ROLE = 'E2E MICA Reviewer';
 
 $module = \ExternalModules\ExternalModules::getModuleInstance('proj_mica');
 if (!$module) {
@@ -102,8 +103,11 @@ if ($MODE === 'teardown') {
     $module->query('DELETE FROM redcap_user_information WHERE username = ?', [USER]);
     echo "  removed the throwaway user " . USER . "\n";
 
+    $module->query('DELETE FROM redcap_user_roles WHERE project_id = ? AND role_name = ?', [$PID, ROLE]);
+    echo "  removed the throwaway REDCap role \"" . ROLE . "\"\n";
+
     $module->removeProjectSetting('role-ra-reviewer', $PID);
-    echo "  cleared role-ra-reviewer\n";
+    echo "  cleared the reviewer role mapping\n";
 
     echo "\nDone. Nothing from this fixture remains.\n";
     exit(0);
@@ -157,18 +161,44 @@ $module->query(
 );
 echo "  created user " . USER . "\n";
 
+// A dedicated REDCap USER ROLE, because MICA access follows REDCap roles rather than a list of
+// usernames (see RoleService). This is what the study team would actually do: create a role, put
+// people in it, and tell the module that role reviews findings.
+$module->query('DELETE FROM redcap_user_roles WHERE project_id = ? AND role_name = ?', [$PID, ROLE]);
+$module->query(
+    'INSERT INTO redcap_user_roles (project_id, role_name, unique_role_name, data_export_tool) '
+    . 'VALUES (?, ?, ?, 1)',
+    [$PID, ROLE, 'U-E2EMICAREV']
+);
+$roleId = (int) $module->query(
+    'SELECT role_id FROM redcap_user_roles WHERE project_id = ? AND role_name = ?',
+    [$PID, ROLE]
+)->fetch_assoc()['role_id'];
+echo "  created REDCap role \"" . ROLE . "\" (role_id $roleId)\n";
+
 // Project rights: enough to reach a module page, and nothing else. Deliberately NOT design or
-// user_rights - the dashboard must work for an ordinary reviewer, not only for an administrator.
+// user_rights - the dashboard must work for an ordinary reviewer, not only for an administrator,
+// and running this as an admin is what hid a real access bug once already.
 $module->query('DELETE FROM redcap_user_rights WHERE project_id = ? AND username = ?', [$PID, USER]);
 $module->query(
-    'INSERT INTO redcap_user_rights (project_id, username, expiration, group_id, design, '
-    . 'user_rights, data_export_tool, external_module_config) VALUES (?, ?, NULL, NULL, 0, 0, 1, NULL)',
-    [$PID, USER]
+    'INSERT INTO redcap_user_rights (project_id, username, role_id, expiration, group_id, design, '
+    . 'user_rights, data_export_tool, external_module_config) '
+    . 'VALUES (?, ?, ?, NULL, NULL, 0, 0, 1, NULL)',
+    [$PID, USER, $roleId]
 );
-echo "  granted project rights (no design, no user-rights — an ordinary reviewer)\n";
+echo "  put the user in that role, with no design and no user-rights\n";
 
-$module->setProjectSetting('role-ra-reviewer', [USER], $PID);
-echo "  assigned the MICA reviewer role\n";
+// The module setting is a MAPPING, not a roster: it names the REDCap role, never the person.
+$module->setProjectSetting('role-ra-reviewer', [(string) $roleId], $PID);
+echo "  mapped role_id $roleId as the MICA reviewer role\n";
+
+// Proven rather than assumed - the mapping and the roster have to agree or the dashboard 403s.
+$check = \Stanford\MICA\RoleService::fromModule($module, $PID);
+if (!$check->hasAnyRole(USER)) {
+    fwrite(STDERR, "The seeded role mapping does not resolve for " . USER . ". Aborting.\n");
+    exit(1);
+}
+echo "  RoleService resolves " . USER . " as: " . implode(', ', $check->rolesFor(USER)) . "\n";
 
 // ---------------------------------------------------------------- seeded findings
 

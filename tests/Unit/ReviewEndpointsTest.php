@@ -29,11 +29,12 @@ final class ReviewEndpointsTest extends TestCase
 
     private function endpoints(): ReviewEndpoints
     {
-        $roles = new RoleService([
-            RoleService::RA      => ['ra_alice'],
-            RoleService::PI      => ['pi_bob'],
-            RoleService::AUDITOR => ['auditor_carol'],
-        ]);
+        // REDCap role ids, plus the project's roster - see RoleService: access follows the user's
+        // REDCap role, not a list of usernames in a module setting.
+        $roles = new RoleService(
+            [RoleService::RA => ['660'], RoleService::PI => ['662'], RoleService::AUDITOR => ['663']],
+            ['ra_alice' => '660', 'pi_bob' => '662', 'auditor_carol' => '663']
+        );
         $audit = new AuditLogger($this->audit, $roles);
 
         return new ReviewEndpoints(
@@ -304,10 +305,11 @@ final class ReviewEndpointsTest extends TestCase
 
     public function testAnAuditorWhoIsAlsoAReviewerIsNotDeidentified(): void
     {
-        $roles = new RoleService([
-            RoleService::RA      => ['auditor_carol'],
-            RoleService::AUDITOR => ['auditor_carol'],
-        ]);
+        // One REDCap role mapped as BOTH reviewer and auditor.
+        $roles = new RoleService(
+            [RoleService::RA => ['663'], RoleService::AUDITOR => ['663']],
+            ['ra_alice' => '660', 'pi_bob' => '662', 'auditor_carol' => '663']
+        );
         $audit = new AuditLogger($this->audit, $roles);
         $endpoints = new ReviewEndpoints(
             $this->store,
@@ -351,7 +353,7 @@ final class ReviewEndpointsTest extends TestCase
     {
         // A generic error here would read as a permissions problem, which is the wrong thing to
         // debug. Needs a super user, since these are the sysadmin's actions.
-        $roles = new RoleService([], true);
+        $roles = new RoleService([], [], true);
         $audit = new AuditLogger($this->audit, $roles);
         $endpoints = new ReviewEndpoints(
             $this->store,

@@ -25,7 +25,10 @@ final class AuditLoggerTest extends TestCase
     {
         return new AuditLogger(
             $this->store,
-            new RoleService([RoleService::RA => ['ra_alice'], RoleService::PI => ['pi_bob']]),
+            new RoleService(
+                [RoleService::RA => ['660'], RoleService::PI => ['662']],
+                ['ra_alice' => '660', 'pi_bob' => '662', 'auditor_carol' => '663']
+            ),
             function (string $m): void {
                 $this->logs[] = $m;
             }

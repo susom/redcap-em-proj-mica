@@ -86,7 +86,30 @@ $module->disableUserBasedSettingPermissions();
 
 $REVIEWER = 'ihabz';
 $originalRa = $module->getProjectSetting('role-ra-reviewer', $PID);
-$module->setProjectSetting('role-ra-reviewer', [$REVIEWER], $PID);
+
+// MICA access follows the user's REDCap ROLE, so the fixture is a role the reviewer is in - not
+// their username. Created here and removed at the end.
+$module->query('DELETE FROM redcap_user_roles WHERE project_id = ? AND role_name = ?', [$PID, 'Verify MICA Reviewer']);
+$module->query(
+    'INSERT INTO redcap_user_roles (project_id, role_name, unique_role_name, data_export_tool) '
+    . 'VALUES (?, ?, ?, 1)',
+    [$PID, 'Verify MICA Reviewer', 'U-VERIFYMICA']
+);
+$verifyRoleId = (int) $module->query(
+    'SELECT role_id FROM redcap_user_roles WHERE project_id = ? AND role_name = ?',
+    [$PID, 'Verify MICA Reviewer']
+)->fetch_assoc()['role_id'];
+
+$originalUserRole = $module->query(
+    'SELECT role_id FROM redcap_user_rights WHERE project_id = ? AND username = ?',
+    [$PID, $REVIEWER]
+)->fetch_assoc()['role_id'] ?? null;
+
+$module->query(
+    'UPDATE redcap_user_rights SET role_id = ? WHERE project_id = ? AND username = ?',
+    [$verifyRoleId, $PID, $REVIEWER]
+);
+$module->setProjectSetting('role-ra-reviewer', [(string) $verifyRoleId], $PID);
 
 $results = new RedcapScanResultStore($module);
 $reviewStore = new RedcapFindingReviewStore($module);
@@ -227,21 +250,48 @@ try {
     check('finding_summary still set', $withdrawn['finding_summary'] ?? 'MISSING', 'verify-disposition probe');
     check('the rationale from this write', $withdrawn['review_rationale'] ?? 'NONE', 'On reflection the model was right; withdrawing.');
 
-    echo "\n7. Access control on the real settings\n";
+    echo "\n7. Access control, against the real REDCap roles\n";
 
+    // The three ways a user can lack access, each proven rather than assumed. A username list could
+    // only ever express the first of them.
     try {
         $service->submit((string) $PID, $RECORD, $EVENT, $instance, 'not_a_reviewer', [
             'review_status'       => DispositionService::DISMISSED,
             'review_rationale'    => 'should never land',
             'review_lock_version' => '3',
         ]);
-        check('a non-reviewer is refused', 'accepted', 'refused');
+        check('a user not on the project is refused', 'accepted', 'refused');
     } catch (ReviewAccessException) {
-        check('a non-reviewer is refused', 'refused', 'refused');
+        check('a user not on the project is refused', 'refused', 'refused');
     }
 
+    // (a) On the project, but in no REDCap role at all.
+    $module->query(
+        'UPDATE redcap_user_rights SET role_id = NULL WHERE project_id = ? AND username = ?',
+        [$PID, $REVIEWER]
+    );
+    $noRole = RoleService::fromModule($module, $PID);
+    check('a user with NO REDCap role has no access', $noRole->hasAnyRole($REVIEWER) ? 'yes' : 'no', 'no');
+    check('...but is still seen as on the project', $noRole->isOnProject($REVIEWER) ? 'yes' : 'no', 'yes');
+
+    // (b) In a REDCap role that is not mapped.
+    $module->query(
+        'UPDATE redcap_user_rights SET role_id = ? WHERE project_id = ? AND username = ?',
+        [$verifyRoleId, $PID, $REVIEWER]
+    );
+    $module->setProjectSetting('role-ra-reviewer', [], $PID);
+    $unmapped = RoleService::fromModule($module, $PID);
+    check('an UNMAPPED REDCap role has no access', $unmapped->hasAnyRole($REVIEWER) ? 'yes' : 'no', 'no');
+    check('...and the module reports itself unconfigured', $unmapped->isUnconfigured() ? 'yes' : 'no', 'yes');
+
+    // (c) Restored: mapped role, access back. Proves the negatives were the mapping and not
+    // something incidental that happened to break access for the rest of the run.
+    $module->setProjectSetting('role-ra-reviewer', [(string) $verifyRoleId], $PID);
+    $restored = RoleService::fromModule($module, $PID);
+    check('re-mapping the role restores access', implode(',', $restored->rolesFor($REVIEWER)), 'ra');
+
     check(
-        'and their disposition did not land',
+        'and no disposition landed during any of that',
         $reviewStore->readFinding((string) $PID, $RECORD, $EVENT, $instance)['review_status'],
         'confirmed'
     );
@@ -279,7 +329,14 @@ if ($originalRa === null || $originalRa === '') {
 } else {
     $module->setProjectSetting('role-ra-reviewer', $originalRa, $PID);
 }
-note('role-ra-reviewer restored', $originalRa === null ? '(unset)' : json_encode($originalRa));
+note('reviewer role mapping restored', $originalRa === null ? '(unset)' : json_encode($originalRa));
+
+$module->query(
+    'UPDATE redcap_user_rights SET role_id = ? WHERE project_id = ? AND username = ?',
+    [$originalUserRole, $PID, $REVIEWER]
+);
+$module->query('DELETE FROM redcap_user_roles WHERE project_id = ? AND role_name = ?', [$PID, 'Verify MICA Reviewer']);
+note("$REVIEWER's REDCap role restored", $originalUserRole === null ? '(none)' : $originalUserRole);
 
 $fieldsQ = $module->query(
     'SELECT field_name AS f FROM redcap_metadata WHERE project_id = ? AND form_name = ?',

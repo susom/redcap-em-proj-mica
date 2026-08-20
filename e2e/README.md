@@ -29,10 +29,18 @@ below a pending one — so a second run against the same data sees a different (
 The ordering assertion compares only pending rows for that reason, but re-seeding is cheaper than
 reasoning about it.
 
-The fixture creates a **throwaway user** (`e2e_mica_reviewer`) with **no design and no user-rights**
-privileges. That is deliberate: the dashboard has to work for an ordinary reviewer, and running as an
-admin hid a real bug where the framework's design-rights default meant only a project *designer*
-could open the safety-review page.
+The fixture creates a **throwaway REDCap user role** (`E2E MICA Reviewer`), puts a throwaway user
+(`e2e_mica_reviewer`) in it, and maps that *role* in the module settings. That mirrors what a study
+team actually does, because MICA access follows REDCap roles rather than a list of usernames — the
+module configures which role reviews findings, and people are added by being put in the role.
+
+The user has **no design and no user-rights** privileges, deliberately: the dashboard has to work for
+an ordinary reviewer, and running as an admin hid a real bug where the framework's design-rights
+default meant only a project *designer* could open the safety-review page.
+
+The three ways a user can lack access — not on the project, on it with **no** REDCap role, and in a
+role that is **not mapped** — are each asserted by `verify-disposition.php`, which also proves that
+re-mapping restores access (so the denials were the mapping and not something incidental).
 
 ## Two things to know before trusting a red run
 

@@ -3,36 +3,47 @@
 namespace Stanford\MICA;
 
 /**
- * Who may do what in the review dashboard.
+ * Who may do what in the review dashboard, derived from **REDCap's own user roles**.
  *
- * The permission matrix is data, in one place, and every endpoint asks this before doing anything.
- * Hiding a button is not access control (`stage-5-ra-dashboard.md` §5.2); the check that matters is
- * the one on the server, and a matrix a reviewer can read in one screen is far likelier to be right
- * than the same rules spread across seven handlers.
+ * ## Why roles and not a list of usernames
  *
- * ## Four roles, and one that is deliberately weak
+ * An earlier version of this class held three module settings listing usernames. That works and it
+ * is wrong: the study team already manages who is on the study through REDCap user roles, and a
+ * second roster inside module settings is a second thing to keep in sync. The failure mode is
+ * specific and bad — somebody leaves the study, their REDCap access is removed, and they keep a MICA
+ * reviewer role in a setting nobody thought to open. Access to participant transcripts should be
+ * governed by the same thing that governs access to the project.
  *
- *   `ra`        the research assistant who reviews findings. The RA-first policy means this is the
- *               role that actually decides things.
- *   `pi`        PI or protocol lead. Everything the RA can do, plus the audit trail.
- *   `auditor`   read-only, and de-identified: history aggregates and the audit trail, never a
+ * So the module configures a *mapping*, not a roster: which REDCap role counts as a reviewer, which
+ * as PI, which as auditor. Adding a person is assigning them a REDCap role, which the study team
+ * already does and REDCap already logs.
+ *
+ * **A user with no REDCap role has no MICA role.** REDCap allows per-user rights with no role
+ * assigned, and those users get nothing here. That is the honest consequence of role-based access
+ * rather than an oversight, and the page says so in as many words so the fix is obvious.
+ *
+ * ## The permission matrix
+ *
+ * Data, in one place, and every endpoint asks this before doing anything. Hiding a button is not
+ * access control (`stage-5-ra-dashboard.md` §5.2); the check that matters is the one on the server,
+ * and a matrix a reviewer can read in one screen is far likelier to be right than the same rules
+ * spread across seven handlers.
+ *
+ * ## Four MICA roles, and one that is deliberately weak
+ *
+ *   `ra`        reviews findings. Under the RA-first policy this is the role that decides things.
+ *   `pi`        everything the RA can do, plus the audit trail.
+ *   `auditor`   read-only and de-identified: history aggregates and the audit trail, never a
  *               transcript and never a disposition.
  *   `sysadmin`  a REDCap super user. Configures the notification policy and **cannot submit a
  *               clinical decision** - not because a super user could not technically do it, but
  *               because a disposition carries the weight of the reviewer's clinical judgment, and
- *               one submitted by whoever happened to hold admin rights would be indistinguishable
- *               from one an RA made. The handoff's RA-first workflow depends on that difference.
+ *               one submitted by whoever held admin rights would be indistinguishable from one an RA
+ *               made. The handoff's RA-first workflow depends on that difference. It is the one role
+ *               that is NOT a project role, because super-user status is not one either.
  *
- * Care-team members are **not** a role here. They receive notifications; they get no dashboard
- * access at all, which is why the notification path carries minimum-necessary content rather than
- * a deep link into the transcript.
- *
- * ## A user may hold more than one role
- *
- * Small studies overlap: the PI is often also a reviewer. So membership is a set, and a permission
- * is granted if *any* held role grants it. Deny is never inherited - there is no "sysadmin cannot
- * disposition, therefore an RA who is also a sysadmin cannot" - because that would make adding an
- * admin right silently remove a clinical one.
+ * Care-team members are **not** a role here. They receive notifications and get no dashboard access,
+ * which is why the notification path carries minimum-necessary content rather than a deep link.
  */
 class RoleService
 {
@@ -41,7 +52,7 @@ class RoleService
     public const AUDITOR  = 'auditor';
     public const SYSADMIN = 'sysadmin';
 
-    /** Project settings holding the user lists. */
+    /** Project settings holding the REDCap role ids that map to each MICA role. */
     public const SETTINGS = [
         self::RA      => 'role-ra-reviewer',
         self::PI      => 'role-pi-lead',
@@ -51,14 +62,14 @@ class RoleService
     /**
      * Every dashboard action, and which roles may perform it.
      *
-     * Kept exhaustive on purpose: `can()` denies anything not listed, so a new endpoint that forgets
-     * to add itself here is refused rather than silently open. That is the failure direction to
-     * choose - an endpoint nobody can reach gets reported on the first test, whereas one everybody
-     * can reach gets reported by an auditor.
+     * Exhaustive on purpose: `can()` denies anything not listed, so a new endpoint that forgets to
+     * add itself is refused rather than silently open. That is the failure direction to choose - an
+     * endpoint nobody can reach gets reported on the first test, whereas one everybody can reach
+     * gets reported by an auditor.
      */
     public const MATRIX = [
-        // Reading the queue and a session means reading participant-level clinical content, so it
-        // is the two decision-making roles only.
+        // Reading the queue or a session means reading participant-level clinical content, so it is
+        // the two decision-making roles only.
         'reviewQueue'       => [self::RA, self::PI],
         'reviewSession'     => [self::RA, self::PI],
 
@@ -79,69 +90,108 @@ class RoleService
         'launchReadiness'   => [self::SYSADMIN, self::PI],
     ];
 
-    /** @var array<string,string[]> role => usernames, lower-cased */
-    private array $members;
+    /** @var array<string,string[]> MICA role => REDCap role ids mapped to it */
+    private array $mapping;
+
+    /** @var array<string,?string> lower-cased username => their REDCap role id on this project */
+    private array $roster;
 
     private bool $isSuperUser;
 
     /**
-     * @param array<string,string[]> $members role => usernames, from the project settings
+     * @param array<string,string[]>  $mapping MICA role => REDCap role ids
+     * @param array<string,?string>   $roster  username => REDCap role id (null when they have none)
      */
-    public function __construct(array $members, bool $isSuperUser = false)
+    public function __construct(array $mapping, array $roster = [], bool $isSuperUser = false)
     {
-        $this->members = [];
+        $this->mapping = [];
         foreach (self::SETTINGS as $role => $_setting) {
-            $this->members[$role] = array_values(array_unique(array_map(
-                // Usernames are compared case-insensitively: REDCap treats them that way, and a
-                // role that silently does not apply because of capitalisation is worse than no role.
-                static fn(string $u): string => strtolower(trim($u)),
-                array_filter($members[$role] ?? [], static fn($u): bool => is_string($u) && trim($u) !== '')
+            // Role ids are numeric in REDCap but arrive from settings as strings; compared as
+            // strings throughout so 663 and "663" cannot disagree.
+            $this->mapping[$role] = array_values(array_unique(array_map(
+                'strval',
+                array_filter(
+                    $mapping[$role] ?? [],
+                    static fn($id): bool => is_scalar($id) && trim((string) $id) !== ''
+                )
             )));
+        }
+
+        $this->roster = [];
+        foreach ($roster as $username => $roleId) {
+            // Usernames are compared case-insensitively: REDCap treats them that way, and access
+            // that silently does not apply because of capitalisation is worse than none.
+            $this->roster[strtolower(trim((string) $username))] =
+                ($roleId === null || $roleId === '') ? null : (string) $roleId;
         }
 
         $this->isSuperUser = $isSuperUser;
     }
 
     /**
-     * Read the role lists off the module's project settings.
+     * Read the mapping and the project's roster off REDCap.
      *
-     * Repeatable settings come back as arrays; a single-value setting comes back as a scalar. Both
-     * shapes are normalised here rather than at each call site.
+     * One query for the roster rather than a lookup per username: a project has tens of users, and
+     * holding the whole map keeps rolesFor() a pure function that any caller can ask about any user
+     * - which the audit logger needs, since it records the role somebody was acting as.
      */
-    public static function fromModule(MICA $module, ?int $projectId = null, ?string $username = null): self
+    public static function fromModule(MICA $module, ?int $projectId = null): self
     {
-        $members = [];
-        foreach (self::SETTINGS as $role => $setting) {
-            $value = $projectId === null
-                ? $module->getProjectSetting($setting)
-                : $module->getProjectSetting($setting, $projectId);
+        $pid = $projectId ?? (defined('PROJECT_ID') ? (int) PROJECT_ID : null);
 
-            $members[$role] = is_array($value) ? $value : ($value === null || $value === '' ? [] : [$value]);
+        $mapping = [];
+        foreach (self::SETTINGS as $role => $setting) {
+            $value = $pid === null
+                ? $module->getProjectSetting($setting)
+                : $module->getProjectSetting($setting, $pid);
+
+            $mapping[$role] = is_array($value) ? $value : ($value === null || $value === '' ? [] : [$value]);
         }
 
-        return new self($members, \ExternalModules\ExternalModules::isSuperUser());
+        $roster = [];
+        if ($pid !== null) {
+            $result = $module->query(
+                'SELECT username, role_id FROM redcap_user_rights WHERE project_id = ?',
+                [$pid]
+            );
+            while ($row = $result->fetch_assoc()) {
+                $roster[(string) $row['username']] = $row['role_id'] === null ? null : (string) $row['role_id'];
+            }
+        }
+
+        return new self($mapping, $roster, \ExternalModules\ExternalModules::isSuperUser());
     }
 
-    /** @return string[] every role this user holds, in a stable order */
+    /** The REDCap role id this user holds on the project, or null. */
+    public function redcapRoleFor(?string $username): ?string
+    {
+        return $this->roster[strtolower(trim((string) $username))] ?? null;
+    }
+
+    /** True when the user is on the project at all, role or not - for a precise refusal message. */
+    public function isOnProject(?string $username): bool
+    {
+        return array_key_exists(strtolower(trim((string) $username)), $this->roster);
+    }
+
+    /** @return string[] every MICA role this user holds, in a stable order */
     public function rolesFor(?string $username): array
     {
         $roles = [];
+        $redcapRole = $this->redcapRoleFor($username);
 
-        // A blank username is nobody. It happens on a no-auth request, and treating it as a user
-        // with no roles rather than as an error keeps the check uniform: they simply cannot do
-        // anything.
-        $normalised = strtolower(trim((string) $username));
-
-        if ($normalised !== '') {
+        // A blank username is nobody, and so is a user with no REDCap role. Both simply hold no
+        // MICA role rather than being an error, which keeps every check uniform.
+        if ($redcapRole !== null && trim((string) $username) !== '') {
             foreach ([self::RA, self::PI, self::AUDITOR] as $role) {
-                if (in_array($normalised, $this->members[$role], true)) {
+                if (in_array($redcapRole, $this->mapping[$role], true)) {
                     $roles[] = $role;
                 }
             }
         }
 
-        // A super user is a sysadmin regardless of the lists - they can edit the module config
-        // anyway, so pretending otherwise would only make the matrix a lie. It grants nothing
+        // A super user is a sysadmin regardless of any project role - they can edit the module
+        // config anyway, so pretending otherwise would only make the matrix a lie. It grants nothing
         // clinical.
         if ($this->isSuperUser) {
             $roles[] = self::SYSADMIN;
@@ -192,8 +242,8 @@ class RoleService
 
     /**
      * An auditor sees de-identified aggregates only. True when the user's *only* relevant role is
-     * auditor: someone who is also an RA is an RA, because removing their existing access by adding
-     * an oversight role would be a surprising way to lose a clinical view.
+     * auditor: someone who is also an RA is an RA, because removing existing access by adding an
+     * oversight role would be a surprising way to lose a clinical view.
      */
     public function isDeidentifiedOnly(?string $username): bool
     {
@@ -218,9 +268,21 @@ class RoleService
         return null;
     }
 
-    /** @return string[] configured usernames for a role - for the launch-readiness gate */
-    public function membersOf(string $role): array
+    /** @return string[] REDCap role ids mapped to a MICA role - for the launch-readiness gate */
+    public function mappedRedcapRoles(string $role): array
     {
-        return $this->members[$role] ?? [];
+        return $this->mapping[$role] ?? [];
+    }
+
+    /** True when no REDCap role is mapped to any MICA role - i.e. nobody can review anything. */
+    public function isUnconfigured(): bool
+    {
+        foreach (self::SETTINGS as $role => $_setting) {
+            if ($this->mapping[$role] !== []) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

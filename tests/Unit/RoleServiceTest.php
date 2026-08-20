@@ -15,13 +15,25 @@ use Stanford\MICA\RoleService as R;
 #[CoversClass(R::class)]
 final class RoleServiceTest extends TestCase
 {
-    private function service(array $members = [], bool $superUser = false): R
+    /**
+     * A project with four REDCap roles, three of them mapped to a MICA role.
+     *
+     * `no_role_dave` is on the project with rights and NO role - the case role-based access has to
+     * get right, and the one a username list could not express at all.
+     */
+    private function service(array $mapping = [], bool $superUser = false, array $roster = []): R
     {
-        return new R($members + [
-            R::RA      => ['ra_alice'],
-            R::PI      => ['pi_bob'],
-            R::AUDITOR => ['auditor_carol'],
-        ], $superUser);
+        return new R(
+            $mapping + [R::RA => ['660'], R::PI => ['662'], R::AUDITOR => ['663']],
+            $roster + [
+                'ra_alice'      => '660',
+                'pi_bob'        => '662',
+                'auditor_carol' => '663',
+                'no_role_dave'  => null,
+                'other_erin'    => '661',   // a real REDCap role, mapped to nothing
+            ],
+            $superUser
+        );
     }
 
     public static function everyRoleAndAction(): array
@@ -108,14 +120,56 @@ final class RoleServiceTest extends TestCase
 
     // ------------------------------------------------------------------ multiple roles
 
-    public function testARoleIsGrantedIfAnyHeldRoleGrantsIt(): void
+    public function testOneRedcapRoleMayMapToSeveralMicaRoles(): void
     {
-        // Small studies overlap - the PI is often also a reviewer.
-        $service = $this->service([R::RA => ['ra_alice', 'pi_bob']]);
+        // Small studies overlap: the same REDCap role often covers reviewing and oversight.
+        $service = $this->service([R::RA => ['660', '662']]);
 
         $this->assertSame([R::RA, R::PI], $service->rolesFor('pi_bob'));
         $this->assertTrue($service->can('pi_bob', 'submitDisposition'));
         $this->assertTrue($service->can('pi_bob', 'auditTrail'));
+    }
+
+    public function testAUserWithNoRedcapRoleHasNoAccess(): void
+    {
+        // The honest consequence of role-based access, and the whole reason it is better: somebody
+        // whose study access was never set up cannot read a transcript, and nobody has to remember
+        // to remove them from a second list.
+        $service = $this->service();
+
+        $this->assertSame([], $service->rolesFor('no_role_dave'));
+        $this->assertTrue($service->isOnProject('no_role_dave'), 'but they ARE on the project');
+        $this->assertNull($service->redcapRoleFor('no_role_dave'));
+
+        foreach (array_keys(R::MATRIX) as $action) {
+            $this->assertFalse($service->can('no_role_dave', $action));
+        }
+    }
+
+    public function testAnUnmappedRedcapRoleGrantsNothing(): void
+    {
+        $service = $this->service();
+
+        $this->assertSame('661', $service->redcapRoleFor('other_erin'), 'they have a role');
+        $this->assertSame([], $service->rolesFor('other_erin'), 'it just is not mapped');
+    }
+
+    public function testRemovingSomebodyFromTheProjectRemovesTheirMicaAccess(): void
+    {
+        // The failure a username list produced: access outliving study membership. Here there is
+        // nothing to forget - a user absent from redcap_user_rights holds no role.
+        $service = new R([R::RA => ['660']], [], false);
+
+        $this->assertFalse($service->isOnProject('ra_alice'));
+        $this->assertFalse($service->can('ra_alice', 'submitDisposition'));
+    }
+
+    public function testAnUnconfiguredMappingIsDetectable(): void
+    {
+        // Nobody can review anything, which the page needs to say specifically - it is a very
+        // different problem from "you personally lack access".
+        $this->assertTrue((new R([], ['ra_alice' => '660']))->isUnconfigured());
+        $this->assertFalse($this->service()->isUnconfigured());
     }
 
     public function testAddingAnAdminRightDoesNotRemoveAClinicalOne(): void
@@ -126,6 +180,16 @@ final class RoleServiceTest extends TestCase
 
         $this->assertTrue($service->can('ra_alice', 'submitDisposition'));
         $this->assertContains(R::SYSADMIN, $service->rolesFor('ra_alice'));
+    }
+
+    public function testSuperUserStatusIsNotAProjectRole(): void
+    {
+        // It is the one MICA role that does not come from a REDCap project role, because super-user
+        // status does not either - and a super user with no project role still configures the module.
+        $service = $this->service([], true, ['root' => null]);
+
+        $this->assertSame([R::SYSADMIN], $service->rolesFor('root'));
+        $this->assertTrue($service->can('root', 'savePolicy'));
     }
 
     // ------------------------------------------------------------------ the auditor
@@ -141,10 +205,10 @@ final class RoleServiceTest extends TestCase
         $this->assertTrue($service->can('auditor_carol', 'auditTrail'));
     }
 
-    public function testAnAuditorWhoIsAlsoAReviewerIsNotRestricted(): void
+    public function testAnAuditorRoleThatIsAlsoAReviewerRoleIsNotRestricted(): void
     {
-        // Adding an oversight role must not take away a clinical view they already had.
-        $service = $this->service([R::AUDITOR => ['auditor_carol', 'ra_alice']]);
+        // Adding an oversight mapping must not take away a clinical view the role already had.
+        $service = $this->service([R::AUDITOR => ['663', '660']]);
 
         $this->assertFalse($service->isDeidentifiedOnly('ra_alice'));
         $this->assertTrue($service->can('ra_alice', 'reviewSession'));
@@ -159,27 +223,36 @@ final class RoleServiceTest extends TestCase
 
     public function testUsernamesAreCaseInsensitive(): void
     {
-        // REDCap treats them that way, and a role that silently does not apply because of
-        // capitalisation is worse than no role at all.
-        $service = $this->service([R::RA => ['RA_Alice']]);
+        // REDCap treats them that way, and access that silently does not apply because of
+        // capitalisation is worse than none at all.
+        $service = $this->service([], false, ['RA_Alice' => '660']);
 
         $this->assertTrue($service->can('ra_alice', 'submitDisposition'));
         $this->assertTrue($service->can('RA_ALICE', 'submitDisposition'));
     }
 
-    public function testWhitespaceAndBlanksInTheSettingAreIgnored(): void
+    public function testRoleIdsCompareAsStrings(): void
     {
-        $service = $this->service([R::RA => ['  ra_alice  ', '', '   ', null, 42]]);
+        // Settings hand them over as strings and redcap_user_rights stores an int, so 663 and "663"
+        // must not be able to disagree.
+        $service = new R([R::RA => [660]], ['ra_alice' => 660]);
 
         $this->assertTrue($service->can('ra_alice', 'submitDisposition'));
-        $this->assertSame(['ra_alice'], $service->membersOf(R::RA), 'and nothing spurious');
+    }
+
+    public function testBlanksInTheMappingAreIgnored(): void
+    {
+        $service = $this->service([R::RA => ['660', '', '   ', null]]);
+
+        $this->assertTrue($service->can('ra_alice', 'submitDisposition'));
+        $this->assertSame(['660'], $service->mappedRedcapRoles(R::RA), 'and nothing spurious');
     }
 
     public function testDuplicatesCollapse(): void
     {
         $this->assertSame(
-            ['ra_alice'],
-            $this->service([R::RA => ['ra_alice', 'RA_Alice', 'ra_alice']])->membersOf(R::RA)
+            ['660'],
+            $this->service([R::RA => ['660', '660']])->mappedRedcapRoles(R::RA)
         );
     }
 
@@ -196,7 +269,8 @@ final class RoleServiceTest extends TestCase
     public function testThePrimaryRoleIsTheMostPrivilegedHeld(): void
     {
         // What lands on an audit row: it should not understate what the actor was entitled to do.
-        $service = $this->service([R::RA => ['ra_alice', 'pi_bob']]);
+        // The PI's REDCap role is also mapped as a reviewer here, so they hold both.
+        $service = $this->service([R::RA => ['660', '662']]);
 
         $this->assertSame(R::PI, $service->primaryRoleFor('pi_bob'));
         $this->assertSame(R::RA, $service->primaryRoleFor('ra_alice'));
@@ -237,6 +311,17 @@ final class RoleServiceTest extends TestCase
         // An action nobody can perform is dead surface that reads as a feature.
         foreach (R::MATRIX as $action => $roles) {
             $this->assertNotEmpty($roles, "$action is unreachable by every role");
+        }
+    }
+
+    public function testTheMappingIsConfigurationNotARoster(): void
+    {
+        // The design decision, asserted: the settings hold REDCap ROLE ids, never usernames. A
+        // username creeping back into one of these would rebuild the second roster this replaced.
+        foreach (array_keys(R::SETTINGS) as $role) {
+            foreach ($this->service()->mappedRedcapRoles($role) as $value) {
+                $this->assertMatchesRegularExpression('/^\d+$/', $value, "$role maps a non-role-id");
+            }
         }
     }
 

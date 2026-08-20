@@ -23,23 +23,52 @@ $username = \ExternalModules\ExternalModules::getUsername();
 $roles = RoleService::fromModule($module);
 
 if (!$roles->hasAnyRole($username)) {
-    // 403, and say what to do about it. A bare "access denied" sends the reviewer to IT when the
-    // fix is a project setting their own PI can change.
+    // 403, and say which of the three possible causes it is. A bare "access denied" sends the
+    // reviewer to IT when the fix is usually a REDCap role assignment their own PI can make - and
+    // the three causes have three different fixes.
     http_response_code(403);
+
+    $redcapRole = $roles->redcapRoleFor($username);
     ?>
-    <div class="container my-4" style="max-width: 40rem;">
+    <div class="container my-4" style="max-width: 42rem;">
         <div class="alert alert-warning">
-            <h5 class="alert-heading">You do not have a MICA review role</h5>
-            <p class="mb-2">
-                This dashboard is limited to users assigned a MICA role on this project. Your
-                account (<code><?= $module->escape($username) ?></code>) is not one of them.
-            </p>
-            <p class="mb-0 small text-muted">
-                A project administrator can assign it under
-                <strong>External Modules &rarr; MICA &rarr; Configure</strong>, in the
-                <em>Research assistants</em>, <em>PI / protocol lead</em> or <em>Auditors</em>
-                setting.
-            </p>
+            <h5 class="alert-heading">You do not have access to the MICA safety review</h5>
+
+            <?php if ($roles->isUnconfigured()) { ?>
+                <p class="mb-2">
+                    No REDCap user role has been mapped to a MICA review role on this project yet, so
+                    <em>nobody</em> can open this dashboard.
+                </p>
+                <p class="mb-0 small text-muted">
+                    A project administrator sets the mapping under
+                    <strong>External Modules &rarr; MICA &rarr; Configure</strong> &mdash; the
+                    <em>Reviewer</em>, <em>PI / protocol lead</em> and <em>Auditor</em> settings each
+                    take a REDCap user role.
+                </p>
+            <?php } elseif ($redcapRole === null) { ?>
+                <p class="mb-2">
+                    Your account (<code><?= $module->escape($username) ?></code>) has rights on this
+                    project but is <strong>not assigned to a REDCap user role</strong>. MICA access
+                    follows REDCap roles, so a user with no role has none here.
+                </p>
+                <p class="mb-0 small text-muted">
+                    A project administrator can assign you a role under
+                    <strong>User Rights</strong>. That is the same place study access is managed, on
+                    purpose: access to participant transcripts should be governed by the same thing
+                    that governs access to the project.
+                </p>
+            <?php } else { ?>
+                <p class="mb-2">
+                    Your REDCap role on this project is not one of the roles mapped to a MICA review
+                    role.
+                </p>
+                <p class="mb-0 small text-muted">
+                    Either your account should move to a role that is mapped, or that mapping should
+                    include your role &mdash; a project administrator can do either, under
+                    <strong>User Rights</strong> or
+                    <strong>External Modules &rarr; MICA &rarr; Configure</strong>.
+                </p>
+            <?php } ?>
         </div>
     </div>
     <?php

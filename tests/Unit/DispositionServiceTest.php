@@ -32,13 +32,13 @@ final class DispositionServiceTest extends TestCase
         $this->audit = new FakeAuditStore();
     }
 
-    private function service(array $roleMembers = []): D
+    private function service(array $mapping = []): D
     {
-        $roles = new RoleService($roleMembers + [
-            RoleService::RA      => ['ra_alice'],
-            RoleService::PI      => ['pi_bob'],
-            RoleService::AUDITOR => ['auditor_carol'],
-        ]);
+        // REDCap role ids and the project roster - access follows the user's REDCap role.
+        $roles = new RoleService(
+            $mapping + [RoleService::RA => ['660'], RoleService::PI => ['662'], RoleService::AUDITOR => ['663']],
+            ['ra_alice' => '660', 'pi_bob' => '662', 'auditor_carol' => '663']
+        );
 
         return new D(
             $this->store,
