@@ -246,6 +246,7 @@ class ComposerStaticInit75d890558dc1e976efb11b28f8360706
         'Stanford\\MICA\\ASEMLO' => __DIR__ . '/../..' . '/classes/ASEMLO.php',
         'Stanford\\MICA\\ArtifactIntegrityException' => __DIR__ . '/../..' . '/classes/ArtifactIntegrityException.php',
         'Stanford\\MICA\\ArtifactRegistry' => __DIR__ . '/../..' . '/classes/ArtifactRegistry.php',
+        'Stanford\\MICA\\CanonicalJson' => __DIR__ . '/../..' . '/classes/CanonicalJson.php',
         'Stanford\\MICA\\EntityPlatformInterface' => __DIR__ . '/../..' . '/classes/EntityPlatformInterface.php',
         'Stanford\\MICA\\EntitySchemaException' => __DIR__ . '/../..' . '/classes/EntitySchemaException.php',
         'Stanford\\MICA\\EntitySchemaManager' => __DIR__ . '/../..' . '/classes/EntitySchemaManager.php',
@@ -255,6 +256,9 @@ class ComposerStaticInit75d890558dc1e976efb11b28f8360706
         'Stanford\\MICA\\Sanitizer' => __DIR__ . '/../..' . '/classes/Sanitizer.php',
         'Stanford\\MICA\\SchemaValidationResult' => __DIR__ . '/../..' . '/classes/SchemaValidationResult.php',
         'Stanford\\MICA\\SchemaValidator' => __DIR__ . '/../..' . '/classes/SchemaValidator.php',
+        'Stanford\\MICA\\SessionPseudoId' => __DIR__ . '/../..' . '/classes/SessionPseudoId.php',
+        'Stanford\\MICA\\TranscriptBuilder' => __DIR__ . '/../..' . '/classes/TranscriptBuilder.php',
+        'Stanford\\MICA\\TranscriptException' => __DIR__ . '/../..' . '/classes/TranscriptException.php',
         'Stanford\\MICA\\UserRightsCheck' => __DIR__ . '/../..' . '/classes/UserRightsCheck.php',
     );
 

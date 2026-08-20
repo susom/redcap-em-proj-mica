@@ -213,6 +213,7 @@ return array(
     'Stanford\\MICA\\ASEMLO' => $baseDir . '/classes/ASEMLO.php',
     'Stanford\\MICA\\ArtifactIntegrityException' => $baseDir . '/classes/ArtifactIntegrityException.php',
     'Stanford\\MICA\\ArtifactRegistry' => $baseDir . '/classes/ArtifactRegistry.php',
+    'Stanford\\MICA\\CanonicalJson' => $baseDir . '/classes/CanonicalJson.php',
     'Stanford\\MICA\\EntityPlatformInterface' => $baseDir . '/classes/EntityPlatformInterface.php',
     'Stanford\\MICA\\EntitySchemaException' => $baseDir . '/classes/EntitySchemaException.php',
     'Stanford\\MICA\\EntitySchemaManager' => $baseDir . '/classes/EntitySchemaManager.php',
@@ -222,5 +223,8 @@ return array(
     'Stanford\\MICA\\Sanitizer' => $baseDir . '/classes/Sanitizer.php',
     'Stanford\\MICA\\SchemaValidationResult' => $baseDir . '/classes/SchemaValidationResult.php',
     'Stanford\\MICA\\SchemaValidator' => $baseDir . '/classes/SchemaValidator.php',
+    'Stanford\\MICA\\SessionPseudoId' => $baseDir . '/classes/SessionPseudoId.php',
+    'Stanford\\MICA\\TranscriptBuilder' => $baseDir . '/classes/TranscriptBuilder.php',
+    'Stanford\\MICA\\TranscriptException' => $baseDir . '/classes/TranscriptException.php',
     'Stanford\\MICA\\UserRightsCheck' => $baseDir . '/classes/UserRightsCheck.php',
 );
