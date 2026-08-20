@@ -5,6 +5,7 @@ namespace Stanford\MICA;
 require_once __DIR__ . "/ScanQueueStoreInterface.php";
 require_once __DIR__ . "/ScanJobStateMachine.php";
 require_once __DIR__ . "/RedcapEntityLoader.php";
+require_once __DIR__ . "/EntityTypes.php";
 
 /**
  * mica_scan_job access, in direct parameterized SQL rather than through the Entity framework.
@@ -25,10 +26,24 @@ class RedcapScanQueueStore implements ScanQueueStoreInterface
     private const TABLE = 'redcap_entity_mica_scan_job';
     private const ENTITY = 'mica_scan_job';
 
-    /** Every column the queue reads. Named explicitly so a schema change surfaces here. */
-    private const COLUMNS = 'id, project_id, record, instance, session_type, transcript_ref, '
-                          . 'idempotency_key, status, attempts, next_attempt_at, claimed_by, '
-                          . 'claimed_at, last_error, created, updated';
+    /**
+     * Every column the queue reads, DERIVED from the entity declaration rather than hand-listed.
+     *
+     * It was hand-listed, with a comment claiming that made schema changes surface here. It did the
+     * opposite: `event_id` was added to the entity type and threaded through enqueue(), and this
+     * list was not updated - so claim() returned rows without it, ScanRunner fell back to event 0,
+     * and every finding write was rejected. The unit test passed because the fake store returns the
+     * whole row; only the real SELECT list was wrong.
+     *
+     * Deriving it means a new property is readable the moment it is declared.
+     */
+    private static function columns(): string
+    {
+        return implode(', ', array_merge(
+            ['id', 'created', 'updated'],
+            array_keys(EntityTypes::all()[self::ENTITY]['properties'])
+        ));
+    }
 
     private MICA $module;
 
@@ -69,7 +84,7 @@ class RedcapScanQueueStore implements ScanQueueStoreInterface
     public function findByIdempotencyKey(string $key): ?array
     {
         $result = $this->module->query(
-            'SELECT ' . self::COLUMNS . ' FROM ' . self::TABLE . ' WHERE idempotency_key = ? LIMIT 1',
+            'SELECT ' . self::columns() . ' FROM ' . self::TABLE . ' WHERE idempotency_key = ? LIMIT 1',
             [$key]
         );
 
@@ -79,7 +94,7 @@ class RedcapScanQueueStore implements ScanQueueStoreInterface
     public function findJob(int $id): ?array
     {
         $result = $this->module->query(
-            'SELECT ' . self::COLUMNS . ' FROM ' . self::TABLE . ' WHERE id = ?',
+            'SELECT ' . self::columns() . ' FROM ' . self::TABLE . ' WHERE id = ?',
             [$id]
         );
 
@@ -112,7 +127,7 @@ class RedcapScanQueueStore implements ScanQueueStoreInterface
         // Read back by token rather than trusting an affected-rows count: it is the same question
         // asked of the data rather than of the driver, and it returns the row we need anyway.
         $result = $this->module->query(
-            'SELECT ' . self::COLUMNS . ' FROM ' . self::TABLE
+            'SELECT ' . self::columns() . ' FROM ' . self::TABLE
             . ' WHERE claimed_by = ? AND status = ? LIMIT 1',
             [$claimToken, ScanJobStateMachine::SCANNING]
         );
@@ -158,7 +173,7 @@ class RedcapScanQueueStore implements ScanQueueStoreInterface
     public function findStaleClaims(int $cutoff, int $limit): array
     {
         $result = $this->module->query(
-            'SELECT ' . self::COLUMNS . ' FROM ' . self::TABLE
+            'SELECT ' . self::columns() . ' FROM ' . self::TABLE
             . ' WHERE status = ? AND (claimed_at IS NULL OR claimed_at <= ?) ORDER BY id LIMIT '
             . max(1, min(500, $limit)),
             [ScanJobStateMachine::SCANNING, $cutoff]

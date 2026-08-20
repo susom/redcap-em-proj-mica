@@ -33,6 +33,10 @@
 
 $PID = (int) ($argv[1] ?? 257);
 $RECORD = (string) ($argv[2] ?? '2');
+// A REAL event, not 0. Findings are written to (record, event, instance), so event 0 is rejected by
+// saveData - which is exactly how this probe found that mica_scan_job had no event_id property at
+// all. 1008 is arm 2 / Day 1 (ED), where mica_ed_session and mica_safety_finding both live.
+$EVENT = (int) ($argv[3] ?? 1008);
 
 $_GET['pid'] = $PID;
 define('NOAUTH', true);
@@ -138,6 +142,37 @@ $cases = [
     'timeout'              => ['expect' => SM::QUEUED, 'run' => 'timeout', 'findings' => 0],
 ];
 
+/** How many finding instances on this record carry a given concern type. */
+function findingsOfType($module, int $pid, string $record, string $concernType): int
+{
+    return (int) $module->query(
+        'SELECT COUNT(*) n FROM ' . \Records::getDataTable($pid)
+        . ' WHERE project_id = ? AND record = ? AND field_name = ? AND value = ?',
+        [$pid, $record, 'finding_concern_type', $concernType]
+    )->fetch_assoc()['n'];
+}
+
+/** Remove every finding instance on this record, by field name, between cases. */
+function clearFindings($module, int $pid, string $record): void
+{
+    $q = $module->query(
+        'SELECT field_name AS f FROM redcap_metadata WHERE project_id = ? AND form_name = ?',
+        [$pid, 'mica_safety_finding']
+    );
+    $fields = [];
+    while ($row = $q->fetch_assoc()) {
+        $fields[] = $row['f'];
+    }
+    if ($fields === []) {
+        return;
+    }
+    $module->query(
+        'DELETE FROM ' . \Records::getDataTable($pid) . ' WHERE project_id = ? AND record = ? '
+        . 'AND field_name IN (' . implode(',', array_fill(0, count($fields), '?')) . ')',
+        array_merge([$pid, $record], $fields)
+    );
+}
+
 $queueStore = new RedcapScanQueueStore($module);
 $instrumentExists = (new \Stanford\MICA\RedcapScanResultStore($module))->findingInstrumentExists((string) $PID);
 
@@ -155,7 +190,7 @@ foreach ($cases as $fixture => $expect) {
             $RECORD,
             $participant,
             1,
-            0,
+            $EVENT,
             'baseline',
             'emergency_department'
         );
@@ -213,16 +248,60 @@ foreach ($cases as $fixture => $expect) {
 
         check('job status', $job['status'] ?? 'NONE', $expectedStatus);
 
+        // Printed whenever the job did not land where expected: without it a wrong status is a
+        // number with no cause, and the cause is always already recorded here.
+        if ((string) ($job['status'] ?? '') !== (string) $expectedStatus) {
+            printf("           last_error: %s\n", $job['last_error'] ?? '(none)');
+        }
+
+        if ($expect['findings'] > 0 && $instrumentExists) {
+            $written = $module->query(
+                'SELECT COUNT(*) n FROM ' . \Records::getDataTable($PID)
+                . ' WHERE project_id = ? AND record = ? AND event_id = ? AND field_name = ?',
+                [$PID, $RECORD, $EVENT, 'finding_id']
+            )->fetch_assoc()['n'];
+            check('a reviewable finding instance was created', $written, $expect['findings']);
+
+            $urgency = $module->query(
+                'SELECT value AS v FROM ' . \Records::getDataTable($PID)
+                . ' WHERE project_id = ? AND record = ? AND event_id = ? AND field_name = ? LIMIT 1',
+                [$PID, $RECORD, $EVENT, 'finding_urgency']
+            )->fetch_assoc();
+            check('with the model\'s urgency', $urgency['v'] ?? 'NONE', 'critical');
+
+            $status = $module->query(
+                'SELECT value AS v FROM ' . \Records::getDataTable($PID)
+                . ' WHERE project_id = ? AND record = ? AND event_id = ? AND field_name = ? LIMIT 1',
+                [$PID, $RECORD, $EVENT, 'review_status']
+            )->fetch_assoc();
+            check('and pending review, not decided', $status['v'] ?? 'NONE', 'pending');
+        }
+
         if ($expect['run'] === 'citation_mismatch') {
+            // Precise about what "nothing released" means. A total instance count is the wrong
+            // question - it also counts the scan_failure placeholder, which SHOULD be there. The
+            // claim is that the model's own finding was not released.
             check(
-                'nothing released on a bad quote',
-                (int) $module->query(
-                    'SELECT COUNT(*) n FROM ' . \Records::getDataTable($PID)
-                    . ' WHERE project_id = ? AND record = ? AND field_name = ?',
-                    [$PID, $RECORD, 'finding_id']
-                )->fetch_assoc()['n'],
+                "the model's finding was not released",
+                findingsOfType($module, $PID, $RECORD, 'self_harm'),
                 0
             );
+        }
+
+        // Every terminal failure must leave a reviewable task. A failed scan with no row at all
+        // would be a session that silently left the pipeline.
+        if ($expectedStatus === SM::MANUAL_REVIEW_REQUIRED && $instrumentExists) {
+            check(
+                'a scan_failure placeholder is reviewable',
+                findingsOfType($module, $PID, $RECORD, 'scan_failure'),
+                1
+            );
+            $urg = $module->query(
+                'SELECT value AS v FROM ' . \Records::getDataTable($PID)
+                . ' WHERE project_id = ? AND record = ? AND field_name = ? LIMIT 1',
+                [$PID, $RECORD, 'finding_urgency']
+            )->fetch_assoc();
+            check('...at high urgency, not inflated to critical', $urg['v'] ?? 'NONE', 'high');
         }
 
         if (in_array($expect['run'], ['refusal', 'content_filter'], true)) {
@@ -242,9 +321,11 @@ foreach ($cases as $fixture => $expect) {
         printf("    [FAIL] %s: %s\n", get_class($e), $e->getMessage());
     }
 
-    // Each case is independent: clear the queue so the next fixture's job is the only one due.
+    // Each case is independent: clear the queue AND the findings, so one case's instances cannot be
+    // counted against the next. Without this, "nothing was released" reads a running total.
     $module->query('DELETE FROM redcap_entity_mica_scan_run', []);
     $module->query('DELETE FROM redcap_entity_mica_scan_job', []);
+    clearFindings($module, $PID, $RECORD);
 }
 
 echo "\n  cleanup\n";
@@ -271,6 +352,24 @@ $sweep = $module->query(
 );
 while ($row = $sweep->fetch_assoc()) {
     $writtenLogs[] = (int) $row['log_id'];
+}
+
+// Finding instances written during the run. Removed by field name rather than by wiping the record,
+// so a real participant's other data on the same event cannot be caught up in it.
+$fieldsQ = $module->query(
+    'SELECT field_name AS f FROM redcap_metadata WHERE project_id = ? AND form_name = ?',
+    [$PID, 'mica_safety_finding']
+);
+$findingFields = [];
+while ($row = $fieldsQ->fetch_assoc()) {
+    $findingFields[] = $row['f'];
+}
+if ($findingFields !== []) {
+    $module->query(
+        'DELETE FROM ' . \Records::getDataTable($PID) . ' WHERE project_id = ? AND record = ? '
+        . 'AND field_name IN (' . implode(',', array_fill(0, count($findingFields), '?')) . ')',
+        array_merge([$PID, $RECORD], $findingFields)
+    );
 }
 
 foreach (array_unique($writtenLogs) as $logId) {
