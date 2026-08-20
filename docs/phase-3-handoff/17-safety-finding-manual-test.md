@@ -2,8 +2,8 @@
 
 How to see a safety finding produced, reviewed, and acted on — by hand, in a browser.
 
-Companion to `11-auth-manual-test-guide.md`. Read §0 first: on PID 257 today, **two of the six links
-in the pipeline are broken**, and one of them cannot be fixed from a settings screen.
+Companion to `11-auth-manual-test-guide.md`. Read §0 first, then pick a route: **§A** has a real
+participant chat, **§3** seeds one without chatting.
 
 ---
 
@@ -21,26 +21,74 @@ broken link. That matters because **a break anywhere shows up at the far end as 
 is indistinguishable from "nothing to find"**. That ambiguity is the thing this entire handoff exists
 to prevent, so it should not be how you discover a misconfiguration.
 
-On PID 257 as of 2026-08-20 it reports five blockers. Four are settings you can change (§1). The
-fifth is not:
+Everything it lists is a setting you can change (§1). Nothing structural blocks the pipeline any more.
 
-> **`completeSession()` cannot finalize a transcript on PID 257.** It calls
-> `calculateSessionInfo()`, which requires an event literally named `baseline_arm_1` and a
-> `consent_date` on the record at that event — the *pilot's* scaffolding. PID 257 is the R01
-> structure: its arm-1 events are `day_1_ed_arm_1`, `month_3_arm_1`, and no record has a
-> `consent_date`. So pressing **End Session** throws *"the project is not configured for MICA
-> sessions"* before anything is written.
-
-That is **Stage 2** (the R01 session engine), deliberately deferred — not a Stage 6 defect. Its
-consequence for you is concrete: **you cannot drive this pipeline by having a chat.** Everything from
-the transcript onwards is fully testable, and §3 seeds a real transcript directly.
+> **Previously, and worth knowing if you read an older version of this file:** pressing End Session on
+> an R01 project threw *"the project is not configured for MICA sessions"* and no transcript was
+> written. Three separate causes, all fixed:
+>
+> 1. `completeSession()` ran the pilot's `raw_chat_logs` save first and threw if it could not — and on
+>    an R01 project there is no `baseline_arm_1` event and no `raw_chat_logs` field. It now skips a
+>    save that does not apply. (A *pilot* project that cannot resolve its session still throws, which
+>    is docs 14 D16.)
+> 2. `resolveSessionHostInstrument()` could only infer the host when exactly one was configured, and
+>    the R01 has two. It now uses the instrument the framework hands the AJAX hook.
+> 3. The real one: `redcap_entity`'s `project` property type dereferences `SUPER_USER`, which REDCap
+>    defines at login but not on a survey request — so **every entity write from a participant session
+>    threw**, and the scan job is an entity. `project_id` is declared `integer` now.
+>
+> `consent_date` was never a requirement — `new DateTime('')` returns *now* rather than throwing.
 
 Two routes, depending on what you want to look at:
 
 | Route | Use it to test | Needs |
 |---|---|---|
-| **A — seeded** (§3–§6) | the finding instrument, the review dashboard, disposition, actions | nothing but the fixture |
-| **B — a real model call** (§7) | that a live SafetyScan produces schema-valid, quote-verified findings | a registered model alias |
+| **A — a real chat** (§A) | the whole pipeline as a participant experiences it | a survey link + credential |
+| **B — seeded** (§3–§6) | the finding instrument, dashboard, disposition, actions, without chatting | nothing but the fixture |
+
+---
+
+## A. The real thing: chat as a participant, then analyse it
+
+Get a link and the login credential for the record you want:
+
+```bash
+docker exec redcap_2023_1_db mysql -uroot -proot redcap -e \
+  "SELECT survey_auth_field1 AS cred_field, survey_auth_event_id1 AS cred_event,
+          survey_auth_fail_limit AS lockout FROM redcap_projects WHERE project_id=257;"
+```
+
+On PID 257 the credential is **`last_name`, stored at event 1004**, with a 5-failure / 30-minute
+lockout that has **no admin unlock** — so get it right.
+
+Then, for the record and the session event you want (`mica_ed_session` is designated on events 1008
+and 1012; a record only has a link for the arm it is actually in):
+
+```php
+// docker exec ... php -r, or any admin plugin
+echo REDCap::getSurveyLink('<record>', 'mica_ed_session', <event_id>, 1, 257);
+```
+
+1. Open the link. Enter the record's `last_name` at the Survey Login prompt.
+2. Have a conversation — a few turns is enough. Say something a safety scan should notice if you want
+   a finding rather than a clean screen.
+3. Press **End Session**. It should return `success` with a `transcript` block containing
+   `scan_job_id` and `scan_job_created: true`.
+4. `mica_scan_worker` runs every 60 seconds. Watch the job:
+
+```bash
+docker exec redcap_2023_1_db mysql -uroot -proot redcap -e \
+  "SELECT id,record,session_type,status,attempts,LEFT(COALESCE(last_error,''),80) err
+   FROM redcap_entity_mica_scan_job WHERE project_id=257 ORDER BY id DESC LIMIT 3;
+   SELECT id,job_id,attempt,model_alias,resolved_model,run_status
+   FROM redcap_entity_mica_scan_run ORDER BY id DESC LIMIT 3;"
+```
+
+5. Once it reaches `ready_for_review`, go to §4 and review it in the dashboard.
+
+**No post-session survey redirect on an R01 project.** The pilot's `posttest` link does not exist
+here, so End Session signs you out. Set **chatbot_end_session_url_override** to any URL if you want a
+landing page instead — otherwise this is expected, not a fault.
 
 ---
 
@@ -51,7 +99,7 @@ Two routes, depending on what you want to look at:
 | Setting | Set it to | Why |
 |---|---|---|
 | Finalize transcripts and queue safety scans | **ticked** | Off means a finished session writes nothing and no scan is queued. The pipeline has no input. |
-| SafetyScan model alias | an alias the registry lists | Unset falls back to a hardcoded `gemini-2.5-flash`, which **is not in this server's registry** (it holds `claude-opus-4-7`). An unregistered alias returns the provider's canned apology rather than an error — so sessions look screened and are not. |
+| SafetyScan model alias | an alias the registry lists — on this server, `claude-opus-4-7` | Unset falls back to a hardcoded `gemini-2.5-flash`, which is **not** in this server's registry. An unregistered alias returns the provider's canned apology rather than an error, so sessions look screened and are not. The launch-readiness `models` gate now blocks on this. |
 | Reviewer role(s) | a REDCap user role | Access follows REDCap roles. With nothing mapped, *nobody* can open the dashboard — not even an admin. |
 | PI / protocol-lead role(s) | a REDCap user role | Needed for the audit trail and the launch-readiness checklist. |
 
