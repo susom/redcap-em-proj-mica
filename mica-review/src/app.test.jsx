@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { App } from './App.jsx'
 
 /**
@@ -118,3 +119,25 @@ describe('where a sysadmin lands', () => {
     expect(window.mica_review_jsmo.ajax.mock.calls.map(([a]) => a)).toContain('reviewQueue')
   })
 })
+
+describe('re-checking the gates', () => {
+  it('offers Re-check in the tab row, where Refresh already lives', async () => {
+    // Gates change when settings do. Same control, same place as the queue's Refresh, rather than a
+    // second convention inside the card.
+    boot({ canSeeLaunchGates: true })
+    render(<App />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Launch readiness' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Re-check' })).toBeTruthy())
+
+    const before = window.mica_review_jsmo.ajax.mock.calls.filter(([a]) => a === 'launchReadiness').length
+    await userEvent.click(screen.getByRole('button', { name: 'Re-check' }))
+
+    await waitFor(() =>
+      expect(
+        window.mica_review_jsmo.ajax.mock.calls.filter(([a]) => a === 'launchReadiness').length,
+      ).toBe(before + 1),
+    )
+  })
+})
+

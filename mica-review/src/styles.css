@@ -769,23 +769,9 @@
 
 /* ---------------------------------------------------------------- launch readiness */
 
-.mica-gates-head {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.5rem;
-}
-
-.mica-gates-title {
-  font-size: 1.05rem;
-  margin: 0;
-  color: var(--mica-ink);
-}
-
 .mica-gate-list {
   list-style: none;
-  margin: 1rem 0 0;
+  margin: 0.75rem 0 0;
   padding: 0;
   display: grid;
   gap: 0.5rem;
@@ -860,6 +846,16 @@
   overflow-wrap: anywhere;
 }
 
+.mica-gate-detail code,
+.mica-gate-fix code {
+  font-size: 0.85em;
+  padding: 0.05rem 0.25rem;
+  border-radius: 3px;
+  background: rgba(28, 36, 48, 0.06);
+  /* A setting name is one long unbreakable token; it wraps rather than widening the row. */
+  overflow-wrap: anywhere;
+}
+
 .mica-gate-fix {
   margin: 0.375rem 0 0;
   font-size: 0.9rem;
@@ -873,6 +869,6 @@
    * carries its state as text. So the glyph goes inline above the title instead of beside it.
    */
   .mica-gate-row { grid-template-columns: 1fr; gap: 0.25rem; }
-  .mica-gate-mark { text-align: left; }
+  .mica-gate-mark { display: none; }
   .mica-gate-fix { font-size: 0.85rem; }
 }

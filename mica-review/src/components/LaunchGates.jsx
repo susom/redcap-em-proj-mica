@@ -1,6 +1,19 @@
 import { Notice, Skeleton } from './Notice.jsx'
 
 /**
+ * Render a gate's prose, turning `backtick` spans into code.
+ *
+ * The server writes setting names in backticks - `ra_review_policy.critical_acknowledgment_minutes`
+ * - which rendered as literal backtick characters mid-sentence. Interpolated as text, never as HTML,
+ * so this cannot become a markup surface: React escapes each fragment.
+ */
+function withCode(text) {
+  return String(text ?? '')
+    .split('`')
+    .map((part, i) => (i % 2 === 1 ? <code key={i}>{part}</code> : part))
+}
+
+/**
  * The launch checklist.
  *
  * Shows **every** gate, passing and failing, in the order the server returns them. A list that only
@@ -16,7 +29,7 @@ import { Notice, Skeleton } from './Notice.jsx'
  * prevent. So the headline always says *why* sessions are running, and on a development project it
  * says they would be refused in production.
  */
-export function LaunchGates({ state, onRefresh }) {
+export function LaunchGates({ state }) {
   if (state.loading) return <Skeleton rows={7} />
 
   if (state.error) {
@@ -44,16 +57,11 @@ export function LaunchGates({ state, onRefresh }) {
   const broken = failing.filter((g) => !g.deliberate)
 
   return (
-    <section className="mica-gates" aria-labelledby="mica-gates-heading">
-      <div className="mica-gates-head">
-        <h2 id="mica-gates-heading" className="mica-gates-title">
-          Launch readiness
-        </h2>
-        <button type="button" className="mica-tab mica-tab--refresh" onClick={onRefresh}>
-          Re-check
-        </button>
-      </div>
-
+    // No visible heading: the active tab already says "Launch readiness" immediately above, and a
+    // second copy of it read as a stray label. The accessible name is kept for a screen reader, which
+    // does not have the tab in view. Re-check lives in the tab row with Refresh - same control, same
+    // place, rather than a second convention.
+    <section className="mica-gates" aria-label="Launch readiness">
       <Summary
         ready={state.ready}
         mayStart={state.mayStartSessions}
@@ -143,10 +151,10 @@ function Gate({ gate }) {
             {gate.title}
             <span className={`mica-gate-state mica-gate-state--${status}`}>{label}</span>
           </p>
-          <p className="mica-gate-detail">{gate.detail}</p>
+          <p className="mica-gate-detail">{withCode(gate.detail)}</p>
           {gate.how_to_fix ? (
             <p className="mica-gate-fix">
-              <strong>To clear it:</strong> {gate.how_to_fix}
+              <strong>To clear it:</strong> {withCode(gate.how_to_fix)}
             </p>
           ) : null}
         </div>

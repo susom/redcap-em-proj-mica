@@ -273,25 +273,48 @@ class LaunchReadiness
         );
     }
 
-    /** Gate 4 - the models the module is configured to call actually exist. */
+    /**
+     * Gate 4 - both models the module needs are configured, and both exist.
+     *
+     * "Both", not "whichever happens to be set". This gate used to filter out unset aliases and then
+     * check only the remainder, so a project with a counselor alias and **no SafetyScan alias** read
+     * as `PASSING` under the heading "Model aliases resolve" - with a detail line naming the one model
+     * it did find, which makes it look like the whole answer. The missing one is the safety scanner:
+     * the exact reading this gate exists to prevent, on the exact setting where it matters most.
+     * `stage-6 §6.3` asks for "counselor + scan model aliases resolve", and that is what this does.
+     */
     private function modelsGate(): GateResult
     {
         $available = $this->env->availableModelAliases();
-        $configured = array_filter([
-            'counselor' => $this->env->counselorAlias(),
+        $aliases = [
+            'counselor'  => $this->env->counselorAlias(),
             'safetyscan' => $this->env->safetyScanAlias(),
-        ], static fn(?string $a): bool => $a !== null && $a !== '');
+        ];
 
-        if ($configured === []) {
+        $unset = array_keys(array_filter(
+            $aliases,
+            static fn(?string $a): bool => $a === null || trim($a) === ''
+        ));
+
+        if ($unset !== []) {
             return new GateResult(
                 'models',
                 'Model aliases resolve',
                 false,
-                'No model alias is configured.',
-                'Set the counselor and SafetyScan aliases to values in the SecureChatAI registry.'
+                sprintf(
+                    'No %s alias is configured%s.',
+                    implode(' or ', $unset),
+                    count($unset) === 1
+                        ? ' - so the model it names is whatever the code happens to default to'
+                        : ''
+                ),
+                'Set both the counselor (`llm-model`) and SafetyScan (`safetyscan-model-alias`) '
+                . 'aliases to values in the SecureChatAI registry. An unset SafetyScan alias is the '
+                . 'more serious of the two: it decides which model screens a session for risk.'
             );
         }
 
+        $configured = $aliases;
         $missing = [];
         foreach ($configured as $which => $alias) {
             if (!in_array($alias, $available, true)) {

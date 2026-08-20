@@ -26,12 +26,25 @@ export function App() {
   // them. Landing them on a tab that 403s would read as a broken dashboard, when in fact the one
   // thing they are entitled to - the configuration checklist - is right there.
   const [view, setView] = useState(canSeeQueue ? 'queue' : canSeeGates ? 'gates' : 'queue')
+
   const [filters, setFilters] = useState({})
   const [queueState, setQueueState] = useState({ loading: true, error: null, queue: [], summary: null })
   const [sessionState, setSessionState] = useState({ loading: false, error: null, session: null })
   const [auditState, setAuditState] = useState({ loading: false, error: null, events: [] })
   const [saving, setSaving] = useState(false)
   const [flash, setFlash] = useState(null)
+
+  /**
+   * Change screen, and drop whatever the last screen was saying.
+   *
+   * The flash is about something that just happened on the screen you were on. Leaving it up across
+   * a tab change put "Decision recorded: dismissed" at the top of the launch checklist, which reads
+   * as a statement about the thing you are now looking at.
+   */
+  const goTo = useCallback((next) => {
+    setView(next)
+    setFlash(null)
+  }, [])
 
   const loadQueue = useCallback(async (activeFilters) => {
     setQueueState((s) => ({ ...s, loading: true, error: null }))
@@ -157,7 +170,7 @@ export function App() {
             type="button"
             className="mica-tab"
             aria-current={view === 'queue' ? 'page' : undefined}
-            onClick={() => setView('queue')}
+            onClick={() => goTo('queue')}
           >
             Queue
           </button>
@@ -167,7 +180,7 @@ export function App() {
             type="button"
             className="mica-tab"
             aria-current={view === 'gates' ? 'page' : undefined}
-            onClick={() => setView('gates')}
+            onClick={() => goTo('gates')}
           >
             {/* Not "Settings": getPolicy/savePolicy are unimplemented, and a Settings tab holding
                 one read-only checklist promises something that is not there. */}
@@ -179,7 +192,7 @@ export function App() {
             type="button"
             className="mica-tab"
             aria-current={view === 'audit' ? 'page' : undefined}
-            onClick={() => setView('audit')}
+            onClick={() => goTo('audit')}
           >
             Audit trail
           </button>
@@ -192,6 +205,18 @@ export function App() {
             disabled={queueState.loading}
           >
             {queueState.loading ? 'Refreshing…' : 'Refresh'}
+          </button>
+        ) : null}
+        {view === 'gates' ? (
+          // Same place as Refresh rather than a second control inside the card: gates change when
+          // settings do, so re-checking is the same kind of act as reloading the queue.
+          <button
+            type="button"
+            className="mica-tab mica-tab--refresh"
+            onClick={loadGates}
+            disabled={gatesState.loading}
+          >
+            {gatesState.loading ? 'Re-checking…' : 'Re-check'}
           </button>
         ) : null}
       </nav>
@@ -238,7 +263,7 @@ export function App() {
         />
       ) : null}
 
-      {view === 'gates' ? <LaunchGates state={gatesState} onRefresh={loadGates} /> : null}
+      {view === 'gates' ? <LaunchGates state={gatesState} /> : null}
 
       {view === 'audit' ? (
         auditState.loading ? (

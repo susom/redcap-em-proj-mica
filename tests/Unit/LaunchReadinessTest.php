@@ -3,6 +3,7 @@
 namespace Stanford\MICA\Tests\Unit;
 
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Stanford\MICA\GateResult;
 use Stanford\MICA\LaunchReadiness;
@@ -229,7 +230,51 @@ final class LaunchReadinessTest extends TestCase
         $this->env->safetyScan = '';
 
         $this->assertSame(['models'], $this->failedIds());
-        $this->assertStringContainsString('No model alias is configured', $this->byId()['models']->detail);
+        $this->assertStringContainsString(
+            'No counselor or safetyscan alias is configured',
+            $this->byId()['models']->detail
+        );
+    }
+
+    /**
+     * @param string $which the alias left unset
+     */
+    #[DataProvider('halfConfiguredAliases')]
+    public function testHalfTheModelsConfiguredIsNotPassing(string $which, string $expected): void
+    {
+        // This gate used to filter unset aliases out and check only the remainder, so a project with
+        // a counselor alias and no SafetyScan alias read as PASSING under the heading "Model aliases
+        // resolve" - with a detail line naming the one model it did find, which reads like the whole
+        // answer. Found on a real project: PID 257 had exactly this and the checklist showed green.
+        if ($which === 'counselor') {
+            $this->env->counselor = null;
+        } else {
+            $this->env->safetyScan = '';
+        }
+
+        $this->assertSame(['models'], $this->failedIds());
+        $this->assertStringContainsString($expected, $this->byId()['models']->detail);
+    }
+
+    /** @return array<string,array{string,string}> */
+    public static function halfConfiguredAliases(): array
+    {
+        return [
+            'no counselor alias'  => ['counselor', 'No counselor alias is configured'],
+            'no safetyscan alias' => ['safetyscan', 'No safetyscan alias is configured'],
+        ];
+    }
+
+    public function testTheFixTellsThemWhichOfTheTwoMattersMore(): void
+    {
+        // An unset SafetyScan alias decides which model screens a session for risk. An unset
+        // counselor alias is a chatbot that does not work, which reports itself within a minute.
+        $this->env->safetyScan = '';
+
+        $this->assertStringContainsString(
+            'decides which model screens a session for risk',
+            $this->byId()['models']->howToFix
+        );
     }
 
     // ------------------------------------------------------------- gate 5, policy

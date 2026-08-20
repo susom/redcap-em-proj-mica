@@ -2,6 +2,17 @@
 
 Playwright specs, desktop (1400×950) and iPhone 13.
 
+## Installing
+
+```bash
+npm run e2e:install      # playwright + the chromium binary
+```
+
+Playwright is a **devDependency of the module root**, not of either SPA - see the
+`_comment` in `package.json` for why nothing here may be a runtime dependency. If
+`node e2e/...` reports `Cannot find module 'playwright'`, this is the step that was
+skipped.
+
 | File | Covers | Signs in as |
 |---|---|---|
 | `full-path.js` | Survey Login gate (incl. scoping and a wrong-credential attempt), chatbot load, multi-turn conversation with context retention, bundle hygiene, reload/restore, End Session, mobile layout | a **participant**, via native Survey Login |

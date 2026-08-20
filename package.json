@@ -1,0 +1,24 @@
+{
+  "name": "proj-mica-e2e",
+  "private": true,
+  "_comment": [
+    "The E2E toolchain only. This module SHIPS as a directory - REDCap deploys the whole tree - so",
+    "nothing here may be a runtime dependency. Playwright is therefore a devDependency, for the same",
+    "reason PHPUnit lives in tools/composer.json rather than in require-dev: the split is structural,",
+    "not a flag somebody has to remember.",
+    "",
+    "node_modules is gitignored and npm is never run in production, so this file's only job is to make",
+    "`node e2e/*.js` reproducible instead of depending on whatever happened to be installed. The",
+    "browser binaries are NOT in here - run `npx playwright install chromium` once if the cache is cold.",
+    "",
+    "The SPAs have their own package.json files (mica-review/, mica-chatbot/) and are unaffected."
+  ],
+  "scripts": {
+    "e2e:install": "npm install && npx playwright install chromium",
+    "e2e:review": "node e2e/review-dashboard.js",
+    "e2e:participant": "node e2e/full-path.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}

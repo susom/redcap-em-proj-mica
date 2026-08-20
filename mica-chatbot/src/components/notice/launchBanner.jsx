@@ -44,12 +44,12 @@ export function LaunchBanner({ banner }) {
                     {banner.count === 1 ? "1 gate is" : `${banner.count} gates are`} unmet:{" "}
                     <span className="mica-launch__titles">{titles.join(" · ")}</span>
                 </p>
+                {/* Kept to one line where possible. The first draft ran to three sentences, which
+                    took five lines of an iPhone and pushed the conversation off the top of the
+                    screen - on the one device where the conversation is the whole point. */}
                 <p className="mica-launch__aside">
-                    {allDecisions
-                        ? "Nothing is broken — this is waiting on a decision from study leadership. "
-                        : ""}
-                    In a production project this session would be refused. Sessions here are still
-                    screened, and findings still reach the review queue.
+                    {allDecisions ? "Awaiting a decision, not broken. " : ""}
+                    In production this session would be refused; screening and review still run.
                 </p>
             </div>
         </div>

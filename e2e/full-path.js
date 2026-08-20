@@ -120,6 +120,45 @@ const send = async (p, text, waitMs = 25000) => {
   check('B6 exactly one JS + one CSS bundle loaded', ui.bundle.length === 1 && ui.css.length === 1,
         `${ui.bundle.map(b => b.split('/').pop())} / ${ui.css.map(c => c.split('/').pop())}`);
   check('B7 no failed requests', p._failed.length === 0, JSON.stringify(p._failed.slice(0, 2)));
+
+  // The launch-gates banner. PID 257 is a development project and its acknowledgment target ships
+  // unset on purpose, so the banner is always present here - no fixture needed.
+  const banner = await p.evaluate(() => {
+    const el = document.querySelector('.mica-launch');
+    return {
+      present: Boolean(el),
+      text: el ? el.innerText : '',
+      role: el ? el.getAttribute('role') : null,
+      // Must be chrome, not conversation: outside the transcript's live region, and not inside a
+      // message bubble wearing MICA's avatar.
+      insideLog: Boolean(el && el.closest('[role=log]')),
+      insideMessages: Boolean(el && el.closest('.messages')),
+      boot: window.mica_bootstrap?.launch_banner || null,
+    };
+  });
+
+  check('B8  the development banner renders', banner.present, banner.text.replace(/\n/g, ' | ').slice(0, 110));
+  check('B9  it says sessions would be refused in production',
+    /would be refused/i.test(banner.text) && /development only/i.test(banner.text));
+  check('B10 it names what is unmet', /acknowledgment target/i.test(banner.text));
+
+  // The rule the whole banner rests on: this page is in no-auth-pages, so gate DETAIL must not be
+  // here. Titles and a count only.
+  check('B11 it leaks no gate detail, model registry or address',
+    !/null on purpose|clinical governance|registered|@/i.test(banner.text),
+    banner.text.replace(/\n/g, ' | ').slice(0, 90));
+  check('B12 and the bootstrap it came from carries none either',
+    banner.boot !== null && !JSON.stringify(banner.boot).match(/detail|how_to_fix|gemini|gpt-|claude-/i),
+    JSON.stringify(banner.boot || {}).slice(0, 110));
+
+  // System state never speaks as the counselor - the same rule sessionNotice enforces.
+  check('B13 it is chrome, not something MICA said',
+    !banner.insideLog && !banner.insideMessages && banner.role === 'status');
+
+  // The conversation still works around it: a banner that blocked a dev session would make the
+  // development project useless for testing, which is the one thing it is for.
+  check('B14 the session is still usable', ui.hasIntro && ui.inputs >= 1);
+
   await p.screenshot({ path: `${SHOTS}/B-loaded.png`, fullPage: true });
 
   console.log('\n=== C. CONVERSATION ===');

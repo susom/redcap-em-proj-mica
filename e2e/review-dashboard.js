@@ -48,7 +48,17 @@ async function newCtx(browser, mobile = false) {
     if (/offsetHeight/.test(m)) { p._coreErrs++; return; }
     p._errs.push(m.slice(0, 200));
   });
-  p.on('requestfailed', (r) => p._failed.push(`${r.url().slice(-70)} :: ${r.failure()?.errorText}`));
+  // Only requests to REDCap's own host count. REDCap's footer pulls a logo from
+  // redcap.vanderbilt.edu, which Chrome blocks under Opaque Response Blocking - a third-party asset
+  // on a page the module does not control, failing differently depending on the network. Counting it
+  // made a green run go red for a reason no amount of reading this module could explain. Off-host
+  // failures are tallied and reported separately, never attributed to MICA.
+  p._offHost = 0;
+  p.on('requestfailed', (r) => {
+    const url = r.url();
+    if (!url.startsWith(BASE)) { p._offHost++; return; }
+    p._failed.push(`${url.slice(-70)} :: ${r.failure()?.errorText}`);
+  });
   return { ctx, p };
 }
 
@@ -247,21 +257,30 @@ async function login(p) {
     check('D25 a passing gate does not give advice it does not need',
       (await p.locator('.mica-gate--pass .mica-gate-fix').count()) === 0);
 
+    // The disposition above set a flash ("Decision recorded: ..."). Carrying it onto this tab put a
+    // green statement about a finding at the top of a configuration checklist, where it reads as a
+    // statement about what you are now looking at.
+    check('D26 a flash from the previous screen does not follow the tab change',
+      !/Decision recorded/i.test(gatesText),
+      gatesText.split('\n').slice(0, 2).join(' | ').slice(0, 90));
+
     await p.screenshot({ path: `${SHOTS}/review-gates-desktop.png`, fullPage: true });
 
-    // Re-check must actually re-ask, since gates change when settings do.
+    // Re-check must actually re-ask, since gates change when settings do. It lives in the tab row
+    // with Refresh rather than inside the card.
     await p.locator('button:has-text("Re-check")').first().click();
     await p.waitForTimeout(1200);
-    check('D26 re-check reloads the checklist', (await p.locator('.mica-gate').count()) === 7);
+    check('D27 re-check reloads the checklist', (await p.locator('.mica-gate').count()) === 7);
   } else {
-    for (const n of ['D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26']) {
+    for (const n of ['D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26', 'D27']) {
       check(`${n}  (skipped — no launch-readiness tab)`, false);
     }
   }
 
-  check('D27 no MICA JS errors', p._errs.length === 0, p._errs.slice(0, 2).join(' | '));
-  check('D28 no failed requests', p._failed.length === 0, p._failed.slice(0, 2).join(' | '));
+  check('D28 no MICA JS errors', p._errs.length === 0, p._errs.slice(0, 2).join(' | '));
+  check('D29 no failed requests', p._failed.length === 0, p._failed.slice(0, 2).join(' | '));
   if (p._coreErrs) console.log(`        (${p._coreErrs} REDCap-core offsetHeight errors ignored)`);
+  if (p._offHost) console.log(`        (${p._offHost} off-host asset failures ignored — not MICA's)`);
 
   await ctx.close();
 

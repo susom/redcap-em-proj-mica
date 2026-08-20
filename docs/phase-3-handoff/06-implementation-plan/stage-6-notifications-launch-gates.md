@@ -479,14 +479,134 @@ and is a deployment concern rather than a module one.
 All six verify scripts PASS: entity-schema, transcript-chunking,
 transcript-store, safetyscan, disposition, notifications.
 
+## ✅ Implementation record — 6.3 frontend (2026-08-20)
+
+The two consumers of the `launchReadiness` endpoint.
+
+### The dashboard: a "Launch readiness" tab
+
+Not "Settings" — `getPolicy`/`savePolicy` are unimplemented, and a Settings tab
+holding one read-only checklist promises something that is not there.
+
+Every gate is listed, passing and failing, in the server's order. A list showing
+only failures could not be read as a checklist, and a checklist is what tells
+somebody what is left. It is deliberately **not** re-sorted with failures first:
+the order is stable and meaningful (the deliberate blocker is first), and a list
+whose rows move around is one people re-read from the top every time.
+
+**The headline is the hard part.** A development project starts sessions even
+with every gate failing, so `may_start_sessions` is `true` there — and printing
+that above a red checklist reads as reassurance. A PI would reasonably conclude
+they were ready to launch, which is precisely the ambiguity the gates exist to
+prevent. So the summary always says *why* sessions are running, and on a
+development project says they would be refused in production. When the only
+thing outstanding is the deliberate blocker it adds that nothing is broken —
+telling an administrator to go and fix a decision that belongs to their PI wastes
+the one read they will give it.
+
+Three further refusals: the deliberate blocker renders as *awaiting a decision*,
+not an error; an empty gate list renders as **unknown**, never as everything
+passing; and state is never signalled by colour alone — every row carries
+`Passing` / `Blocking` / `Awaiting a decision` as text.
+
+### The chatbot: a strip above the conversation
+
+Titles and a count only. `pages/chatbot.php` is in `no-auth-pages`, so anything
+there is readable by anyone holding the survey link — and the models gate's
+`detail` enumerates the SecureChatAI registry while the recipients gate quotes
+email addresses. Built by `LaunchReadiness::developmentBanner()` rather than
+assembled in the hook: the chatbot has no vitest harness, so an inline derivation
+would have been untested on both sides.
+
+It is not a `SessionNotice` (that component is a terminal state which *replaces*
+the transcript; this one runs alongside a working session) and not in MICA's
+voice — the same rule the session notice enforces, and it matters more here
+because this text is not addressed to the participant at all.
+
+### `evaluate()` is memoised
+
+One page load asks several times: the chat page calls `mayStartSession()` then
+`developmentBanner()`; the dashboard calls `isReady()` then `evaluate()`. Each
+evaluation hashes every pinned artifact and runs a user-rights join. And
+`mayStartSession()` short-circuits on `!isProductionProject()`, so before this
+the banner would have been the **first full seven-gate evaluation ever run on a
+participant-facing page load**.
+
+### A super user landed on a tab that refused them
+
+`rolesFor()` grants `sysadmin` unconditionally, so a super user reaches the
+dashboard — but `reviewQueue` is RA/PI only, so they landed on a 403 and would
+have concluded the dashboard was broken, while the one thing they are entitled to
+(the configuration checklist they own) sat one tab away. The shell now asks the
+server which tabs exist (`canSeeQueue` / `canSeeAudit` / `canSeeLaunchGates`) and
+opens the checklist for them. Asked of `RoleService` rather than derived from the
+role strings in JavaScript, so the matrix stays the single answer to who may do
+what.
+
+### Found by looking at the screenshots, not by the assertions
+
+All 40 E2E checks passed on the first run. Reading the images found four things
+none of them covered:
+
+1. **A stale flash followed the tab change.** "Decision recorded: dismissed" sat
+   at the top of the launch checklist, where it reads as a statement about what
+   you are now looking at. Tab switches now clear it. The E2E asserts this, in the
+   pass that records a real decision first — a vitest for it would have passed
+   trivially, since no disposition happens in a unit fixture.
+2. **"Re-check" read as plain text** beside a heading that just repeated the
+   active tab label. Both fixed together: the control moved into the tab row where
+   `Refresh` already lives, and the duplicate heading became an `aria-label`.
+3. **Literal backticks.** The server writes setting names in backticks; they
+   rendered as backtick characters mid-sentence. Now `<code>`, interpolated as
+   text so it cannot become a markup surface.
+4. **An orphaned glyph on mobile.** Dropping the mark column under 40rem left the
+   `?`/`✓`/`✕` alone on its own line. Hidden there — it is decorative and every
+   row already carries its state as text.
+
+And on the chatbot, the mobile banner ran to five lines of an iPhone, pushing the
+conversation off the top of the screen on the one device where the conversation is
+the whole point. The aside went from three sentences to one.
+
+### Two real defects the E2E caught that nothing else could
+
+**The banner was in a dead component.** `mica-chatbot/src/App.jsx` is not
+rendered — `main.jsx` renders `AppRouter` directly, and App.jsx survives only to
+pull its stylesheets into the bundle in the right order (its own comment says so).
+The first version put `<LaunchBanner>` there, which shipped the CSS and **none of
+the markup**: `mica-launch` appeared once in the built CSS and zero times in the
+built JS. Every unit test would have passed. It lives in `views/Home/home.jsx`
+now, which is what actually mounts.
+
+**The models gate was green with no SafetyScan alias.** PID 257 has `llm-model`
+set and `safetyscan-model-alias` unset, and the gate read `PASSING` with a detail
+line naming the one model it found — which looks like the whole answer. The gate
+filtered unset aliases out and checked only the remainder, so "half configured"
+was indistinguishable from "configured". `stage-6 §6.3` asks for "counselor +
+scan model aliases resolve", and it now requires both, with the fix text saying
+which of the two matters more: an unset SafetyScan alias decides which model
+screens a session for risk. It correctly blocks launch on PID 257 today.
+
+Also fixed in the harness: `requestfailed` counted REDCap's own Vanderbilt footer
+logo, which Chrome blocks under Opaque Response Blocking. Off-host failures are
+now tallied and reported separately rather than attributed to MICA — a green run
+was going red for a reason no amount of reading this module could explain.
+
+### Verified
+
+`node e2e/review-dashboard.js` — **40 passed, 0 failed** (desktop 1400×950 and
+iPhone 13), including seven gates listed, the decision-not-a-fault label, state
+as text on both viewports, no sideways overflow on long gate details, and no
+stale flash. `node e2e/full-path.js` — **30 passed, 0 failed**, including the
+banner rendering, naming what is unmet, leaking no gate detail, and being chrome
+rather than something MICA said.
+
+929 PHP tests, 68 vitest, all six verify scripts PASS against live PID 257.
+
 ### Still open
 
 - **6.1 remainder:** `getPolicy` / `savePolicy` endpoints. The policy is
   edited in the module configuration for now, and validated on read — which
   is the half that actually protects a participant.
-- **6.3 frontend:** the launch-readiness card on the dashboard Settings view,
-  and the "launch gates unmet — development only" banner in the chatbot. The
-  `launchReadiness` endpoint that feeds both is live.
 - **6.4:** the security/compliance pass — Psalm via Control Center module
   scanning, `composer audit`, `npm audit`, and the
   `references/security.md` / `references/compliance.md` walk.
@@ -501,7 +621,8 @@ transcript-store, safetyscan, disposition, notifications.
 
 - [x] Gates enforced on session start, keyed on REDCap project status;
       staff explanation logged; participant sees approved fallback wording
-- [ ] Dev banner + dashboard launch-readiness card (endpoint live, UI pending)
+- [x] Dev banner + dashboard launch-readiness card, verified in a browser on both
+      viewports
 - [x] ~~production-mode un-enableable while failing~~ — superseded: no such
       setting; see the departure note above
 - [x] Notifications policy-driven; every attempt logged including refusals;

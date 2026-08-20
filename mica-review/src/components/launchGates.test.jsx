@@ -1,6 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { LaunchGates } from './LaunchGates.jsx'
 
 /**
@@ -42,7 +41,7 @@ const state = (over = {}) => ({
 
 describe('the summary', () => {
   it('says all gates pass when they do', () => {
-    render(<LaunchGates state={state()} onRefresh={() => {}} />)
+    render(<LaunchGates state={state()} />)
 
     expect(screen.getByText(/All 1 launch gates pass/i)).toBeTruthy()
   })
@@ -53,7 +52,6 @@ describe('the summary', () => {
     render(
       <LaunchGates
         state={state({ ready: false, mayStartSessions: true, gates: [gate({ passed: false })] })}
-        onRefresh={() => {}}
       />,
     )
 
@@ -66,7 +64,6 @@ describe('the summary', () => {
     render(
       <LaunchGates
         state={state({ ready: false, mayStartSessions: false, gates: [gate({ passed: false })] })}
-        onRefresh={() => {}}
       />,
     )
 
@@ -80,7 +77,6 @@ describe('the summary', () => {
     render(
       <LaunchGates
         state={state({ ready: false, mayStartSessions: true, gates: [ackGate(false), gate()] })}
-        onRefresh={() => {}}
       />,
     )
 
@@ -96,7 +92,6 @@ describe('the summary', () => {
           mayStartSessions: true,
           gates: [ackGate(false), gate({ passed: false })],
         })}
-        onRefresh={() => {}}
       />,
     )
 
@@ -111,7 +106,6 @@ describe('the summary', () => {
           mayStartSessions: false,
           gates: [gate({ passed: false }), gate({ id: 'a' }), gate({ id: 'b', passed: false })],
         })}
-        onRefresh={() => {}}
       />,
     )
 
@@ -130,7 +124,6 @@ describe('the gate rows', () => {
           mayStartSessions: false,
           gates: [gate({ id: 'p', title: 'Passing thing' }), gate({ id: 'f', title: 'Failing thing', passed: false })],
         })}
-        onRefresh={() => {}}
       />,
     )
 
@@ -150,7 +143,6 @@ describe('the gate rows', () => {
           mayStartSessions: false,
           gates: [gate({ id: 'a', title: 'First' }), gate({ id: 'b', title: 'Second', passed: false })],
         })}
-        onRefresh={() => {}}
       />,
     )
 
@@ -165,7 +157,6 @@ describe('the gate rows', () => {
     render(
       <LaunchGates
         state={state({ ready: false, mayStartSessions: true, gates: [ackGate(false)] })}
-        onRefresh={() => {}}
       />,
     )
 
@@ -183,7 +174,6 @@ describe('the gate rows', () => {
           mayStartSessions: false,
           gates: [gate(), gate({ id: 'f', passed: false }), ackGate(false)],
         })}
-        onRefresh={() => {}}
       />,
     )
 
@@ -196,7 +186,6 @@ describe('the gate rows', () => {
     render(
       <LaunchGates
         state={state({ ready: false, mayStartSessions: true, gates: [ackGate(false), ackGate(true)] })}
-        onRefresh={() => {}}
       />,
     )
 
@@ -207,14 +196,14 @@ describe('the gate rows', () => {
 
 describe('loading and failure', () => {
   it('shows a skeleton while loading rather than an empty checklist', () => {
-    render(<LaunchGates state={state({ loading: true, gates: [] })} onRefresh={() => {}} />)
+    render(<LaunchGates state={state({ loading: true, gates: [] })} />)
 
     expect(screen.getByText('Loading…')).toBeTruthy()
     expect(screen.queryByRole('listitem')).toBeNull()
   })
 
   it('reports a load failure instead of showing zero gates', () => {
-    render(<LaunchGates state={state({ error: 'nope', gates: [] })} onRefresh={() => {}} />)
+    render(<LaunchGates state={state({ error: 'nope', gates: [] })} />)
 
     expect(screen.getByText(/could not be loaded/i)).toBeTruthy()
     expect(screen.getByText('nope')).toBeTruthy()
@@ -222,19 +211,39 @@ describe('loading and failure', () => {
 
   it('treats an empty checklist as unknown, not as everything passing', () => {
     // An empty list rendering as a green "all pass" is the single worst outcome available here.
-    render(<LaunchGates state={state({ ready: true, gates: [] })} onRefresh={() => {}} />)
+    render(<LaunchGates state={state({ ready: true, gates: [] })} />)
 
     expect(screen.getByText(/No gates were reported/i)).toBeTruthy()
     expect(screen.getByText(/not the same as everything passing/i)).toBeTruthy()
     expect(screen.queryByText(/launch gates pass/i)).toBeNull()
   })
+})
 
-  it('re-checks on demand, because gates change when settings do', async () => {
-    const onRefresh = vi.fn()
-    render(<LaunchGates state={state()} onRefresh={onRefresh} />)
+describe('prose', () => {
+  it('renders backticked setting names as code, not as literal backticks', () => {
+    // The server writes them in backticks. Rendered raw, a reader saw
+    // "set `ra_review_policy.critical_acknowledgment_minutes` in the notification policy".
+    render(
+      <LaunchGates
+        state={state({
+          ready: false,
+          mayStartSessions: true,
+          gates: [
+            gate({
+              passed: false,
+              deliberate: true,
+              how_to_fix: 'Set `ra_review_policy.critical_acknowledgment_minutes` in the policy.',
+            }),
+          ],
+        })}
+      />,
+    )
 
-    await userEvent.click(screen.getByRole('button', { name: /re-check/i }))
-
-    expect(onRefresh).toHaveBeenCalledOnce()
+    const fix = screen.getByText(/To clear it:/).closest('p')
+    expect(fix.textContent).not.toContain('`')
+    expect(fix.querySelector('code')?.textContent).toBe(
+      'ra_review_policy.critical_acknowledgment_minutes',
+    )
   })
 })
+
