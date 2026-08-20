@@ -92,14 +92,104 @@ final class ScanRunner {
   quote; the v1.0-regression guard — transcript where "MICA" claims staff
   were alerted still yields `critical`.
 
+## ✅ Implementation record — 4.2 / 4.3 (2026-08-20)
+
+**Done:** `ScanRunner`, `QuoteVerifier`, `FindingWriter`, `SecureChatSafetyScanCaller`,
+`FixtureSafetyScanCaller` (`scan-mock-mode`), and the fixture set. **Not done:** 4.1, the
+SecureChatAI PR — it is a separate repo and a separate review. Everything here works
+against a stub and against mock mode; only the *live* Gemini smoke waits on it.
+
+### 4.1 is still the blocker for a real Gemini call, and the code says so out loud
+
+`SecureChatAI.php:399` allowlists `json_schema` to nine OpenAI aliases. Gemini is not
+one, so structured output is **requested and silently dropped**, the model answers in
+prose, and the scan fails as `invalid_json` — for a configuration reason that reads like
+a model fault. Rather than wait, `SecureChatSafetyScanCaller` records
+`schemaWasSent: false` on the run row and says in the error text that this is
+configuration, not the model. Two other verified provider facts shape the same class:
+
+- `sanitizeOutputForUI()` strips `error`/`type`, so a consumer cannot tell a provider
+  failure from a real answer. The interim signal is `model === null && usage === null`,
+  quarantined in one method so PR #1 removes it in one edit. Sound only because MICA
+  never sets `agent_mode` — the request deliberately does not.
+- `structured_output` is populated only on the OpenAI-compatible path, so for a
+  Claude/Gemini alias `normalizeResponse()` sets `content` alone. Parsing `content` is
+  therefore load-bearing, not defensive: it is the only way a non-OpenAI alias works.
+
+### Four ways a schema-valid answer is still not a clean screen
+
+The taxonomy is not only about transport, and this is the part worth reviewing:
+
+| Branch | Why it is not `ok` |
+|---|---|
+| `unable_to_assess` | The model says so itself. A **valid** `scan_result` with an empty findings list — shaped identically to `no_supported_concern`. The single easiest way to build a silent negative screen into this pipeline. Mapped to `refusal`; terminal. |
+| `citation_mismatch` | Fails the **whole** scan, not the offending finding. Releasing the verified subset would publish a partial picture as a complete one. Terminal: a scanner that fabricated evidence does not get a second try at automatic release. |
+| `schema_invalid` | Structured output that does not satisfy the pinned schema. |
+| no review target | Findings exist, `mica_safety_finding` does not (audit G5). Fails with the verbatim output preserved on the run row. |
+
+### New: a `terminal` flag, and why the taxonomy alone was not enough
+
+A missing review instrument classifies as `service_error` — the pinned taxonomy has no
+value for a configuration fault — but `service_error` is *transient*, so the job would
+re-call and re-pay for the model twice more against something that cannot resolve
+between attempts. `ScanOutcome::$terminal` lets the runner say "retrying cannot help".
+It can only ever escalate a retry into manual review, **never the reverse**, so it
+cannot be used to route a finding away from a human. Asserted both ways.
+
+### `run_status` and job status answer different questions
+
+Worth stating because the verification script got it wrong first:
+`mica_scan_run.run_status` describes **the model call** (answered, schema-valid, quotes
+verified). Whether anything was **released** is the job's status, with `last_error` for
+the reason. An `ok` run row under a `manual_review_required` job is not a contradiction —
+it is a scan that worked and a release that did not, which is exactly what a missing
+review instrument produces.
+
+### Two bugs in QuoteVerifier, both found by testing
+
+1. `str_contains($anything, '')` is **TRUE** in PHP, so an empty `exact_quote` verified
+   against every message in the transcript. The output schema forbids one — but the
+   release gate does not get to assume an earlier check ran.
+2. The paraphrase diagnosis compared prefixes from byte 0 of two strings, when a quote is
+   a substring from the *middle* of a message. It aligned immediately-divergent and
+   reported every paraphrase as a fabrication. Now a longest-matching-prefix search
+   (binary, since the predicate is monotonic — this runs inside a cron with a budget).
+
+### Mock mode does not bypass verification
+
+Fixtures go through the same schema validation and the same byte-exact quote check as a
+real response, which is what makes `fabricated_quote` a regression guard rather than a
+comment. Its first live run proved the point: fixtures hardcoded `message_id: "L1"` while
+real transcripts use `L<log_id>`, so **every** mock scan failed as `citation_mismatch`
+and the release path was untestable. Fixtures now cite `#1` and the caller resolves it
+against the transcript — an *identifier* only; `exact_quote` is never rewritten.
+
+### Verified
+
+`scripts/verify-safetyscan.php`: **PASS** — all six fixtures driven through seed →
+finalize → real cron pass → assert, on the live instance:
+
+| Fixture | run_status | job | released |
+|---|---|---|---|
+| `no_supported_concern` | `ok` | `ready_for_review` | nothing, correctly |
+| `self_harm_critical` | `ok` | `manual_review_required` (no instrument yet) | nothing; `last_error` names the instrument |
+| `fabricated_quote` | `citation_mismatch` | `manual_review_required` (first attempt) | **nothing** |
+| `unable_to_assess` | `refusal` | `manual_review_required` (first attempt) | nothing |
+| `content_filter` | `content_filter` | `manual_review_required` (first attempt) | nothing |
+| `timeout` | `timeout` | `queued`, backing off | nothing |
+
+**534 unit tests**, phpcs clean. All four live probes green.
+
 ## Acceptance checklist
 
-- [ ] SecureChatAI PR #2 merged; Gemini returns `structured_output`;
-      `content_filter` surfaced as its own error class
-- [ ] Quote verifier rejects every near-miss class; only byte-exact
-      substrings of the cited message pass
-- [ ] Verbatim model output preserved on `mica_scan_run`; finding instances
-      match it field-for-field
-- [ ] Every failure class lands in the right terminal/retry path; no
-      negative screens
-- [ ] `scan-mock-mode` E2E path works without network
+- [ ] **SecureChatAI PR #2 merged** (separate repo — the only open item); Gemini
+      returns `structured_output`; `content_filter` surfaced as its own error class.
+      Until then `schemaWasSent: false` is recorded on the run row and the failure text
+      says it is configuration, not the model.
+- [x] Quote verifier rejects every near-miss class; only byte-exact
+      substrings of the cited message pass (2026-08-20)
+- [x] Verbatim model output preserved on `mica_scan_run` (2026-08-20). Finding
+      instances cannot be compared field-for-field until the instrument exists (G5)
+- [x] Every failure class lands in the right terminal/retry path; no negative
+      screens (2026-08-20 — six branches verified live)
+- [x] `scan-mock-mode` E2E path works without network (2026-08-20)

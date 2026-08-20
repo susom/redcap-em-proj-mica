@@ -13,8 +13,8 @@ acceptance checklist.
 | 0 — Foundations | [`stage-0-foundations.md`](stage-0-foundations.md) | — | **in progress** — 0.1–0.5 + 0.5b done (CI declined by decision — see the 0.5 record); remaining: cleanup (0.6) |
 | 1 — Counselor v2 turn contract | [`stage-1-turn-contract.md`](stage-1-turn-contract.md) | 0 | **in progress** — **1.1 done** (all four entity types, so 3.1 is done too); parts of 1.6 done (see below); 1.2–1.5 not started |
 | 2 — R01 session engine + frontend | [`stage-2-session-engine.md`](stage-2-session-engine.md) | 1 | not started — auth half (2.3) partly done, see `10-auth-implementation-pid257.md` |
-| 3 — Transcript finalization + scan queue | [`stage-3-transcripts-and-queue.md`](stage-3-transcripts-and-queue.md) | ~~2~~ — **no longer blocked**, see below | **in progress** — 3.1, 3.2, 3.3 and the queue/state-machine half of 3.5 done; remaining: cron worker body (3.5) + `completeSession` rewrite (3.4) |
-| 4 — SafetyScan runner | [`stage-4-safetyscan-runner.md`](stage-4-safetyscan-runner.md) | 3 | not started |
+| 3 — Transcript finalization + scan queue | [`stage-3-transcripts-and-queue.md`](stage-3-transcripts-and-queue.md) | ~~2~~ — **no longer blocked**, see below | **done** (2026-08-19/20). 3.4's pilot-path deletion is deferred to Stage 2, which owns the R01 engine that replaces it |
+| 4 — SafetyScan runner | [`stage-4-safetyscan-runner.md`](stage-4-safetyscan-runner.md) | 3 | **done** (2026-08-20) except 4.1, the SecureChatAI PR — separate repo. Mock mode + stub cover everything; only the live Gemini smoke waits |
 | 5 — RA dashboard | [`stage-5-ra-dashboard.md`](stage-5-ra-dashboard.md) | 4 | not started |
 | 6 — Notifications, digests, launch gates | [`stage-6-notifications-launch-gates.md`](stage-6-notifications-launch-gates.md) | 5 | not started |
 
@@ -181,7 +181,7 @@ not the form. Stage 2 closes it; the Stage 6 launch gate refuses production unti
 | Stage 2 | #8 PID 257 field sign-off (session instruments, auth fields, `mica_safety_finding` instrument) | building the real dictionary; engine work proceeds against a dev copy |
 | Stage 2 | #5 phase-transition matrix sign-off | shipping the default matrix (dev default proceeds) |
 | Stage 2 | #7 ED-tablet launch flow | login UX for baseline (OTP flow proceeds meanwhile) |
-| Stage 4 | SecureChatAI PR #2 review (Irvin/Jordan) | live Gemini structured output |
+| Stage 4 | SecureChatAI PR #2 review (Irvin/Jordan) | **live** Gemini structured output only — the runner, verifier and writer are done and pass in mock mode |
 | Stage 6 | #4 action templates, #1 ack minutes | launch-gate content, not code structure |
 
 None of these blocks *starting* the stage they gate; each stage file states
