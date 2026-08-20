@@ -59,37 +59,42 @@ class RedcapScanResultStore implements ScanResultStoreInterface
         return (bool) $result->fetch_assoc();
     }
 
+    /**
+     * MAX(instance) + 1, treating REDCap's NULL-for-the-first-instance as 1.
+     *
+     * MAX rather than COUNT: a deleted instance would make a count-based next collide with a live
+     * one and overwrite a finding an RA had already dispositioned.
+     *
+     * MAX and COUNT in the same query, because MAX alone cannot answer this. REDCap stores the
+     * first repeat instance as NULL, so a record holding only instance 1 has MAX(instance) IS NULL -
+     * indistinguishable from an empty record by the aggregate alone, and COALESCE(MAX, 0) + 1 would
+     * return 1 for both, colliding with the existing instance in the second case. The COUNT breaks
+     * the tie. (An earlier version had two branches, one of which was dead: MAX over an empty set
+     * returns a row with NULL, never no row, so its `$row === null` guard could not fire.)
+     *
+     * Residual race, stated rather than engineered around: two jobs for the *same record* claimed by
+     * two concurrent cron passes would both compute the same next instance. Within one pass they are
+     * processed sequentially, so the second read sees the first write; REDCap does not overlap its
+     * own cron by default. If overlap ever becomes possible, this needs a row lock, not a bigger
+     * comment.
+     */
     public function nextFindingInstance(string $projectId, string $record, int $eventId): int
     {
-        // MAX + 1 over what exists, rather than a count: a deleted instance would otherwise make
-        // the next write collide with a live one and overwrite a finding an RA had already
-        // dispositioned.
         $result = $this->module->query(
-            'SELECT MAX(instance) AS mx FROM ' . \Records::getDataTable((int) $projectId)
+            'SELECT MAX(instance) AS mx, COUNT(*) AS n FROM ' . \Records::getDataTable((int) $projectId)
             . ' WHERE project_id = ? AND record = ? AND event_id = ? AND field_name = ?',
             [$projectId, $record, $eventId, self::INSTRUMENT . '_complete']
         );
 
-        $row = $result->fetch_assoc();
+        $row = $result->fetch_assoc() ?: ['mx' => null, 'n' => 0];
 
-        // REDCap stores the first repeat instance as NULL, not 1, so an existing-but-null max still
-        // means "instance 1 is taken".
-        if ($row === null || !array_key_exists('mx', $row)) {
-            return 1;
+        if ($row['mx'] !== null) {
+            return ((int) $row['mx']) + 1;
         }
 
-        return $row['mx'] === null ? $this->firstInstanceFor($projectId, $record, $eventId) : ((int) $row['mx']) + 1;
-    }
-
-    private function firstInstanceFor(string $projectId, string $record, int $eventId): int
-    {
-        $result = $this->module->query(
-            'SELECT 1 FROM ' . \Records::getDataTable((int) $projectId)
-            . ' WHERE project_id = ? AND record = ? AND event_id = ? AND field_name = ? LIMIT 1',
-            [$projectId, $record, $eventId, self::INSTRUMENT . '_complete']
-        );
-
-        return $result->fetch_assoc() ? 2 : 1;
+        // No numbered instances. Either the record has none at all (start at 1) or it holds exactly
+        // the NULL-numbered first instance (start at 2).
+        return ((int) $row['n']) > 0 ? 2 : 1;
     }
 
     public function writeFindingInstances(

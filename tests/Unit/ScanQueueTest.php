@@ -13,6 +13,7 @@ use Stanford\MICA\TranscriptException;
 final class ScanQueueTest extends TestCase
 {
     private const NOW = 1_700_000_000;
+    private const EVENT = 1008;
     private const SHA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
     private FakeScanQueueStore $store;
@@ -35,7 +36,7 @@ final class ScanQueueTest extends TestCase
 
     private function enqueue(ScanQueue $queue, string $sha = self::SHA, int $version = 1): array
     {
-        return $queue->enqueue('257', '2', 1, 'baseline', 900, $sha, $version);
+        return $queue->enqueue('257', '2', 1, self::EVENT, 'baseline', 900, $sha, $version);
     }
 
     public function testEnqueueCreatesAQueuedJobThatIsDueImmediately(): void
@@ -71,6 +72,21 @@ final class ScanQueueTest extends TestCase
         $this->assertCount(1, $this->store->jobs);
     }
 
+    public function testTheEventSurvivesOntoTheJobRow(): void
+    {
+        // The test that was missing, and its absence let a real bug ship: ScanRunner read
+        // $job['event_id'] from a row that never carried one, so every finding would have been
+        // written to event 0. Invisible until the review instrument exists, because the write
+        // never ran.
+        $result = $this->enqueue($this->queue());
+
+        $this->assertSame(
+            self::EVENT,
+            $this->store->findJob($result['jobId'])['event_id'],
+            'the cron has no session context of its own to derive the event from'
+        );
+    }
+
     public function testADifferentTranscriptHashIsADifferentJob(): void
     {
         $queue = $this->queue();
@@ -102,8 +118,8 @@ final class ScanQueueTest extends TestCase
         // as a duplicate and never scanned.
         $queue = $this->queue();
 
-        $queue->enqueue('257', '2', 1, 'baseline', 900, self::SHA);
-        $second = $queue->enqueue('257', '2', 2, 'baseline', 950, self::SHA);
+        $queue->enqueue('257', '2', 1, self::EVENT, 'baseline', 900, self::SHA);
+        $second = $queue->enqueue('257', '2', 2, self::EVENT, 'baseline', 950, self::SHA);
 
         $this->assertTrue($second['created']);
         $this->assertCount(2, $this->store->jobs);

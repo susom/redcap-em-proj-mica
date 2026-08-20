@@ -36,7 +36,7 @@ namespace Stanford\MICA;
 class EntityTypes
 {
     /** Bumped whenever a type or index below changes; gates the migration. */
-    public const SCHEMA_VERSION = '1';
+    public const SCHEMA_VERSION = '2';
 
     /**
      * Secondary indexes and UNIQUE constraints, which redcap_entity does not create at all
@@ -85,6 +85,54 @@ class EntityTypes
                 'why'     => '"What did this user touch" - the question an audit is for.',
             ],
         ];
+    }
+
+    /**
+     * redcap_entity's property-type to MySQL-column mapping, transcribed from
+     * EntityDB::buildEntityDBTable().
+     *
+     * Needed because redcap_entity can only CREATE TABLE IF NOT EXISTS - it has no ALTER path at
+     * all, so adding a property to a type that already has a table does *nothing*. Migrating the
+     * column is this module's job, and to do that it has to know the same mapping.
+     *
+     * Kept as a transcription rather than a call into the framework because the framework builds the
+     * DDL string inline in a switch with no reusable accessor. EntityTypesTest pins every type this
+     * module actually declares, so a divergence fails there rather than in production.
+     *
+     * @return array<string,string>
+     */
+    public static function columnTypes(): array
+    {
+        return [
+            'user'             => 'VARCHAR(255)',
+            'email'            => 'VARCHAR(255)',
+            'text'             => 'VARCHAR(255)',
+            'record'           => 'VARCHAR(255)',
+            'entity_reference' => 'INT UNSIGNED',
+            'project'          => 'INT UNSIGNED',
+            'date'             => 'INT',
+            'integer'          => 'INT',
+            'boolean'          => 'TINYINT',
+            'json'             => 'TEXT',
+            'long_text'        => 'TEXT',
+            'data'             => 'MEDIUMTEXT',
+        ];
+    }
+
+    /**
+     * The column definition for one declared property, or null if its type is unmappable.
+     *
+     * NOT NULL is deliberately omitted even for required properties: this is used to ADD a column to
+     * a table that already holds rows, and NOT NULL without a default would be rejected outright (or
+     * silently backfilled with a zero). Required-ness is enforced by Entity::validateProperty() on
+     * every write, which is where it belongs; the column constraint would only add a second, worse
+     * error message.
+     */
+    public static function columnDefinition(array $property): ?string
+    {
+        $type = strtolower((string) ($property['type'] ?? ''));
+
+        return self::columnTypes()[$type] ?? null;
     }
 
     /** @return string[] every entity table this module owns */
@@ -178,6 +226,16 @@ class EntityTypes
                 // sessions in one window from colliding on the idempotency key.
                 'instance' => [
                     'name'     => 'Repeat instance',
+                    'type'     => 'integer',
+                    'required' => true,
+                ],
+                // The session's event. Findings are written to (record, event, instance), so without
+                // this the writer has no event to target - and REDCap::getEventNames() for event 0
+                // yields a name that is either wrong or rejected. Missed on the first pass exactly
+                // as `instance` nearly was, and invisible because the review instrument does not
+                // exist yet on PID 257, so the write never ran.
+                'event_id' => [
+                    'name'     => 'Event',
                     'type'     => 'integer',
                     'required' => true,
                 ],
@@ -340,6 +398,16 @@ class EntityTypes
                 ],
                 'instance' => [
                     'name'     => 'Repeat instance',
+                    'type'     => 'integer',
+                    'required' => true,
+                ],
+                // The session's event. Findings are written to (record, event, instance), so without
+                // this the writer has no event to target - and REDCap::getEventNames() for event 0
+                // yields a name that is either wrong or rejected. Missed on the first pass exactly
+                // as `instance` nearly was, and invisible because the review instrument does not
+                // exist yet on PID 257, so the write never ran.
+                'event_id' => [
+                    'name'     => 'Event',
                     'type'     => 'integer',
                     'required' => true,
                 ],

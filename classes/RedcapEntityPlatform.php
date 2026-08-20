@@ -5,6 +5,7 @@ namespace Stanford\MICA;
 require_once __DIR__ . "/EntityPlatformInterface.php";
 require_once __DIR__ . "/EntitySchemaException.php";
 require_once __DIR__ . "/RedcapEntityLoader.php";
+require_once __DIR__ . "/EntityTypes.php";
 
 /**
  * The real EntityPlatformInterface: REDCap and redcap_entity, with no decisions of its own.
@@ -53,6 +54,44 @@ class RedcapEntityPlatform implements EntityPlatformInterface
         );
 
         return (bool) $result->fetch_assoc();
+    }
+
+    /** Aliased for the same reason as indexNames() - information_schema uppercases column names. */
+    public function columnNames(string $table): array
+    {
+        $result = $this->module->query(
+            'SELECT column_name AS col FROM information_schema.COLUMNS '
+            . 'WHERE table_schema = DATABASE() AND table_name = ?',
+            [$table]
+        );
+
+        $names = [];
+        while ($row = $result->fetch_assoc()) {
+            $names[] = (string) $row['col'];
+        }
+
+        return $names;
+    }
+
+    public function addColumn(string $table, string $column, string $definition): void
+    {
+        $this->assertIdentifier($table, 'table');
+        $this->assertIdentifier($column, 'column');
+
+        // The definition comes from EntityTypes::columnTypes(), a fixed map of literals - never from
+        // a caller - but it is the one interpolated fragment here that is not an identifier, so it
+        // is checked against that map rather than trusted by provenance.
+        if (!in_array($definition, EntityTypes::columnTypes(), true)) {
+            throw new EntitySchemaException(
+                "Refusing to ALTER with an unrecognised column definition: $definition"
+            );
+        }
+
+        try {
+            $this->module->query("ALTER TABLE `$table` ADD COLUMN `$column` $definition", []);
+        } catch (\Throwable $e) {
+            throw new EntitySchemaException($e->getMessage(), 0, $e);
+        }
     }
 
     /**

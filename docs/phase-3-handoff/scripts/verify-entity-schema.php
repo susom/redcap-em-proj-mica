@@ -114,7 +114,42 @@ foreach (\Stanford\MICA\EntityTypes::tables() as $table) {
     check($table, $q->fetch_assoc() ? 'present' : 'MISSING', 'present');
 }
 
-echo "\n4. Indexes (redcap_entity creates none of these)\n";
+echo "\n4. Columns (redcap_entity cannot ALTER, so a new property needs a migration)\n";
+
+// The check this script was missing, and its absence let a real bug through: `event_id` was added
+// to two entity types, the version was bumped, buildSchema() ran, and this reported PASS - because
+// it only looked at tables and indexes. buildSchema() is CREATE TABLE IF NOT EXISTS; it never
+// touches an existing table, so the columns simply were not there.
+$columnFails = 0;
+foreach (\Stanford\MICA\EntityTypes::all() as $type => $info) {
+    $table = 'redcap_entity_' . $type;
+    $q = $module->query(
+        'SELECT column_name AS col, column_type AS ct FROM information_schema.COLUMNS '
+        . 'WHERE table_schema = DATABASE() AND table_name = ?',
+        [$table]
+    );
+    $present = [];
+    while ($row = $q->fetch_assoc()) {
+        $present[strtolower((string) $row['col'])] = strtoupper((string) $row['ct']);
+    }
+
+    $missing = [];
+    foreach ($info['properties'] as $property => $spec) {
+        if (!isset($present[strtolower($property)])) {
+            $missing[] = $property;
+        }
+    }
+
+    if ($missing === []) {
+        printf("  [ok] %-56s all %d declared column(s) present\n", $table, count($info['properties']));
+    } else {
+        $columnFails++;
+        $fails++;
+        printf("  [FAIL] %-54s MISSING: %s\n", $table, implode(', ', $missing));
+    }
+}
+
+echo "\n5. Indexes (redcap_entity creates none of these)\n";
 foreach (\Stanford\MICA\EntityTypes::indexes() as $name => $spec) {
     // Both columns are aliased deliberately: MySQL returns information_schema column names
     // UPPERCASED however the query spells them, so an unaliased $row['non_unique'] is undefined -
@@ -136,14 +171,14 @@ foreach (\Stanford\MICA\EntityTypes::indexes() as $name => $spec) {
     );
 }
 
-echo "\n5. Recorded version\n";
+echo "\n6. Recorded version\n";
 check(
     'schema-version system setting',
     (string) $module->getSystemSetting('schema-version'),
     \Stanford\MICA\EntityTypes::SCHEMA_VERSION
 );
 
-echo "\n6. Second run is a no-op\n";
+echo "\n7. Second run is a no-op\n";
 try {
     $before = microtime(true);
     $module->entitySchemaManager()->ensureSchema();
@@ -153,7 +188,7 @@ try {
     echo "  [FAIL] second ensureSchema threw: " . $e->getMessage() . "\n";
 }
 
-echo "\n7. The participant-path assertion passes\n";
+echo "\n8. The participant-path assertion passes\n";
 try {
     $module->entitySchemaManager()->assertSchemaCurrent();
     echo "  [ok] assertSchemaCurrent() passed without writing anything\n";

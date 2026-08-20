@@ -208,6 +208,20 @@ final class ScanRunnerTest extends TestCase
         $this->assertStringContainsString('not waking up', $evidence[0]['exact_quote']);
     }
 
+    public function testTheEventFromTheJobIsWhereFindingsAreWritten(): void
+    {
+        // The assertion whose absence let a real bug ship: ScanRunner reads $job['event_id'], and
+        // mica_scan_job had no such property, so every finding would have gone to event 0.
+        $logId = $this->storeTranscript();
+        $caller = new StubSafetyScanCaller(
+            StubSafetyScanCaller::ok($this->scanOutput('findings_present', 'high', [$this->finding()]))
+        );
+
+        $this->runner($caller)->run($this->job($logId));
+
+        $this->assertSame(1008, $this->results->findingWrites[0]['event_id']);
+    }
+
     public function testMultipleFindingsGetConsecutiveInstancesAndDistinctIds(): void
     {
         $logId = $this->storeTranscript();

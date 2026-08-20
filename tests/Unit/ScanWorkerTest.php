@@ -49,7 +49,7 @@ final class ScanWorkerTest extends TestCase
     private function enqueue(ScanQueue $queue, int $n): void
     {
         for ($i = 0; $i < $n; $i++) {
-            $queue->enqueue('257', '2', 1, 'baseline', 900 + $i, str_repeat((string) $i, 64));
+            $queue->enqueue('257', '2', 1, 1008, 'baseline', 900 + $i, str_repeat((string) $i, 64));
         }
     }
 

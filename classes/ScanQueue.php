@@ -87,6 +87,7 @@ class ScanQueue
         string $projectId,
         string $record,
         int $instance,
+        int $eventId,
         string $sessionType,
         int $transcriptLogId,
         string $transcriptSha256,
@@ -114,6 +115,9 @@ class ScanQueue
             'project_id'      => $projectId,
             'record'          => $record,
             'instance'        => $instance,
+            // Carried on the job because the scanner writes findings to (record, event, instance)
+            // and the cron has no session context of its own to derive it from.
+            'event_id'        => $eventId,
             'session_type'    => $sessionType,
             'transcript_ref'  => $transcriptLogId,
             'idempotency_key' => $key,

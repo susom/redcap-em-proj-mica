@@ -109,6 +109,93 @@ final class EntitySchemaManagerTest extends TestCase
         $this->assertFalse($platform->uniqueFlag['redcap_entity_mica_scan_job.idx_due']);
     }
 
+    public function testAPropertyAddedToAnExistingTableGetsItsColumn(): void
+    {
+        // The half redcap_entity cannot do at all: buildSchema() is CREATE TABLE IF NOT EXISTS, so a
+        // property added to a type whose table already exists is SILENTLY ignored. That shipped once
+        // - event_id was declared, the version bumped, buildSchema() ran, the verifier said PASS,
+        // and the column was not there.
+        $platform = new FakeEntityPlatform();
+
+        // A table that exists but predates `event_id`.
+        $platform->buildSchema();
+        $platform->columns['redcap_entity_mica_scan_job'] = array_values(array_diff(
+            $platform->columns['redcap_entity_mica_scan_job'],
+            ['event_id']
+        ));
+        $platform->calls = [];
+
+        (new EntitySchemaManager($platform))->ensureSchema(true);
+
+        $this->assertArrayHasKey(
+            'redcap_entity_mica_scan_job.event_id',
+            $platform->addedColumns,
+            'without this the scanner writes findings to event 0'
+        );
+        $this->assertSame('INT', $platform->addedColumns['redcap_entity_mica_scan_job.event_id']);
+    }
+
+    public function testColumnsAreAddedBeforeIndexes(): void
+    {
+        // An index on a column that does not exist yet cannot be created.
+        $platform = new FakeEntityPlatform();
+        $platform->buildSchema();
+        $platform->columns['redcap_entity_mica_scan_job'] = ['id'];
+        $platform->calls = [];
+
+        (new EntitySchemaManager($platform))->ensureSchema(true);
+
+        $firstIndex = array_search('addIndex:redcap_entity_mica_scan_job.uq_idem', $platform->calls, true);
+        $theColumn = array_search('addColumn:redcap_entity_mica_scan_job.idempotency_key', $platform->calls, true);
+
+        $this->assertNotFalse($theColumn);
+        $this->assertNotFalse($firstIndex);
+        $this->assertLessThan($firstIndex, $theColumn);
+    }
+
+    public function testAnExistingColumnIsNotReAdded(): void
+    {
+        $platform = new FakeEntityPlatform();
+        (new EntitySchemaManager($platform))->ensureSchema();
+        $platform->addedColumns = [];
+
+        (new EntitySchemaManager($platform))->ensureSchema(true);
+
+        $this->assertSame([], $platform->addedColumns, 'a fresh build needs no ALTER at all');
+    }
+
+    public function testAFailedColumnMigrationFailsClosed(): void
+    {
+        $platform = new FakeEntityPlatform();
+        $platform->buildSchema();
+        $platform->columns['redcap_entity_mica_scan_job'] = ['id'];
+        $platform->failColumn = 'event_id';
+
+        try {
+            (new EntitySchemaManager($platform))->ensureSchema(true);
+            $this->fail('a missing column breaks every write that touches it');
+        } catch (EntitySchemaException $e) {
+            $this->assertStringContainsString('event_id', $e->getMessage());
+            $this->assertStringContainsString('every write touching that property fails', $e->getMessage());
+        }
+
+        $this->assertNull($platform->version, 'a partial migration is not a migration');
+    }
+
+    public function testEveryDeclaredPropertyTypeHasAColumnMapping(): void
+    {
+        // A property whose type has no mapping cannot be migrated, and the failure would only show
+        // up on the version bump that introduced it.
+        foreach (EntityTypes::all() as $type => $info) {
+            foreach ($info['properties'] as $property => $spec) {
+                $this->assertNotNull(
+                    EntityTypes::columnDefinition($spec),
+                    "$type.$property (type {$spec['type']}) has no column mapping"
+                );
+            }
+        }
+    }
+
     public function testSecondRunIsAFullNoOp(): void
     {
         $platform = new FakeEntityPlatform();

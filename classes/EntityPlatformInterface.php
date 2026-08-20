@@ -29,6 +29,19 @@ interface EntityPlatformInterface
 
     public function tableExists(string $table): bool;
 
+    /** @return string[] column names currently on $table */
+    public function columnNames(string $table): array;
+
+    /**
+     * Add one column to an existing table.
+     *
+     * Exists because redcap_entity has no ALTER path: buildSchema() is CREATE TABLE IF NOT EXISTS,
+     * so a property added to a type that already has a table is silently ignored.
+     *
+     * @throws EntitySchemaException when the ALTER TABLE fails
+     */
+    public function addColumn(string $table, string $column, string $definition): void;
+
     /** @return string[] names of the indexes currently on $table (empty when it has none) */
     public function indexNames(string $table): array;
 

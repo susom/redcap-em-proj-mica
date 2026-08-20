@@ -13,11 +13,10 @@
  *
  *   no_supported_concern  ok            -> ready_for_review, zero findings
  *   self_harm_critical    ok            -> ready_for_review, one finding written. While the review
- *                                          instrument does not exist (audit G5) the documented
- *                                          behaviour is instead: run_status stays `ok` (the model
- *                                          call worked), the job goes to manual_review_required
- *                                          because nothing could be released, and last_error says
- *                                          which instrument is missing
+ *                                          instrument does not exist (audit G5): service_error and
+ *                                          manual_review_required on the FIRST attempt, naming the
+ *                                          missing instrument, with the verbatim model output still
+ *                                          preserved on the run row
  *   fabricated_quote      citation_mismatch -> manual review on the FIRST attempt (terminal - a
  *                                          scanner that fabricated evidence does not get a second
  *                                          chance at automatic release), NOTHING released
@@ -169,7 +168,8 @@ foreach ($cases as $fixture => $expect) {
 
         $job = $queueStore->findJob($result->jobId);
         $run = $module->query(
-            'SELECT run_status, resolved_model, prompt_sha256, attempt FROM redcap_entity_mica_scan_run '
+            'SELECT run_status, resolved_model, prompt_sha256, attempt, model_output_json '
+            . 'FROM redcap_entity_mica_scan_run '
             . 'WHERE job_id = ? ORDER BY id DESC LIMIT 1',
             [$result->jobId]
         )->fetch_assoc();
@@ -178,7 +178,11 @@ foreach ($cases as $fixture => $expect) {
             ->fetch_assoc()['n'];
 
         check('a scan_run row was written', $runsAfter - $runsBefore, 1);
-        check('run_status', $run['run_status'] ?? 'NONE', $expect['run']);
+        // A findings-producing scan on a project with no review instrument records
+        // `service_error`, not `ok`: the runner looks ahead before writing the run row so the row
+        // describes the whole attempt rather than only the model call.
+        $expectedRun = ($expect['findings'] > 0 && !$instrumentExists) ? 'service_error' : $expect['run'];
+        check('run_status', $run['run_status'] ?? 'NONE', $expectedRun);
 
         // The release path needs the review instrument. Where it is absent, the *documented*
         // behaviour is to fail rather than release - so assert that instead of pretending.
@@ -194,10 +198,15 @@ foreach ($cases as $fixture => $expect) {
             // for) the model twice more against a fault that cannot resolve between attempts.
             $expectedStatus = SM::MANUAL_REVIEW_REQUIRED;
             note('note', 'findings cannot be written (no instrument), so a failure is CORRECT here');
-            check('the model call itself still succeeded', $run['run_status'] ?? 'NONE', 'ok');
             check(
-                'the job explains why nothing was released',
-                str_contains((string) ($job['last_error'] ?? ''), 'mica_safety_finding') ? 'yes' : 'no',
+                'the run row names the missing instrument',
+                str_contains((string) ($run['model_output_json'] ?? ''), 'mica_safety_finding')
+                || str_contains((string) ($job['last_error'] ?? ''), 'mica_safety_finding') ? 'yes' : 'no',
+                'yes'
+            );
+            check(
+                'and the verbatim model output is still preserved',
+                str_contains((string) ($run['model_output_json'] ?? ''), 'self_harm') ? 'yes' : 'no',
                 'yes'
             );
         }

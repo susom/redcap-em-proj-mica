@@ -32,6 +32,11 @@ final class FakeEntityPlatform implements EntityPlatformInterface
     public array $logs = [];
     /** @var array<string,string[]> indexes present before the migration runs */
     public array $preExisting = [];
+    /** @var array<string,string[]> columns present before the migration runs */
+    public array $columns = [];
+    /** @var array<string,string> "table.column" => definition, for each column created */
+    public array $addedColumns = [];
+    public ?string $failColumn = null;
 
     public bool $buildCreatesTables = true;
     public ?string $failIndex = null;
@@ -57,14 +62,39 @@ final class FakeEntityPlatform implements EntityPlatformInterface
             return;
         }
 
-        foreach (EntityTypes::tables() as $table) {
+        foreach (EntityTypes::all() as $type => $info) {
+            $table = 'redcap_entity_' . $type;
             $this->tables[$table] = true;
+            // CREATE TABLE includes every declared column, which is why an ALTER is only needed for
+            // a property added to a table that ALREADY existed.
+            $this->columns[$table] ??= array_merge(
+                ['id', 'created', 'updated'],
+                array_keys($info['properties'])
+            );
         }
     }
 
     public function tableExists(string $table): bool
     {
         return $this->tables[$table] ?? false;
+    }
+
+    public function columnNames(string $table): array
+    {
+        return $this->columns[$table] ?? [];
+    }
+
+    public function addColumn(string $table, string $column, string $definition): void
+    {
+        $this->calls[] = "addColumn:$table.$column";
+
+        if ($column === $this->failColumn) {
+            throw new EntitySchemaException("Unknown column type for $column");
+        }
+
+        $this->addedColumns["$table.$column"] = $definition;
+        // Applied, so the next columnNames() sees it - same reasoning as addIndex().
+        $this->columns[$table][] = $column;
     }
 
     public function indexNames(string $table): array

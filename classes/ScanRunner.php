@@ -36,17 +36,21 @@ require_once __DIR__ . "/TranscriptStoreInterface.php";
  *                        partial picture as a complete one.
  *   `schema_invalid`     Structured output that does not satisfy the pinned schema.
  *   no review target     Findings exist but the review instrument does not, so no RA would ever see
- *                        them. Fails to manual review with the output preserved, and is marked
- *                        terminal so the model is not re-called for a fault that cannot resolve.
+ *                        them. Checked BEFORE the run row is written so its status describes the
+ *                        whole attempt, and marked terminal so the model is not re-called for a
+ *                        fault that cannot resolve between attempts.
  *
- * ## `run_status` and job status answer different questions
+ * ## `run_status` describes the whole attempt, with one documented exception
  *
- * `mica_scan_run.run_status` describes **the model call**: did it answer, was the output schema-valid,
- * did the quotes verify. Whether anything was **released** is the job's status, with `last_error` for
- * the reason. So an `ok` run row sitting under a job in `manual_review_required` is not a
- * contradiction - it is a scan that worked and a release that did not, which is exactly the state a
- * missing review instrument produces. Worth stating because it is easy to read one field and think
- * it answered the other.
+ * The predictable release failure - findings with no review instrument - is checked *before* the run
+ * row is written, so the row says `service_error` rather than an `ok` that a reviewer would read as
+ * a completed scan. Provenance forces run-row-before-findings (`finding_scan_run` points at its id),
+ * so this has to be a look-ahead rather than a correction.
+ *
+ * The residual exception: the instrument exists and `saveData` still refuses. That leaves an `ok`
+ * run row under a job in `manual_review_required` - a scan that worked and a release that did not.
+ * Rare, and it is why Stage 5's session view must show the job's status and `last_error` beside
+ * `run_status` rather than presenting the run row alone.
  *
  * ## The transcript is verified before it is scanned
  *
@@ -171,22 +175,46 @@ class ScanRunner
             );
         }
 
+        // Checked BEFORE the run row is written, not after, so the row's status describes the whole
+        // attempt rather than only the model call. The alternative - insert `ok`, then discover the
+        // findings have nowhere to go - leaves an `ok` row under a job that released nothing, which
+        // is exactly the shape a reviewer misreads. Provenance forces run-before-findings
+        // (finding_scan_run points at the run id), so the check has to be a look-ahead.
+        $findings = $output['findings'] ?? [];
+        if ($findings !== [] && !$this->results->findingInstrumentExists($projectId)) {
+            return $this->recordFailure(
+                $job,
+                $attempt,
+                'service_error',
+                sprintf(
+                    'The scan produced %d finding(s) but the repeating "%s" instrument does not '
+                    . 'exist on project %s, so there is nowhere for an RA to review them. The '
+                    . 'verbatim model output is preserved on this run row. Build the instrument per '
+                    . '02-data-model.md §3.2 (audit G5) and re-run the scan.',
+                    count($findings),
+                    'mica_safety_finding',
+                    $projectId
+                ),
+                $result,
+                $output,
+                [],
+                // Retrying re-pays for the same model call against a fault that cannot resolve.
+                true
+            );
+        }
+
         // Every attempt leaves a row, and this one is written before findings so the authoritative
         // copy of the output exists no matter what the write-back does.
         $runId = $this->insertRun($job, $attempt, 'ok', $result, $output, null);
 
         try {
-            $written = $this->findings->write(
-                $projectId,
-                $record,
-                $eventId,
-                $runId,
-                $output['findings'] ?? []
-            );
+            $written = $this->findings->write($projectId, $record, $eventId, $runId, $findings);
         } catch (\Throwable $e) {
-            // Findings exist but could not be recorded where a reviewer would see them. The run row
-            // above already holds the verbatim output, so failing here loses nothing and refuses to
-            // call the session reviewed.
+            // The residual case the look-ahead above cannot cover: the instrument exists and
+            // saveData still refused. Rare, and it does leave an `ok` run row under a job that
+            // released nothing - the one place where run_status and job status genuinely diverge.
+            // Stage 5's session view must show the job's status and last_error beside run_status
+            // for exactly this reason.
             $this->log("job {$job['id']} produced findings that could not be written: " . $e->getMessage());
 
             return new ScanOutcome(
@@ -270,7 +298,8 @@ class ScanRunner
         ?string $error,
         ?array $result = null,
         ?array $output = null,
-        array $problems = []
+        array $problems = [],
+        bool $terminal = false
     ): ScanOutcome {
         $runId = $this->insertRun($job, $attempt, $runStatus, $result, $output, $error);
 
@@ -286,7 +315,8 @@ class ScanRunner
             scanResult: $output['scan_result'] ?? null,
             overallUrgency: $output['overall_urgency'] ?? null,
             error: $error,
-            problems: $problems
+            problems: $problems,
+            terminal: $terminal
         );
     }
 

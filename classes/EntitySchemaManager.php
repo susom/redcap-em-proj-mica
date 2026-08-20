@@ -127,17 +127,83 @@ class EntitySchemaManager
             );
         }
 
+        // Columns before indexes: an index on a column that does not exist yet cannot be created.
+        $columns = $this->applyColumns();
         $added = $this->applyIndexes();
 
         $this->platform->recordSchemaVersion(EntityTypes::SCHEMA_VERSION);
         $this->platform->log(sprintf(
-            'Entity schema at version %s (was %s); %d table(s) verified, %d index(es) added: %s',
+            'Entity schema at version %s (was %s); %d table(s) verified, %d column(s) added (%s), '
+            . '%d index(es) added (%s)',
             EntityTypes::SCHEMA_VERSION,
             $recorded ?? 'unbuilt',
             count(EntityTypes::tables()),
+            count($columns),
+            $columns === [] ? 'none needed' : implode(', ', $columns),
             count($added),
             $added === [] ? 'none needed' : implode(', ', $added)
         ));
+    }
+
+    /**
+     * Add any declared property that has no column yet.
+     *
+     * This is the half of the migration redcap_entity cannot do at all. `EntityDB::buildSchema()` is
+     * CREATE TABLE IF NOT EXISTS per type - there is no ALTER path anywhere in the framework - so
+     * adding a property to a type whose table already exists is **silently ignored**. Every write
+     * then fails on an unknown column, or worse, the property is quietly dropped.
+     *
+     * Found the hard way: `event_id` was added to `mica_scan_job` and `mica_turn`, the version was
+     * bumped, buildSchema() ran, the verifier reported PASS - and the columns were not there,
+     * because the verifier only checked tables and indexes.
+     *
+     * Columns are only ever *added*. A removed property leaves its column in place: dropping it
+     * would delete data on a version bump, and an unused column costs nothing.
+     *
+     * @return string[] "table.column" for each column actually created
+     * @throws EntitySchemaException
+     */
+    private function applyColumns(): array
+    {
+        $added = [];
+
+        foreach (EntityTypes::all() as $type => $info) {
+            $table = 'redcap_entity_' . $type;
+            $existing = $this->platform->columnNames($table);
+
+            foreach ($info['properties'] as $property => $spec) {
+                if (in_array($property, $existing, true)) {
+                    continue;
+                }
+
+                $definition = EntityTypes::columnDefinition($spec);
+
+                if ($definition === null) {
+                    throw new EntitySchemaException(sprintf(
+                        'Cannot migrate %s.%s: property type "%s" has no column mapping. The '
+                        . 'declaration is wrong, or redcap_entity has changed its type list.',
+                        $table,
+                        $property,
+                        $spec['type'] ?? '(none)'
+                    ));
+                }
+
+                try {
+                    $this->platform->addColumn($table, $property, $definition);
+                } catch (EntitySchemaException $e) {
+                    throw new EntitySchemaException(
+                        "Could not add column $property to $table ($definition). Without it every "
+                        . 'write touching that property fails. Underlying error: ' . $e->getMessage(),
+                        0,
+                        $e
+                    );
+                }
+
+                $added[] = "$table.$property";
+            }
+        }
+
+        return $added;
     }
 
     /**
