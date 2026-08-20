@@ -130,6 +130,10 @@ class RedcapEmailChannel implements NotificationChannelInterface
             $escaped = str_replace(['<', '>'], ['&lt;', '&gt;'], $line);
             $url = trim($line);
 
+            // The href is interpolated raw, and the character class is what makes that safe: `"` and
+            // `'` cannot match, so neither can end the attribute, and `<` `>` cannot match either.
+            // Load-bearing - do not widen it to something friendlier like `\S+` without adding the
+            // escaping back.
             $lines[$i] = preg_match('~^https?://[^\s<>"\']+$~', $url) === 1
                 ? '<a href="' . $url . '">' . $url . '</a>'
                 : $escaped;

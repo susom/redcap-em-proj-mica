@@ -441,6 +441,16 @@ URLs are now real anchors, which also gets REDCap's own `<a href="X">Y</a>` →
   than the tag they could not inject. Every real body puts the dashboard link on
   its own line, and record ids cannot contain a newline.
 
+  The cost of that rule is that a body which ever concatenated the link onto a
+  sentence would silently render as unlinked text — the exact thing defect 1 was
+  about. So the verifier now asserts, over every body type in one pass, that a
+  body carrying a link produces **exactly one** anchor, and the delivered HTML
+  was re-read independently to confirm it (6 messages, 1 anchor each, no
+  entities, no double-spacing). The href is interpolated into the attribute
+  unescaped; the regex character class excluding `"` and `'` is what makes that
+  safe, and the code says so, because widening it to something friendlier would
+  reintroduce the hole.
+
 `RedcapEmailChannel` also lost its `MICA $module` constructor argument, which it
 never used — the From: address is passed in by the caller and everything else
 goes through `\REDCap::email()` and REDCap's globals. That unused dependency was

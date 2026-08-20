@@ -713,6 +713,36 @@ try {
         'plain'
     );
 
+    /**
+     * Every body that carries the dashboard link must still produce exactly one anchor.
+     *
+     * Only a URL alone on its own line is linked - that is what stops a URL smuggled inside a record
+     * id from becoming clickable. The cost is that a body which ever concatenates the link onto a
+     * sentence would silently render as unlinked text, and the link is the only actionable thing in a
+     * minimum-necessary body. By this point every body type has been sent, so this checks all of them
+     * at once, against the same conversion the mailer uses.
+     */
+    echo "\n  Every body type still renders its link as a link\n";
+
+    $withLink = 0;
+    $unlinked = [];
+
+    foreach ($channel->sent as $sent) {
+        if (!str_contains($sent['body'], 'http')) {
+            continue;
+        }
+
+        $withLink++;
+        $anchors = substr_count(RedcapEmailChannel::bodyToHtml($sent['body']), '<a href=');
+
+        if ($anchors !== 1) {
+            $unlinked[] = sprintf('%s (%d anchors)', $sent['subject'], $anchors);
+        }
+    }
+
+    note('bodies carrying a link', (string) $withLink);
+    check('every one produced exactly one anchor', implode('; ', $unlinked) ?: 'yes', 'yes');
+
     echo "\n12. Launch readiness on this project\n";
     $gates = $module->launchReadinessFor($PID);
     foreach ($gates->evaluate() as $gate) {
