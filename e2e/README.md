@@ -73,3 +73,9 @@ hostname makes the module's own JS a cross-origin request. The spec resolves the
 - The finalizer warns that four session-form fields are missing (`mica_session_status`,
   `mica_session_end_ts`, `mica_transcript_ref`, `mica_transcript_hash`). That is audit G4 — Stage 2
   builds them. The scan is queued regardless.
+
+## Testing it by hand instead
+
+`../docs/phase-3-handoff/17-safety-finding-manual-test.md` walks the same ground in a browser, and
+starts with a preflight that names which of the six pipeline links is broken - because a break
+anywhere shows up at the far end as "no findings", which looks exactly like "nothing to find".

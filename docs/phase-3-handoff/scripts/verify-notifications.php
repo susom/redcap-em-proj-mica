@@ -797,15 +797,20 @@ if ($instance !== null) {
     );
 }
 
+// Digest rows carry no record, so a record-scoped delete left them behind - and the check below
+// only counted rows for this record, so it reported a clean teardown that was not one. Both halves
+// widened: delete by digest_id as well, and count everything this probe could have created.
 $module->query(
-    'DELETE FROM redcap_entity_mica_notification WHERE project_id = ? AND (record = ? OR job_id IN (999001, 999002))',
-    [$PID, $RECORD]
+    'DELETE FROM redcap_entity_mica_notification WHERE project_id = ? '
+    . 'AND (record = ? OR job_id IN (999001, 999002) OR digest_id = ?)',
+    [$PID, $RECORD, 'probe_daily']
 );
 check(
     'notification rows left behind',
     (int) $module->query(
-        'SELECT COUNT(*) AS c FROM redcap_entity_mica_notification WHERE project_id = ? AND record = ?',
-        [$PID, $RECORD]
+        'SELECT COUNT(*) AS c FROM redcap_entity_mica_notification WHERE project_id = ? '
+        . 'AND (record = ? OR digest_id = ?)',
+        [$PID, $RECORD, 'probe_daily']
     )->fetch_assoc()['c'],
     0
 );

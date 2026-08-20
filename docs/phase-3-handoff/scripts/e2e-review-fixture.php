@@ -106,6 +106,16 @@ if ($MODE === 'teardown') {
     $module->query('DELETE FROM redcap_user_roles WHERE project_id = ? AND role_name = ?', [$PID, ROLE]);
     echo "  removed the throwaway REDCap role \"" . ROLE . "\"\n";
 
+    // The scan worker notifies reviewers when a job settles, and this fixture's jobs settle - so a
+    // run leaves notification rows behind, usually `failed` ones because the fixture's roles are
+    // torn down before the cron gets there. Removing them keeps a test project from accumulating a
+    // trail of attempts that were never about real participants.
+    $module->query(
+        'DELETE FROM redcap_entity_mica_notification WHERE project_id = ? AND record = ?',
+        [$PID, $RECORD]
+    );
+    echo "  removed notification rows for record $RECORD\n";
+
     $module->removeProjectSetting('role-ra-reviewer', $PID);
     $module->removeProjectSetting('role-pi-lead', $PID);
     echo "  cleared the reviewer and PI role mappings\n";
