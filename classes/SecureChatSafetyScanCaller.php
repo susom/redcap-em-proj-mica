@@ -193,6 +193,18 @@ class SecureChatSafetyScanCaller implements SafetyScanCallerInterface
             . 'key name, or a bare string where an object with named fields is required, loses the '
             . 'entire scan.',
             '',
+            '### Evidence quotes are checked byte-for-byte',
+            '',
+            'Every `exact_quote` is verified against the transcript by exact substring match. Copy it '
+            . 'character for character from the message you cite. Do not paraphrase, do not tidy '
+            . 'punctuation or spelling, do not join two fragments into one quote, and do not begin a '
+            . 'quote and finish it in your own words.',
+            '',
+            'When in doubt, quote LESS. A short exact substring passes; a longer one that drifts does '
+            . 'not. **A single unverifiable quote rejects the entire scan** - every other finding in '
+            . 'the same response is discarded with it and the session is routed to manual review, so '
+            . 'one loose quote costs all of your work.',
+            '',
             json_encode(
                 $outputSchema,
                 JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE

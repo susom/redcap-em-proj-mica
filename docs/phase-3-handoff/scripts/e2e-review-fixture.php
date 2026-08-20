@@ -93,10 +93,33 @@ if ($MODE === 'teardown') {
         echo "  removed finding instances\n";
     }
 
-    $module->query('DELETE FROM redcap_entity_mica_scan_run', []);
+    /**
+     * Scoped deletes. The previous version wiped `mica_scan_run` and `mica_audit_event` for EVERY
+     * project on the server, because neither table carries a project column - so running this fixture
+     * destroyed unrelated studies' scan history and audit trail. On a shared REDCap that is a far
+     * worse outcome than a fixture that leaves something behind.
+     *
+     * Runs hang off a job, so they scope through the join - and must go first, while their jobs still
+     * exist to join to.
+     */
+    $module->query(
+        'DELETE r FROM redcap_entity_mica_scan_run r '
+        . 'JOIN redcap_entity_mica_scan_job j ON j.id = r.job_id WHERE j.project_id = ?',
+        [$PID]
+    );
     $module->query('DELETE FROM redcap_entity_mica_scan_job WHERE project_id = ?', [$PID]);
-    $module->query('DELETE FROM redcap_entity_mica_audit_event', []);
-    echo "  removed scan jobs, runs and audit events\n";
+
+    /**
+     * Audit events have no project column at all, so the closest available scope is the target: this
+     * fixture's record, or the project id itself for project-scoped events like a queue view.
+     * Imprecise, and deliberately narrow rather than deliberately broad - an audit row left behind is
+     * a cosmetic problem, and one deleted from another study is not.
+     */
+    $module->query(
+        'DELETE FROM redcap_entity_mica_audit_event WHERE target_id IN (?, ?)',
+        [$RECORD, (string) $PID]
+    );
+    echo "  removed scan jobs, runs and audit events for pid $PID\n";
 
     $module->query('DELETE FROM redcap_user_rights WHERE project_id = ? AND username = ?', [$PID, USER]);
     $module->query('DELETE FROM redcap_auth WHERE username = ?', [USER]);
