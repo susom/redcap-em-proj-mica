@@ -5,12 +5,22 @@ namespace Stanford\MICA\Tests\Unit;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Stanford\MICA\ArtifactRegistry;
 use Stanford\MICA\AuditLogger;
 use Stanford\MICA\DispositionService;
+use Stanford\MICA\LaunchReadiness;
+use Stanford\MICA\NotificationPolicy;
+use Stanford\MICA\NotificationService;
 use Stanford\MICA\ReviewEndpoints;
 use Stanford\MICA\RoleService;
+use Stanford\MICA\SchemaValidator;
+use Stanford\MICA\Tests\Support\FakeActionFieldWriter;
 use Stanford\MICA\Tests\Support\FakeAuditStore;
 use Stanford\MICA\Tests\Support\FakeFindingReviewStore;
+use Stanford\MICA\Tests\Support\FakeLaunchEnvironment;
+use Stanford\MICA\Tests\Support\FakeNotificationChannel;
+use Stanford\MICA\Tests\Support\FakeNotificationStore;
+use Stanford\MICA\Tests\Support\FakeRecipientDirectory;
 use Stanford\MICA\Tests\Support\FakeReviewQueryStore;
 
 #[CoversClass(ReviewEndpoints::class)]
@@ -19,12 +29,17 @@ final class ReviewEndpointsTest extends TestCase
     private FakeReviewQueryStore $store;
     private FakeAuditStore $audit;
     private FakeFindingReviewStore $findings;
+    private FakeNotificationChannel $channel;
+    private FakeActionFieldWriter $actionWriter;
+    private ?NotificationService $notifications = null;
 
     protected function setUp(): void
     {
         $this->store = new FakeReviewQueryStore();
         $this->audit = new FakeAuditStore();
         $this->findings = new FakeFindingReviewStore();
+        $this->channel = new FakeNotificationChannel();
+        $this->actionWriter = new FakeActionFieldWriter();
     }
 
     private function endpoints(): ReviewEndpoints
@@ -371,5 +386,162 @@ final class ReviewEndpointsTest extends TestCase
                 $this->assertStringContainsString('not implemented yet', $e->getMessage());
             }
         }
+    }
+
+    // ------------------------------------------------------------------ submitAction
+
+    /** Wired with the notification stack, as the module wires it in production. */
+    private function wiredEndpoints(): ReviewEndpoints
+    {
+        $roles = new RoleService(
+            [RoleService::RA => ['660'], RoleService::PI => ['662']],
+            ['ra_alice' => '660', 'pi_bob' => '662']
+        );
+        $audit = new AuditLogger($this->audit, $roles);
+        $artifacts = new ArtifactRegistry();
+
+        $this->notifications = new NotificationService(
+            NotificationPolicy::fromJson(null, $artifacts, new SchemaValidator($artifacts)),
+            $this->channel,
+            new FakeNotificationStore(),
+            new FakeRecipientDirectory(),
+            $this->findings,
+            $audit,
+            '257',
+            'https://redcap.example.org/review',
+            static fn(): int => 1_700_000_000
+        );
+
+        return new ReviewEndpoints(
+            $this->store,
+            new DispositionService($this->findings, $roles, $audit),
+            $roles,
+            $audit,
+            '257',
+            $this->notifications,
+            $this->actionWriter,
+            new LaunchReadiness(new FakeLaunchEnvironment())
+        );
+    }
+
+    public function testSubmitActionOnAnUnconfirmedFindingIs409NotAnActionTaken(): void
+    {
+        // 409, not 403: the RA is entitled to act, the finding is not in a state that permits it. A
+        // 403 would send them to ask for permissions they already have.
+        $response = $this->wiredEndpoints()->handle('submitAction', 'ra_alice', [
+            'record'       => '7',
+            'event_id'     => 42,
+            'instance'     => 1,
+            'action_types' => ['alert_care_team'],
+        ]);
+
+        $this->assertTrue($response['refused']);
+        $this->assertSame(409, $response['status']);
+        $this->assertStringContainsString('until a human has confirmed', $response['reason']);
+        $this->assertSame(0, $this->channel->count());
+        $this->assertSame([], $this->actionWriter->writes, 'A refusal must not document an action.');
+    }
+
+    public function testSubmitActionOnAConfirmedFindingDeliversThenDocuments(): void
+    {
+        $this->findings->finding['review_status'] = 'confirmed';
+
+        $response = $this->wiredEndpoints()->handle('submitAction', 'ra_alice', [
+            'record'       => '7',
+            'event_id'     => 42,
+            'instance'     => 1,
+            'action_types' => ['alert_care_team'],
+        ]);
+
+        $this->assertTrue($response['delivered']);
+        $this->assertSame(1, $this->channel->count());
+        $this->assertSame('sent', $this->actionWriter->lastFields()['action_delivery_status']);
+        $this->assertSame('1', $this->actionWriter->lastFields()['action_types___alert_care_team']);
+    }
+
+    public function testSubmitActionNeverWritesAReviewFieldThroughTheActionWriter(): void
+    {
+        // The writer's allowlist is the guard; this asserts nothing in the delivery path tries. A
+        // delivery path that could write review_status could confirm a finding on its way to
+        // notifying about it, which is the loop the RA-first rule exists to prevent.
+        $this->findings->finding['review_status'] = 'confirmed';
+
+        $this->wiredEndpoints()->handle('submitAction', 'ra_alice', [
+            'record'       => '7',
+            'event_id'     => 42,
+            'instance'     => 1,
+            'action_types' => ['alert_pi', 'document_no_action'],
+        ]);
+
+        foreach (array_keys($this->actionWriter->lastFields()) as $field) {
+            $this->assertStringStartsWith('action_', $field);
+        }
+    }
+
+    public function testSubmitActionNeedsARecordAndAnEvent(): void
+    {
+        $response = $this->wiredEndpoints()->handle('submitAction', 'ra_alice', [
+            'action_types' => ['alert_pi'],
+        ]);
+
+        $this->assertFalse($response['ok']);
+        $this->assertSame(400, $response['status']);
+    }
+
+    public function testSubmitActionNeedsAtLeastOneAction(): void
+    {
+        $response = $this->wiredEndpoints()->handle('submitAction', 'ra_alice', [
+            'record'   => '7',
+            'event_id' => 42,
+        ]);
+
+        $this->assertFalse($response['ok']);
+        $this->assertSame(400, $response['status']);
+        $this->assertStringContainsString('at least one action', $response['error']);
+    }
+
+    public function testSubmitActionSaysSoPlainlyWhenNotificationsAreNotConfigured(): void
+    {
+        // The unwired constructor - a project that has not set the notification stack up. Better a
+        // clear sentence than a null-dereference the reviewer reads as a permissions problem.
+        try {
+            $this->endpoints()->handle('submitAction', 'ra_alice', [
+                'record'       => '7',
+                'event_id'     => 42,
+                'action_types' => ['alert_pi'],
+            ]);
+            $this->fail('An unconfigured project should refuse to send actions.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('notification service is not configured', $e->getMessage());
+        }
+    }
+
+    // ------------------------------------------------------------------ launchReadiness
+
+    public function testLaunchReadinessReturnsEveryGateNotJustTheFailingOnes(): void
+    {
+        $roles = new RoleService([], [], true);
+        $audit = new AuditLogger($this->audit, $roles);
+        $endpoints = new ReviewEndpoints(
+            $this->store,
+            new DispositionService($this->findings, $roles, $audit),
+            $roles,
+            $audit,
+            '257',
+            null,
+            null,
+            new LaunchReadiness(new FakeLaunchEnvironment())
+        );
+
+        $response = $endpoints->handle('launchReadiness', 'root', []);
+
+        $this->assertTrue($response['ok']);
+        $this->assertTrue($response['ready']);
+        $this->assertCount(7, $response['gates']);
+        $this->assertSame('All launch gates pass.', $response['explanation']);
+        // The deliberate blocker is flagged as such so the UI can say "waiting on a decision".
+        $byId = array_column($response['gates'], null, 'id');
+        $this->assertTrue($byId['critical_acknowledgment_minutes']['deliberate']);
+        $this->assertFalse($byId['scan_mock_mode']['deliberate']);
     }
 }

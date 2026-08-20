@@ -10,13 +10,14 @@ namespace Stanford\MICA;
  * declarations are validated against the vendored redcap_entity framework's *real* constraints
  * (see EntityTypesTest), several of which are only discoverable by reading its source.
  *
- * Four types, per 02-data-model.md §1.1:
+ * Five types. The first four are 02-data-model.md §1.1; the fifth is stage-6's notification trail:
  *
- *   mica_scan_job     mutable queue / state machine  (the only type with an UPDATE path, and only
- *                                                     through the atomic claim - see ScanQueue)
- *   mica_scan_run     insert-only; a retry is a new row, never an edit
- *   mica_turn         insert-only; counselor-turn telemetry, no message text
- *   mica_audit_event  append-only
+ *   mica_scan_job      mutable queue / state machine  (the only type with an UPDATE path, and only
+ *                                                      through the atomic claim - see ScanQueue)
+ *   mica_scan_run      insert-only; a retry is a new row, never an edit
+ *   mica_turn          insert-only; counselor-turn telemetry, no message text
+ *   mica_audit_event   append-only
+ *   mica_notification  append-only; every attempt, including the ones the review gate refused
  *
  * Constraints learned from ../redcap_entity_v9.9.9 that this file has to respect:
  *
@@ -36,7 +37,7 @@ namespace Stanford\MICA;
 class EntityTypes
 {
     /** Bumped whenever a type or index below changes; gates the migration. */
-    public const SCHEMA_VERSION = '2';
+    public const SCHEMA_VERSION = '3';
 
     /**
      * Secondary indexes and UNIQUE constraints, which redcap_entity does not create at all
@@ -83,6 +84,34 @@ class EntityTypes
                 'columns' => ['actor'],
                 'unique'  => false,
                 'why'     => '"What did this user touch" - the question an audit is for.',
+            ],
+            'uq_notif_dedupe' => [
+                'table'   => 'redcap_entity_mica_notification',
+                'columns' => ['dedupe_key'],
+                'unique'  => true,
+                'why'     => 'Send-once, enforced by the database rather than only by the read in '
+                           . 'alreadySent(). Two cron workers can reach the same ready_for_review '
+                           . 'job concurrently and a check-then-insert loses that race. It is a '
+                           . 'separate column from idempotency_key because only a second *successful* '
+                           . 'send is a duplicate: a failed attempt must not block its own retry. So '
+                           . 'this column carries the key on a sent row and NULL on every other, and '
+                           . 'MySQL permits unlimited NULLs in a UNIQUE index. (Entity::setData() '
+                           . 'turns \'\' into NULL, which is what makes writing it that way safe.)',
+            ],
+            'idx_notif_idem' => [
+                'table'   => 'redcap_entity_mica_notification',
+                'columns' => ['idempotency_key'],
+                'unique'  => false,
+                'why'     => 'alreadySent() reads by key on every notification attempt, and the key '
+                           . 'is on failed and refused rows too - which is what makes "we tried three '
+                           . 'times and it never landed" answerable.',
+            ],
+            'idx_notif_ack' => [
+                'table'   => 'redcap_entity_mica_notification',
+                'columns' => ['project_id', 'notification_type', 'sent_at'],
+                'unique'  => false,
+                'why'     => 'The acknowledgment monitor scans by project and type over a time '
+                           . 'window on every cron run.',
             ],
         ];
     }
@@ -145,10 +174,11 @@ class EntityTypes
     public static function all(): array
     {
         return [
-            'mica_scan_job'    => self::scanJob(),
-            'mica_scan_run'    => self::scanRun(),
-            'mica_turn'        => self::turn(),
-            'mica_audit_event' => self::auditEvent(),
+            'mica_scan_job'     => self::scanJob(),
+            'mica_scan_run'     => self::scanRun(),
+            'mica_turn'         => self::turn(),
+            'mica_audit_event'  => self::auditEvent(),
+            'mica_notification' => self::notification(),
         ];
     }
 
@@ -576,6 +606,187 @@ class EntityTypes
                 'label'  => 'event_type',
                 'author' => 'actor',
             ],
+        ];
+    }
+
+    /**
+     * The notification trail: one row per attempt, sent, failed or refused.
+     *
+     * Append-only, and it records failures and refusals as well as successes. A trail that holds only
+     * what worked cannot answer "was the PI ever told", which is the question that actually gets
+     * asked - and a refusal row is the only evidence that the RA-first gate fired at all.
+     *
+     * The body is not here. `body_sha256` and `body_bytes` give tamper-evidence; the auditable
+     * verbatim copy of what a recipient saw lives on the finding form in `action_payload_min`, where
+     * REDCap's own user rights govern who can read it. A minimum-necessary body still names a record,
+     * and this table has no field-level access control.
+     */
+    private static function notification(): array
+    {
+        return [
+            'label'        => 'MICA notification',
+            'label_plural' => 'MICA notifications',
+            'icon'         => 'email',
+            'properties'   => [
+                'notification_type' => [
+                    'name'     => 'Type',
+                    'type'     => 'text',
+                    'required' => true,
+                    'choices'  => self::notificationTypeChoices(),
+                ],
+                // On every row, sent or not, so a run of failed attempts is correlatable.
+                'idempotency_key' => [
+                    'name'     => 'Idempotency key',
+                    'type'     => 'text',
+                    'required' => true,
+                ],
+                // The same value, but only on a row that actually went out - NULL otherwise. That is
+                // what lets a UNIQUE index enforce send-once without a failed attempt blocking its
+                // own retry. See indexes()['uq_notif_dedupe'].
+                'dedupe_key' => [
+                    'name'     => 'Dedupe key (sent rows only)',
+                    'type'     => 'text',
+                    'required' => false,
+                ],
+                'project_id' => [
+                    'name'     => 'Project',
+                    'type'     => 'project',
+                    'required' => true,
+                ],
+                // `text` not `record`, for the same reason as mica_audit_event.actor: the `record`
+                // type validates through Records::recordExists(), which needs PROJECT_ID defined, and
+                // these rows are written from cron. A digest row has no record at all.
+                'record' => [
+                    'name'     => 'Record',
+                    'type'     => 'text',
+                    'required' => false,
+                ],
+                'event_id' => [
+                    'name'     => 'Event id',
+                    'type'     => 'integer',
+                    'required' => false,
+                ],
+                'instance' => [
+                    'name'     => 'Instance',
+                    'type'     => 'integer',
+                    'required' => false,
+                ],
+                'job_id' => [
+                    'name'     => 'Scan job',
+                    'type'     => 'integer',
+                    'required' => false,
+                ],
+                // The finding's review_lock_version as observed at send time. An email cannot be
+                // recalled, so the durable claim is "confirmed at version N when this went out".
+                'lock_version' => [
+                    'name'     => 'Lock version at send',
+                    'type'     => 'integer',
+                    'required' => false,
+                ],
+                'action' => [
+                    'name'     => 'Action type',
+                    'type'     => 'text',
+                    'required' => false,
+                ],
+                'digest_id' => [
+                    'name'     => 'Digest id',
+                    'type'     => 'text',
+                    'required' => false,
+                ],
+                'status' => [
+                    'name'     => 'Status',
+                    'type'     => 'text',
+                    'required' => true,
+                    'choices'  => self::notificationStatusChoices(),
+                ],
+                'channel' => [
+                    'name'     => 'Channel',
+                    'type'     => 'text',
+                    'required' => false,
+                ],
+                // Who, not what. Addresses are not stored: the roster is REDCap's, and a stale copy
+                // of it here would be both wrong and one more place holding staff contact details.
+                'recipient_count' => [
+                    'name'     => 'Recipients',
+                    'type'     => 'integer',
+                    'required' => false,
+                ],
+                // Safe verbatim: subjects are assembled from fixed strings, counts and enum members
+                // only - NotificationService::enumOr() is what makes that true.
+                'subject' => [
+                    'name'     => 'Subject',
+                    'type'     => 'text',
+                    'required' => false,
+                ],
+                'body_sha256' => [
+                    'name'     => 'Body hash',
+                    'type'     => 'text',
+                    'required' => false,
+                ],
+                'body_bytes' => [
+                    'name'     => 'Body size',
+                    'type'     => 'integer',
+                    'required' => false,
+                ],
+                // On a refusal this holds the gate's reason, which is why it is `long_text`: the
+                // sentence naming the status and the blocked actions is longer than 255 bytes.
+                'error' => [
+                    'name'     => 'Error or refusal reason',
+                    'type'     => 'long_text',
+                    'required' => false,
+                ],
+                'actor' => [
+                    'name'     => 'Actor',
+                    'type'     => 'text',
+                    'required' => false,
+                ],
+                'sent_at' => [
+                    'name'     => 'Attempted at',
+                    'type'     => 'date',
+                    'required' => true,
+                ],
+                'acknowledged_by' => [
+                    'name'     => 'Acknowledged by',
+                    'type'     => 'text',
+                    'required' => false,
+                ],
+                'acknowledged_at' => [
+                    'name'     => 'Acknowledged at',
+                    'type'     => 'date',
+                    'required' => false,
+                ],
+            ],
+            'special_keys' => [
+                'label'  => 'notification_type',
+                'author' => 'actor',
+            ],
+        ];
+    }
+
+    /** @return array<string,string> */
+    public static function notificationTypeChoices(): array
+    {
+        return [
+            'reviewers_ready' => 'Findings ready for review',
+            'pre_review'      => 'Pre-review (unverified)',
+            'action_delivery' => 'Confirmed-finding action',
+            'digest'          => 'Digest',
+            'ack_overdue'     => 'Acknowledgment overdue',
+        ];
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    public static function notificationStatusChoices(): array
+    {
+        return [
+            'sent'    => 'Sent',
+            'failed'  => 'Failed',
+            // Not a failure. The gate working is a different fact from the transport breaking, and
+            // collapsing them would make "how often did we nearly notify too early" unanswerable.
+            'refused' => 'Refused by the review gate',
+            'skipped' => 'Skipped by policy',
         ];
     }
 }

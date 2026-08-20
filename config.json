@@ -208,6 +208,48 @@
             "repeatable": true
         },
         {
+            "key": "notification-policy-json",
+            "name": "<b>Notification policy (JSON)</b><br><i>Leave blank to use the vendored default, which is the conservative one: reviewers are notified when findings are ready, nobody is notified before a human confirms, and no digest is enabled. A policy that fails its pinned schema is discarded <b>whole</b> and the default applies - it is never partly used. The critical-finding acknowledgment target ships as <code>null</code> on purpose and blocks launch until study leadership sets it.</i>",
+            "required": false,
+            "type": "textarea"
+        },
+        {
+            "key": "notify-care-team-emails",
+            "name": "<b>Care-team addresses</b><br><i>Who hears about a <b>confirmed</b> finding when a reviewer selects \"alert care team\". Comma, semicolon or newline separated. Not REDCap users - a care team is a clinical service. An entry that is not a valid address is skipped at send time, so a typo here blocks launch rather than going unnoticed.</i>",
+            "required": false,
+            "type": "textarea"
+        },
+        {
+            "key": "notify-protocol-lead-emails",
+            "name": "<b>Protocol-lead addresses</b><br><i>Also receives privacy and model-quality reviews opened from a confirmed finding.</i>",
+            "required": false,
+            "type": "textarea"
+        },
+        {
+            "key": "notify-on-call-emails",
+            "name": "<b>On-call research staff addresses</b><br><i>Only used if the notification policy enables pre-review notification, which is off by default.</i>",
+            "required": false,
+            "type": "textarea"
+        },
+        {
+            "key": "notify-data-safety-emails",
+            "name": "<b>Data-safety reviewer addresses</b><br><i>Digest recipients. Digests carry aggregate counts only, never participant-level detail.</i>",
+            "required": false,
+            "type": "textarea"
+        },
+        {
+            "key": "notification-from-email",
+            "name": "<b>Notification From: address</b><br><i>Optional. Defaults to REDCap's own configured sender, which is already SPF-aligned for the institution - a made-up address is more likely to be filed as spam, and a notification in a spam folder is a notification that did not happen.</i>",
+            "required": false,
+            "type": "text"
+        },
+        {
+            "key": "technical-fallback-text",
+            "name": "<b>Technical-fallback wording</b><br><i>Shown to a participant when a session cannot start. Should be the study's IRB-approved wording. Deliberately says nothing about what is misconfigured - a participant is not the audience for a configuration report.</i>",
+            "required": false,
+            "type": "textarea"
+        },
+        {
             "key": "enable-project-debug-logging",
             "name": "<b>Enable Debug Logging</b><br><i>(optional)</i> Requires installation and configuration of emLogger",
             "required": false,
@@ -373,6 +415,20 @@
             "cron_description": "Runs queued post-session SafetyScan jobs and returns jobs abandoned by dead workers to the queue. Every minute, bounded to a small batch and a wall-clock budget so a slow pass cannot overrun its own interval and stack workers.",
             "method": "micaScanWorkerCron",
             "cron_frequency": "60",
+            "cron_max_run_time": "300"
+        },
+        {
+            "cron_name": "mica_ack_monitor",
+            "cron_description": "Chases findings nobody has acknowledged inside the policy's window. Every 5 minutes because the window can be as short as 1 minute, and a monitor that runs less often than the deadline it enforces cannot enforce it. Does nothing at all until study leadership sets the acknowledgment target - which is a launch blocker, so the silence is visible.",
+            "method": "micaAckMonitorCron",
+            "cron_frequency": "300",
+            "cron_max_run_time": "120"
+        },
+        {
+            "cron_name": "mica_digest",
+            "cron_description": "Sends the enabled daily and weekly SafetyScan digests. Runs hourly and decides for itself whether a window is due, rather than relying on the cron firing at the right hour - a digest skipped because a server was busy at 07:00 is one nobody notices is missing. Aggregate counts only; never participant-level detail.",
+            "method": "micaDigestCron",
+            "cron_frequency": "3600",
             "cron_max_run_time": "300"
         }
     ]

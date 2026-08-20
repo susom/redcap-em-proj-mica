@@ -33,6 +33,15 @@ require_once "classes/RedcapFindingReviewStore.php";
 require_once "classes/RoleService.php";
 require_once "classes/RedcapReviewQueryStore.php";
 require_once "classes/ReviewEndpoints.php";
+// Stage 6: launch gates and everything addressed to a human.
+require_once "classes/LaunchReadiness.php";
+require_once "classes/NotificationPolicy.php";
+require_once "classes/NotificationService.php";
+require_once "classes/RedcapActionFieldWriter.php";
+require_once "classes/RedcapEmailChannel.php";
+require_once "classes/RedcapLaunchEnvironment.php";
+require_once "classes/RedcapNotificationStore.php";
+require_once "classes/RedcapRecipientDirectory.php";
 
 // vendor/ is committed and deploys with the module, and opis/json-schema is a runtime dependency
 // of the turn contract, so this is a hard require again. It was briefly conditional because a
@@ -535,6 +544,34 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             if (is_array($first)) $row = $first;
         }
 
+        // The launch gates, before anything else can go wrong. A misconfigured production project
+        // must not run a real session: an unregistered SafetyScan alias or mock mode left on means
+        // the session happens and is never screened, and nothing about the participant's experience
+        // would say so. Checked here rather than at finalization because refusing afterwards would
+        // be refusing after the harm.
+        $gateRefusal = null;
+        try {
+            $gates = $this->launchReadinessFor($pid);
+
+            if (!$gates->mayStartSession()) {
+                $gateRefusal = $gates->participantRefusal();
+                $this->emError('MICA refused to start a session: launch gates fail', [
+                    'project_id'  => $pid,
+                    'record'      => $record,
+                    'explanation' => $gates->staffExplanation(),
+                ]);
+            }
+        } catch (\Throwable $e) {
+            // A broken gate check is not a licence to proceed. It is also not a reason to invent a
+            // participant-facing error out of an internal fault, so the refusal text is the study's
+            // approved fallback either way.
+            $gateRefusal = 'This session cannot start right now. Please let the study team know.';
+            $this->emError('MICA launch gate evaluation failed', [
+                'project_id' => $pid,
+                'error'      => $e->getMessage(),
+            ]);
+        }
+
         $bootstrap = [
             'participant_id'         => $record,
             'name'                   => $row['participant_name'] ?? null,
@@ -544,8 +581,10 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             'initial_system_context' => $ctx['system_context'] ?? [],
             // The session gates ("Session already completed", "Return in N day(s)...") were raised
             // as exceptions, caught here, and then dropped - the participant saw a normal, unusable
-            // chat instead of the reason (docs 14 D7).
-            'error'                  => $error ?? null,
+            // chat instead of the reason (docs 14 D7). A launch-gate refusal takes precedence over a
+            // scheduling one: there is no point telling someone to come back in three days if the
+            // project could not screen them when they did.
+            'error'                  => $gateRefusal ?? $error ?? null,
             'login_url' => $this->getUrl('pages/chatbot.php', true, true)
         ];
         $json = json_encode($bootstrap, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT) ?: '{}';
@@ -917,6 +956,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     /** Constructed in one place, so every review action shares the same wiring. */
     public function reviewEndpoints(): ReviewEndpoints
     {
+        $projectId = (int) PROJECT_ID;
         $roles = RoleService::fromModule($this);
         $audit = new AuditLogger(
             new RedcapAuditStore($this),
@@ -929,8 +969,161 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             new DispositionService(new RedcapFindingReviewStore($this), $roles, $audit),
             $roles,
             $audit,
-            (string) PROJECT_ID
+            (string) $projectId,
+            $this->notificationServiceFor($projectId, $roles, $audit),
+            new RedcapActionFieldWriter($this),
+            $this->launchReadinessFor($projectId, $roles)
         );
+    }
+
+    /**
+     * The notification stack for one project.
+     *
+     * Assembled here rather than inside NotificationService so that the class holding the RA-first
+     * rule has no idea what REDCap is - which is what lets the rule be tested exhaustively without a
+     * database, and why the suite can assert "every gated action is gated" as a data provider.
+     */
+    public function notificationServiceFor(
+        int $projectId,
+        ?RoleService $roles = null,
+        ?AuditLogger $audit = null
+    ): NotificationService {
+        $roles ??= RoleService::fromModule($this, $projectId);
+        $audit ??= new AuditLogger(
+            new RedcapAuditStore($this),
+            $roles,
+            fn(string $m) => $this->emError("audit: $m")
+        );
+
+        $artifacts = new ArtifactRegistry();
+
+        return new NotificationService(
+            NotificationPolicy::fromJson(
+                (string) $this->getProjectSetting('notification-policy-json', $projectId),
+                $artifacts,
+                new SchemaValidator($artifacts)
+            ),
+            new RedcapEmailChannel(
+                $this,
+                (string) $this->getProjectSetting('notification-from-email', $projectId)
+            ),
+            new RedcapNotificationStore($this, new RedcapReviewQueryStore($this)),
+            new RedcapRecipientDirectory($this, $roles, $projectId),
+            new RedcapFindingReviewStore($this),
+            $audit,
+            (string) $projectId,
+            $this->getUrl('pages/review.php', false, false)
+        );
+    }
+
+    public function launchReadinessFor(int $projectId, ?RoleService $roles = null): LaunchReadiness
+    {
+        $roles ??= RoleService::fromModule($this, $projectId);
+        $artifacts = new ArtifactRegistry();
+
+        return new LaunchReadiness(new RedcapLaunchEnvironment(
+            $this,
+            $projectId,
+            $artifacts,
+            new SchemaValidator($artifacts),
+            $roles,
+            new RedcapRecipientDirectory($this, $roles, $projectId)
+        ));
+    }
+
+    /**
+     * Chase findings nobody has acknowledged inside the policy's window.
+     *
+     * Every 5 minutes, because the window can be as short as a minute and a monitor that runs less
+     * often than the deadline it enforces cannot enforce it. Does nothing at all until the target is
+     * set - which is a launch blocker, so the silence is visible rather than mistaken for quiet.
+     */
+    public function micaAckMonitorCron($cronInfo = []): string
+    {
+        return $this->notificationCronPass(
+            'mica_ack_monitor',
+            fn(NotificationService $n): array => $n->notifyOverdueAcknowledgments()
+        );
+    }
+
+    /**
+     * Send the digests whose window has closed.
+     *
+     * Runs hourly and works out for itself whether a window is due, rather than trusting the cron to
+     * fire at the right hour. The idempotency key is `digest_id:since:until`, so every run inside the
+     * same window resolves to the same key and only the first one sends - which means a digest is not
+     * lost because the server was busy at 07:00.
+     */
+    public function micaDigestCron($cronInfo = []): string
+    {
+        $now = time();
+
+        // Local midnight and the most recent Monday, in REDCap's configured timezone. The policy's
+        // per-digest `timezone` is not honoured yet; a study spanning timezones would need it, and
+        // until then using the server's is at least consistent rather than arbitrary.
+        $dailyUntil  = strtotime('today midnight', $now);
+        $weeklyUntil = strtotime('last monday midnight', $now + 1);
+
+        return $this->notificationCronPass(
+            'mica_digest',
+            static function (NotificationService $n) use ($dailyUntil, $weeklyUntil): array {
+                return array_merge(
+                    $n->sendDigests('daily', $dailyUntil - 86400, $dailyUntil),
+                    $n->sendDigests('weekly', $weeklyUntil - 604800, $weeklyUntil)
+                );
+            }
+        );
+    }
+
+    /**
+     * One notification cron pass over every project with the module enabled.
+     *
+     * Shared, and each project is in its own try/catch: one project with a broken policy or an
+     * unreachable mail server must not stop the others being notified. A cron that dies on the first
+     * bad project is a cron that silently only serves the alphabetically-first study.
+     *
+     * @param callable(NotificationService): list<NotificationResult> $pass
+     */
+    private function notificationCronPass(string $cronName, callable $pass): string
+    {
+        $summary = [];
+
+        foreach ($this->getProjectsWithModuleEnabled() as $projectId) {
+            try {
+                $results = $pass($this->notificationServiceFor((int) $projectId));
+
+                $sent = array_filter($results, static fn(NotificationResult $r): bool => $r->wasSent());
+                $failed = array_filter(
+                    $results,
+                    static fn(NotificationResult $r): bool => $r->outcome === NotificationResult::FAILED
+                );
+
+                if ($sent !== [] || $failed !== []) {
+                    $summary[] = sprintf(
+                        'pid %d: %d sent, %d failed',
+                        $projectId,
+                        count($sent),
+                        count($failed)
+                    );
+                }
+
+                foreach ($failed as $failure) {
+                    $this->emError("$cronName could not deliver", [
+                        'project_id' => $projectId,
+                        'type'       => $failure->notificationType,
+                        'reason'     => $failure->reason,
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                $summary[] = "pid $projectId: FAILED - " . $e->getMessage();
+                $this->emError("$cronName failed for one project", [
+                    'project_id' => $projectId,
+                    'error'      => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $summary === [] ? 'nothing to do' : implode('; ', $summary);
     }
 
     /**
@@ -1747,6 +1940,8 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     $this->writeScanFailurePlaceholder($findings, $job, $outcome, $attempts, $projectId);
                 }
 
+                $this->notifyReviewersIfSettled($job, $outcome, $next['status'], $projectId);
+
                 return [
                     'runStatus' => $outcome->runStatus,
                     'error'     => $outcome->error,
@@ -1756,6 +1951,65 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             null,
             fn(string $m) => $this->emDebug("scan worker (pid $projectId): $m")
         );
+    }
+
+    /**
+     * Tell the reviewers, once a job has stopped moving.
+     *
+     * Only for the two states that mean a human is now needed. A job that failed transiently and is
+     * going to retry in four minutes is not something to email anybody about - and notifying on every
+     * attempt is how a reviewer learns to filter the alerts, which is the failure that costs the most
+     * later.
+     *
+     * Its own try/catch for the same reason as the placeholder write: the job's state transition has
+     * already been decided, and losing it to a mail server being down would be strictly worse than an
+     * un-notified finding sitting in a queue somebody will still see.
+     */
+    private function notifyReviewersIfSettled(
+        array $job,
+        ScanOutcome $outcome,
+        string $nextStatus,
+        int $projectId
+    ): void {
+        $manual = $nextStatus === ScanJobStateMachine::MANUAL_REVIEW_REQUIRED;
+
+        if (!$manual && $nextStatus !== ScanJobStateMachine::READY_FOR_REVIEW) {
+            return;
+        }
+
+        // A clean scan with no findings is not worth an email: there is nothing to review, and the
+        // session still appears in the history view. A failed one always is - "not screened" is not
+        // the same as "nothing found", and that distinction is the whole point of the manual path.
+        if (!$manual && $outcome->findingsWritten === 0) {
+            return;
+        }
+
+        try {
+            $result = $this->notificationServiceFor($projectId)->notifyReviewersReady(
+                (int) ($job['id'] ?? 0),
+                (string) ($job['record'] ?? ''),
+                (int) ($job['event_id'] ?? 0),
+                (int) ($job['instance'] ?? 1),
+                (string) ($job['session_type'] ?? ''),
+                $outcome->findingsWritten,
+                (string) ($outcome->overallUrgency ?? 'none'),
+                $manual
+            );
+
+            if ($result->outcome === NotificationResult::FAILED) {
+                $this->emError('SafetyScan findings are ready but the reviewers could not be told', [
+                    'project_id' => $projectId,
+                    'job_id'     => $job['id'] ?? null,
+                    'reason'     => $result->reason,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            $this->emError('Notifying reviewers failed; the finding is still in the queue', [
+                'project_id' => $projectId,
+                'job_id'     => $job['id'] ?? null,
+                'error'      => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

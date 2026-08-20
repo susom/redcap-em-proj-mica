@@ -49,12 +49,12 @@ final class EntityTypesTest extends TestCase
         return $cases;
     }
 
-    public function testDeclaresTheFourTypesTheDataModelNames(): void
+    public function testDeclaresTheTypesTheDataModelNamesPlusTheNotificationTrail(): void
     {
         $this->assertSame(
-            ['mica_scan_job', 'mica_scan_run', 'mica_turn', 'mica_audit_event'],
+            ['mica_scan_job', 'mica_scan_run', 'mica_turn', 'mica_audit_event', 'mica_notification'],
             array_keys(EntityTypes::all()),
-            '02-data-model.md §1.1 names exactly these four.'
+            '02-data-model.md §1.1 names the first four; mica_notification is stage-6\'s trail.'
         );
     }
 
@@ -255,8 +255,29 @@ final class EntityTypesTest extends TestCase
                 'redcap_entity_mica_scan_run',
                 'redcap_entity_mica_turn',
                 'redcap_entity_mica_audit_event',
+                'redcap_entity_mica_notification',
             ],
             EntityTypes::tables()
         );
+    }
+
+    /**
+     * The send-once column must be optional, or a failed attempt could not leave it blank.
+     *
+     * The whole mechanism rests on this: `dedupe_key` carries the key on a sent row and NULL on every
+     * other, so a UNIQUE index enforces send-once without a failure blocking its own retry.
+     * `required => true` would break it by forcing every row to claim the key, and the symptom would
+     * be a retry that silently cannot be written.
+     */
+    public function testTheNotificationDedupeKeyIsOptionalSoFailedAttemptsCanRepeat(): void
+    {
+        $properties = EntityTypes::all()['mica_notification']['properties'];
+
+        $this->assertFalse($properties['dedupe_key']['required']);
+        $this->assertTrue($properties['idempotency_key']['required'], 'Every row is correlatable.');
+
+        $unique = EntityTypes::indexes()['uq_notif_dedupe'];
+        $this->assertTrue($unique['unique']);
+        $this->assertSame(['dedupe_key'], $unique['columns']);
     }
 }

@@ -166,7 +166,11 @@ try {
         note('pseudo-id salt', 'already set (never rotated)');
     }
 
-    $registry = new ArtifactRegistry(dirname(__DIR__, 3) . '/handoff');
+    // No path argument: ArtifactRegistry defaults to the handoff/ next to its own class file, which
+    // is right wherever this script is run from. Computing it from __DIR__ here assumed the script
+    // was still in docs/phase-3-handoff/scripts/, so running it from a copy under temp/ pointed at
+    // /var/www/handoff and failed the integrity check for the wrong reason.
+    $registry = new ArtifactRegistry();
     $queue = new ScanQueue(new RedcapScanQueueStore($module), new ScanJobStateMachine(3));
     $finalizer = new TranscriptFinalizer(
         $store,

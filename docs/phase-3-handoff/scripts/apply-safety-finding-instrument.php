@@ -307,7 +307,14 @@ if ($repeating !== count($targetEvents)) {
 }
 
 // What the module itself asks before it will write findings.
-require_once dirname(__DIR__, 3) . '/classes/RedcapScanResultStore.php';
+//
+// Resolved against the module instance rather than from __DIR__: computing it here assumed this
+// script was still in docs/phase-3-handoff/scripts/, so a copy run from anywhere else required a path
+// that does not exist and died on a bare `failed to open stream`.
+if (!class_exists(\Stanford\MICA\RedcapScanResultStore::class)) {
+    require_once dirname((new \ReflectionClass($module))->getFileName())
+        . '/classes/RedcapScanResultStore.php';
+}
 $store = new \Stanford\MICA\RedcapScanResultStore($module);
 say(
     $store->findingInstrumentExists((string) $PID) ? 'ok' : 'FAIL',

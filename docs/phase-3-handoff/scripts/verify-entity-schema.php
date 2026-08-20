@@ -4,8 +4,10 @@
  * Build and verify MICA's REDCap Entity schema against a live REDCap.
  *
  * Runs the real code path (EntitySchemaManager over RedcapEntityPlatform) rather than
- * re-implementing it, then checks the database independently: four tables, six indexes, the
- * recorded schema-version, and that a second run is a no-op.
+ * re-implementing it, then checks the database independently: every declared table, every declared
+ * index, the recorded schema-version, and that a second run is a no-op. Counts are derived from
+ * EntityTypes rather than written here, so adding a type or an index does not need this file edited -
+ * a hardcoded count is a check that silently stops covering what it was written for.
  *
  *   docker exec <web> php /var/www/html/temp/mica/verify-entity-schema.php
  *

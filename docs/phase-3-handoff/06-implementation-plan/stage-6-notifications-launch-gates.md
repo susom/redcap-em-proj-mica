@@ -102,11 +102,255 @@ production until leadership resolves the deliberate blockers.
   digest email captured with aggregate-only content; overdue critical ack ⇒
   nag captured.
 
+## ✅ Implementation record — 6.1 / 6.2 / 6.3 server side (2026-08-20)
+
+Built: `NotificationPolicy`, `NotificationService`, `NotificationResult`,
+`LaunchReadiness`, `GateResult`, the four seams
+(`NotificationChannelInterface`, `NotificationStoreInterface`,
+`RecipientDirectoryInterface`, `ActionFieldWriterInterface`,
+`LaunchEnvironmentInterface`) and their REDCap implementations
+(`RedcapEmailChannel`, `RedcapNotificationStore`, `RedcapRecipientDirectory`,
+`RedcapActionFieldWriter`, `RedcapLaunchEnvironment`). `submitAction` and
+`launchReadiness` are live in `ReviewEndpoints`. 893 unit tests green; six
+verify scripts PASS against live REDCap on PID 257.
+
+### The gate is at the exit, and it re-reads
+
+`NotificationService::deliverActions()` takes a **record locator**, not a
+finding array, and re-reads the finding itself before deciding. Taking the
+caller's `review_status` would have made the rule decorative — a stale read
+from before a concurrent dismissal, or a caller assembling
+`['review_status' => 'confirmed']`, would sail through, and a test double
+would supply exactly the shape the code expected so it would pass green. Same
+failure shape as `RedcapScanQueueStore` hand-listing SELECT columns while its
+fake returned the whole row.
+
+`submitAction` asserts the rule too, but as defence in depth. If the two ever
+disagree the service wins, because the service is what hands bytes to a
+transport.
+
+`DELIVERABLE_STATUSES = ['confirmed']` is a named constant rather than an
+inline `!== 'confirmed'`, so the day someone adds an `escalated` transition
+there is one place to revisit. `escalated` and `resolved` are in the workflow
+schema but `DispositionService` cannot write them, so they are unreachable
+today — and `NotificationServiceTest` has a row asserting each is refused,
+which is what will fail loudly if that changes.
+
+### Two of the seven actions are deliberately NOT gated
+
+The plan's sentence — "Only confirmed findings expose approved care-team, PI,
+protocol, privacy, or model-quality actions" — enumerates five action types.
+The other two are internal to the review workflow:
+
+| action | gated? | why |
+|---|---|---|
+| `alert_care_team`, `alert_pi`, `alert_protocol_lead` | yes | reaches someone outside the review team |
+| `privacy_review`, `model_quality_review` | yes | opens a formal review; named in the handoff sentence |
+| `second_reviewer` | **no** | `needs_second_review` *is* a disposition, so gating it on confirmation makes it unreachable at the moment it is meant to be used |
+| `document_no_action` | **no** | bookkeeping; delivers to nobody |
+
+This matters most for `scan_failure` placeholders. Those rows exist because a
+scan did not complete and a human must read the session manually; they are not
+model findings and are never confirmed as such. Requiring confirmation
+uniformly would have stranded `document_no_action` on exactly the rows where
+staff most need to record that they handled it.
+
+**So the instrument's branching logic is unchanged.**
+`action_types` still shows on `[review_status] = 'confirmed' or
+[finding_concern_type] = 'scan_failure'`. Branching logic is *display*; the
+gate is server-side. Ticking a checkbox on the form records a decision, it does
+not send anything — and `action_payload_min` / `action_delivery_status` are
+`@READONLY`, so the form cannot fake a delivery.
+`NotificationServiceTest::testTheGatedAndUngatedSetsTogetherCoverEveryActionTheInstrumentOffers`
+reads the applied CSV and fails if a choice is added without being classified.
+
+### Departure: enforcement keys on REDCap's project status, not `production-mode`
+
+The plan wires enforcement to a `production-mode` setting that cannot be
+enabled while a gate fails. **That setting was not built, and the check does
+not use one.** A study that never ticked the box would never be gated at all —
+and that is precisely the study most likely to have skipped the rest of the
+setup. `production-mode` is the *claim* that the gates were reviewed; project
+status is the *fact* that participants are real.
+
+`LaunchReadiness::mayStartSession()` is
+`!isProductionProject() || isReady()`, and
+`RedcapLaunchEnvironment::isProductionProject()` returns **true** if the
+`redcap_projects.status` read fails for any reason. A development project
+wrongly gated is reported within a minute; a production project wrongly
+ungated is invisible.
+
+Consequence for the plan: the test "`production-mode` save rejected while a
+gate fails" is moot, and `redcap_module_save_configuration` is not hooked.
+
+### Seven gates, not five
+
+Added two the plan did not list:
+
+- **`scan_mock_mode`** — its own gate rather than folded into the model gate,
+  because "the scanner is replaying fixtures" and "the alias is not
+  registered" are different problems that send someone to different screens.
+  Mock mode in production means every session is screened by a canned file.
+- **`recipients`** — the care-team and on-call lists are free text, and a
+  malformed address is *skipped* at send time rather than failing the whole
+  message (correct at send time: one typo must not suppress the notice to
+  everyone else). Without this gate the symptom would be a care team that
+  never heard about a confirmed critical finding, months later, with nothing
+  in the trail saying anyone was left out.
+
+Passing gates return an empty `howToFix`. Advice on a green line is what makes
+people stop reading a checklist, and this checklist has to stay readable.
+
+### Departure: `mica_notification` is an Entity type, not an EM-log row
+
+`02-data-model.md §1.3` calls for an EM-log row. It is
+`redcap_entity_mica_notification` instead, because `alreadySent()` is an
+indexed lookup on every attempt and — more importantly — because a UNIQUE
+index is the only thing that makes send-once hold when two crons race.
+`queryLogs()` cannot express either.
+
+**At-least-once, not at-most-once.** The order is check → send → record, which
+is deliberately the weaker guarantee: a duplicate email about a confirmed
+critical finding is an annoyance, a dropped one is a harm. Claiming the row
+before sending would invert that.
+
+**The `dedupe_key` NULL trick.** `dedupe_key` carries the idempotency key on a
+`sent` row and NULL on every other, with a UNIQUE index on it.
+`idempotency_key` is on *every* row for correlation. So a genuinely concurrent
+race is rejected at insert and re-recorded as a flagged duplicate (the mail is
+out either way; what the index buys is knowing about it), while a run of failed
+attempts can repeat freely — only a second *successful* send is a duplicate.
+This rests on `Entity::setData()` converting `''` to `null`
+(`redcap_entity_v9.9.9/classes/Entity.php:75`) and on MySQL permitting
+unlimited NULLs in a UNIQUE index. `verify-notifications.php` step 7 proves
+both against real MySQL, because no fake can.
+
+`EntityTypes::SCHEMA_VERSION` is now `3`. Verified: the new table, all 22
+columns and all three indexes applied cleanly to PID 257.
+
+### The body is not stored; the subject cannot carry free text
+
+The trail holds `body_sha256` and `body_bytes`, not the body. A
+minimum-necessary body still names a record and this table has no field-level
+access control; the auditable verbatim copy lives on the finding form in
+`action_payload_min`, where REDCap's own user rights govern who reads it.
+Tamper-evidence here, verbatim record there.
+
+Subjects are assembled from fixed strings, integer counts and enum members
+only — `enumOr()` substitutes `unspecified` for anything unrecognised. A
+subject travels through mail logs and phone lock screens, so a field that
+happened to be a string must not be able to reach one.
+`testASubjectCanOnlyCarryCountsAndEnumMembers` passes a session type of
+`'MRN 12345678 / Jane Doe'` and asserts it does not appear.
+
+Notification bodies carry no participant quotes, no reviewer rationale and no
+reviewer notes — asserted in both the unit suite and step 5 of the verifier.
+
+### Departure: crons are `mica_digest` (hourly) + `mica_ack_monitor` (5 min)
+
+Not `mica_digest_daily` / `mica_digest_weekly` / 15-minute ack.
+
+- **`mica_digest` runs hourly and works out for itself whether a window has
+  closed.** The idempotency key is `digest_id:since:until`, so every run
+  inside the same window resolves to the same key and only the first sends.
+  A digest is therefore not lost because the server was busy at 07:00.
+- **`mica_ack_monitor` runs every 5 minutes** because
+  `critical_acknowledgment_minutes` can be as low as 1, and a monitor that
+  runs less often than the deadline it enforces cannot enforce it.
+
+Both share `notificationCronPass()`, which puts each project in its own
+try/catch: one study with a broken policy or an unreachable mail server must
+not stop the others being notified.
+
+Not honoured yet: the policy's per-digest `timezone`. Windows use the server's
+timezone. A study spanning timezones would need it.
+
+### The channel refuses what it cannot honour
+
+`RedcapEmailChannel::supports()` returns true only for `secure_email` and
+`dashboard`. It does **not** claim `secure_messaging` or
+`pager_or_on_call_system`, both of which the policy schema allows. Reporting
+an unsupported channel as delivered is the failure that matters: a study
+configures a pager for critical findings, the notice goes nowhere, and the
+trail says "sent". `dashboard` is supported by doing nothing, which is correct
+rather than lazy — a dashboard notice *is* the finding appearing in the queue,
+and the queue is written before any of this runs.
+
+One message per recipient rather than one with everyone in `To:`. Staff
+addresses are not secret, but a care team learning who else is on the
+distribution list is a disclosure nobody asked for, and it is free to avoid.
+
+### `action_*` writes are a separate seam from `review_*` writes
+
+`RedcapActionFieldWriter` uses `normal` save semantics;
+`RedcapFindingReviewStore` uses `overwrite`. Opposite choices for opposite
+reasons: a withdrawn correction must be clearable (overwrite), and a
+previously delivered action must not be erased by a later one that does not
+mention it (normal). Each refuses the other's field set outright, which is
+what makes each refusal absolute rather than conventional. In particular the
+delivery path cannot write `review_status` — otherwise it could confirm a
+finding on its way to notifying about it, which is the loop the whole rule
+exists to prevent.
+
+Verified on live REDCap: a second action leaves the first checkbox set.
+
+### Bug found by testing
+
+`NotificationResult::failed()` did not carry `actionFields`, so a delivery
+that was *attempted and failed* returned nothing for the caller to persist —
+`action_delivery_status = 'failed'` would never have reached the form, and the
+finding would have read as though nothing was ever tried. Fixed;
+`testATransportFailureIsRecordedRatherThanThrown` covers it.
+
+Two verifier path assumptions also fixed: `verify-transcript-store.php` and
+`apply-safety-finding-instrument.php` both computed paths with
+`dirname(__DIR__, 3)`, which silently pointed at `/var/www/handoff` when the
+script was run from a copy under `temp/`.
+
+### Verified against live REDCap (PID 257)
+
+`docs/phase-3-handoff/scripts/verify-notifications.php` — 40 checks, PASS:
+
+```
+docker exec -e MICA_MODULE_DIR=/var/www/html/modules-local/proj_mica_v9.9.9 \
+  redcap_2023_1_web php /var/www/html/temp/mica/verify-notifications.php
+```
+
+It does **not** send email — delivery goes through a capturing channel, so it
+proves the decision, the trail and the bookkeeping, not SMTP. The real
+channel's own refusal logic is checked separately. A verifier that mailed a
+study's care team every time somebody ran it would not get run.
+
+All six verify scripts PASS: entity-schema, transcript-chunking,
+transcript-store, safetyscan, disposition, notifications.
+
+### Still open
+
+- **6.1 remainder:** `getPolicy` / `savePolicy` endpoints. The policy is
+  edited in the module configuration for now, and validated on read — which
+  is the half that actually protects a participant.
+- **6.3 frontend:** the launch-readiness card on the dashboard Settings view,
+  and the "launch gates unmet — development only" banner in the chatbot. The
+  `launchReadiness` endpoint that feeds both is live.
+- **6.4:** the security/compliance pass — Psalm via Control Center module
+  scanning, `composer audit`, `npm audit`, and the
+  `references/security.md` / `references/compliance.md` walk.
+- **6.5:** full Playwright regression (participant + RA, desktop + mobile),
+  `README.md` settings reference + ops runbook, `CHANGELOG.md`, version bump.
+- Acknowledgment *recording* — `RedcapNotificationStore::acknowledge()`
+  exists and the monitor reads `acknowledged_at`, but nothing in the UI sets
+  it yet, so every sent notice is eventually overdue once a target is
+  configured. The dashboard card is where that lands.
+
 ## Acceptance checklist
 
-- [ ] All five gates enforced; production-mode un-enableable while failing;
-      session start refused per spec; dev banner shows
-- [ ] Notifications policy-driven; deliveries logged; failures retriable
-- [ ] Pre-review notices labeled and state-inert (even though shipped off)
+- [x] Gates enforced on session start, keyed on REDCap project status;
+      staff explanation logged; participant sees approved fallback wording
+- [ ] Dev banner + dashboard launch-readiness card (endpoint live, UI pending)
+- [x] ~~production-mode un-enableable while failing~~ — superseded: no such
+      setting; see the departure note above
+- [x] Notifications policy-driven; every attempt logged including refusals;
+      failures recorded and retriable
+- [x] Pre-review notices labeled and state-inert (even though shipped off)
 - [ ] Psalm/security scan + audits clean; checklist findings resolved
-- [ ] Full CI matrix green; docs + changelog updated; release tagged
+- [ ] Full regression green; docs + changelog updated; release tagged
