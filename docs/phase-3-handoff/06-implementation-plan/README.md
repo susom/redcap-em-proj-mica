@@ -11,9 +11,9 @@ acceptance checklist.
 | Stage | File | Depends on | Status |
 |---|---|---|---|
 | 0 — Foundations | [`stage-0-foundations.md`](stage-0-foundations.md) | — | **in progress** — 0.1–0.5 + 0.5b done (CI declined by decision — see the 0.5 record); remaining: cleanup (0.6) |
-| 1 — Counselor v2 turn contract | [`stage-1-turn-contract.md`](stage-1-turn-contract.md) | 0 | **in progress** — parts of 1.6 done (see below); 1.1–1.5 not started |
+| 1 — Counselor v2 turn contract | [`stage-1-turn-contract.md`](stage-1-turn-contract.md) | 0 | **in progress** — **1.1 done** (all four entity types, so 3.1 is done too); parts of 1.6 done (see below); 1.2–1.5 not started |
 | 2 — R01 session engine + frontend | [`stage-2-session-engine.md`](stage-2-session-engine.md) | 1 | not started — auth half (2.3) partly done, see `10-auth-implementation-pid257.md` |
-| 3 — Transcript finalization + scan queue | [`stage-3-transcripts-and-queue.md`](stage-3-transcripts-and-queue.md) | 2 | not started |
+| 3 — Transcript finalization + scan queue | [`stage-3-transcripts-and-queue.md`](stage-3-transcripts-and-queue.md) | 2 | **in progress** — 3.1 (entity types + index migration) landed with 1.1 |
 | 4 — SafetyScan runner | [`stage-4-safetyscan-runner.md`](stage-4-safetyscan-runner.md) | 3 | not started |
 | 5 — RA dashboard | [`stage-5-ra-dashboard.md`](stage-5-ra-dashboard.md) | 4 | not started |
 | 6 — Notifications, digests, launch gates | [`stage-6-notifications-launch-gates.md`](stage-6-notifications-launch-gates.md) | 5 | not started |

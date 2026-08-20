@@ -8,6 +8,10 @@ require_once "classes/UserRightsCheck.php";
 // Required explicitly rather than left to the composer autoloader below: the integrity gate on the
 // hash-pinned handoff artifacts must not become unreachable just because vendor/ is absent.
 require_once "classes/ArtifactRegistry.php";
+// Same reason, plus one of its own: redcap_module_system_enable() runs while the module is being
+// enabled, and an unloadable class there is reported as a bare fatal with no cause attached.
+require_once "classes/EntitySchemaManager.php";
+require_once "classes/RedcapEntityPlatform.php";
 
 // vendor/ is committed and deploys with the module, and opis/json-schema is a runtime dependency
 // of the turn contract, so this is a hard require again. It was briefly conditional because a
@@ -38,6 +42,43 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
     public function __construct() {
         parent::__construct();
+    }
+
+    /**
+     * REDCap Entity type declarations. Not a REDCap hook - the redcap_entity module discovers this
+     * by method_exists() (EntityFactory::loadModuleEntityTypes), so there is nothing to declare in
+     * config.json. Definitions and the reasoning behind them live in classes/EntityTypes.php.
+     */
+    public function redcap_entity_types(): array
+    {
+        return EntityTypes::all();
+    }
+
+    /**
+     * Build the entity schema when the module is enabled system-wide.
+     *
+     * Forced rather than version-guarded: enabling is the one moment an admin is present, watching,
+     * and able to act on a failure, so it is the right place to pay for a full verify-and-migrate.
+     * It also recovers a table dropped by hand in the Entity DB Manager, which the version guard
+     * cannot detect on its own.
+     *
+     * The throw is deliberate. REDCap surfaces it as an enable failure, which is the honest outcome:
+     * a MICA without its scan queue would accept sessions and then have nowhere to put the
+     * transcript, and a study would rather find that out here than after enrollment.
+     */
+    public function redcap_module_system_enable($version)
+    {
+        $this->entitySchemaManager()->ensureSchema(true);
+    }
+
+    /**
+     * Idempotent, and cheap when there is nothing to do: ensureSchema() short-circuits on a
+     * matching `schema-version` system setting without touching the database. Safe to call from a
+     * cron entry point or before the first entity write of a request.
+     */
+    public function entitySchemaManager(): EntitySchemaManager
+    {
+        return new EntitySchemaManager(new RedcapEntityPlatform($this));
     }
 
     public function getIntroText(){

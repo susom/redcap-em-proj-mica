@@ -38,6 +38,86 @@ final class EntitySchemaManager {
 - `config.json`: declare `redcap_module_system_enable` if the framework
   version requires it; add `crons` later (Stage 3).
 
+> ## ✅ 1.1 done — 2026-08-19
+>
+> **All four entity types landed at once**, not just `mica_turn`. Stage 3 would have
+> bumped `schema-version` a second time to add the other three, meaning two
+> migrations, two forced re-enables and two chances to half-apply. `mica_turn`
+> sitting unwritten-to until 1.3 costs nothing. Stage 3.1 is therefore already done.
+>
+> **`config.json` needed nothing.** At `framework-version: 14` hooks are discovered
+> by method name, and `redcap_entity_types()` is not a REDCap hook at all — the
+> redcap_entity module finds it with `method_exists()`
+> (`EntityFactory::loadModuleEntityTypes`).
+>
+> ### Deviations from the contract above, each for a reason
+>
+> - **The constructor takes an `EntityPlatformInterface`, not `MICA`.** Taking the
+>   module would have made the migration logic — which is all branches, and the one
+>   place where *almost* right is worse than absent — reachable only with a live
+>   REDCap. The interface is eight methods drawn at "statements about the world";
+>   `RedcapEntityPlatform` is the real one and holds no conditionals worth testing.
+> - **`assertSchemaCurrent()` was added, and the participant path uses it instead of
+>   `ensureSchema()`.** Found by running the migration for real:
+>   `ExternalModules::setSystemSetting()` routes through `setProjectSetting()`, whose
+>   user-based permission check is waived only under `CRON` or for a user with design
+>   rights. A participant on a survey page has neither, so if the first request after
+>   a version bump happened to be a participant's, `ensureSchema()` would have thrown
+>   *mid-session*. Migration is now explicitly an administrative act (enable or cron);
+>   everything else asserts and refuses to run against a stale schema.
+> - **`ensureSchema()` verifies tables after `buildSchema()` rather than trusting it.**
+>   `EntityDB::buildSchema()` returns void, early-returns when the module has no
+>   system-level enabled version, and discards per-table failures. Verifying is the
+>   only way to catch the likeliest deployment mistake here — MICA enabled for a
+>   project but not system-wide, which produces no tables and no error.
+> - **`mica_audit_event.actor` is `text`, not `user`** (`02-data-model.md §1.1` says
+>   `user`). The `user` type validates through `RedCapDB::usernameExists()`, and the
+>   scan worker writes audit events from cron with no logged-in user — so `user` would
+>   make exactly the events that most need recording (a scan giving up into
+>   `manual_review_required`) impossible to write. Writers always pass an actor
+>   explicitly: a real username or an explicit system sentinel.
+> - **`instance` added to `mica_scan_job` and `mica_turn`**, per `02-data-model.md §3`'s
+>   2026-08-17 note. A superset that is correct whichever way the study answers the
+>   repeating-instrument question, and it is what stops two sessions in one window
+>   colliding on the idempotency key.
+> - **`model_output_json` is `data`, not `json`.** The `json` type round-trips through
+>   `json_decode`/`json_encode` in `Entity::setData()`/`getData()`, which reformats it.
+>   That column is the authoritative immutable findings record and the thing REDCap
+>   finding instances are later checked against, so it has to survive byte-for-byte.
+>
+> ### Two bugs the live run found that no unit test could
+>
+> Both from running `docs/phase-3-handoff/scripts/verify-entity-schema.php` against
+> the container, twice.
+>
+> 1. **`information_schema` uppercases column names** however the query spells them,
+>    so `$row['index_name']` was undefined and `(string) null` is `''`.
+>    `indexNames()` returned a list of empty strings for a fully indexed table, the
+>    migration concluded every index was missing, and the `ALTER` died on
+>    `Duplicate key name`. **Every re-enable of the module after the first would have
+>    failed.** Fixed by aliasing (`AS idx`). The same bug in the verifier's own
+>    `non_unique` read made it report all six indexes as UNIQUE, so it passed and
+>    failed the same index on consecutive runs.
+> 2. A unit-test **fake** that logged writes without applying them: `addIndex()`
+>    appended to its call log while `indexNames()` kept returning the original state,
+>    so a forced rebuild looked like it duplicated every index. The failure was in the
+>    fake, not the manager. It is stateful now, and says so.
+>
+> ### Verified against live REDCap
+>
+> `verify-entity-schema.php`: **PASS** — four tables present, six indexes with the
+> right columns *and* the right uniqueness (`idempotency_key` UNI), `schema-version`
+> recorded, a second `ensureSchema()` returning in **0.2 ms** without a query, and
+> `assertSchemaCurrent()` passing without writing. Column types match the
+> declarations (`model_output_json` mediumtext, nullables where `required => false`).
+>
+> **321 tests / 693 assertions**, phpcs clean. `EntityTypesTest` pins the vendored
+> framework's real constraints — valid property types, `required` present on every
+> property (`EntityDB` reads it unguarded), `choices` as a value⇒label map (a list
+> would reject every value), `entity_reference` naming its target — because
+> redcap_entity fails *quietly* on each of them: an invalid type marks the whole
+> type INVALID and it simply never gets a table.
+
 ### 1.2 `TurnService` (`classes/TurnService.php`)
 
 Pipeline per `01-architecture.md §2`, dependencies injected:
