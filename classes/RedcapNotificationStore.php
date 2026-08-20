@@ -134,7 +134,8 @@ class RedcapNotificationStore implements NotificationStoreInterface
         }
 
         $counts['sessions_scanned'] = count($sessions);
-        $counts['overdue_acknowledgment'] = count($this->unacknowledged($projectId, $untilTs));
+        // `overdue_acknowledgment` is deliberately left at zero: whether a notice is *overdue* depends
+        // on the policy's window, and this class has no policy. NotificationService fills it.
 
         return $counts;
     }
@@ -150,7 +151,7 @@ class RedcapNotificationStore implements NotificationStoreInterface
     public function unacknowledged(string $projectId, int $notifiedBeforeTs): array
     {
         $result = $this->module->query(
-            'SELECT record, instance, event_id, subject, sent_at, notification_type '
+            'SELECT id, record, instance, event_id, subject, sent_at, notification_type '
             . 'FROM ' . self::TABLE . ' '
             . 'WHERE project_id = ? AND status = ? AND sent_at <= ? '
             . 'AND (acknowledged_at IS NULL OR acknowledged_at = 0) '
@@ -169,6 +170,9 @@ class RedcapNotificationStore implements NotificationStoreInterface
 
         while ($row = $result->fetch_assoc()) {
             $rows[] = [
+                // What the monitor keys its send-once on. See the interface comment on why it cannot
+                // key on the cutoff.
+                'notification_id' => (int) $row['id'],
                 'record'      => (string) $row['record'],
                 'instance'    => (int) $row['instance'],
                 'event_id'    => (int) $row['event_id'],

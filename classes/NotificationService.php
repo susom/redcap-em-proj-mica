@@ -532,6 +532,13 @@ class NotificationService
         }
 
         $counts = $this->safeCounts($this->store->digestCounts($this->projectId, $sinceTs, $untilTs));
+
+        // Overwritten here, not taken from the store: "overdue" means "past the policy's window", and
+        // the store has no policy to measure that against. Left to the store it would have counted
+        // every unacknowledged notice, which is a different and much larger number - and reporting it
+        // under this label would overstate the problem on the one line a PI is most likely to act on.
+        $counts['overdue_acknowledgment'] = $this->overdueCount() ?? 0;
+
         $results = [];
 
         foreach ($digests as $digest) {
@@ -604,32 +611,145 @@ class NotificationService
             return [NotificationResult::skipped(self::ACK_OVERDUE, 'Nothing is overdue.')];
         }
 
+        /**
+         * Send-once is keyed on each overdue *notice*, never on the cutoff.
+         *
+         * The cutoff is `now - minutes`, so it moves every second: a key built from it would be
+         * different on every five-minute cron run, `alreadySent()` would never match, and every
+         * reviewer would be emailed every five minutes for as long as anything was unacknowledged -
+         * about a list that only grows until somebody acknowledges something. That is precisely the
+         * alert fatigue the "only notify when a job has stopped moving" rule exists to avoid, and it
+         * would arrive the moment a study set its acknowledgment target, which is the first thing they
+         * do when going live.
+         *
+         * So each notice is chased exactly once, ever. The nags are batched into one message rather
+         * than one per notice, because twenty overdue findings should not be twenty emails.
+         */
+        $fresh = [];
+
+        foreach ($overdue as $row) {
+            $id = (int) ($row['notification_id'] ?? 0);
+
+            if ($id === 0) {
+                // A store that cannot identify its own rows cannot support send-once. Better to say
+                // so than to nag forever.
+                return [NotificationResult::failed(
+                    self::ACK_OVERDUE,
+                    'The notification store returned an overdue row with no notification_id, so this '
+                    . 'nag could not be made send-once. Refusing rather than emailing every reviewer '
+                    . 'on every cron run.'
+                )];
+            }
+
+            $key = $this->idempotencyKey(self::ACK_OVERDUE, 'notice:' . $id);
+
+            if (!$this->store->alreadySent($key)) {
+                $fresh[] = $row + ['__key' => $key];
+            }
+        }
+
+        if ($fresh === []) {
+            return [NotificationResult::skipped(
+                self::ACK_OVERDUE,
+                sprintf('%d notice(s) are overdue and every one has already been chased.', count($overdue))
+            )];
+        }
+
         $recipients = $this->directory->reviewerAddresses();
-        $key = $this->idempotencyKey(self::ACK_OVERDUE, 'cutoff:' . $cutoff);
 
         if ($recipients === []) {
             return [$this->recordFailure(
                 self::ACK_OVERDUE,
-                $key,
-                sprintf('%d finding(s) are past the %d-minute window and no reviewer address '
-                    . 'resolves.', count($overdue), $minutes),
+                $fresh[0]['__key'],
+                sprintf(
+                    '%d notice(s) are past the %d-minute window and no reviewer address resolves.',
+                    count($fresh),
+                    $minutes
+                ),
                 []
             )];
         }
 
-        return [$this->deliver(
-            self::ACK_OVERDUE,
-            $key,
-            'secure_email',
-            $recipients,
-            sprintf(
-                '[MICA] %d finding(s) past the %d-minute acknowledgment window',
-                count($overdue),
-                $minutes
-            ),
-            $this->overdueBody($overdue, $minutes),
-            ['finding_count' => count($overdue)]
-        )];
+        $subject = sprintf(
+            '[MICA] %d finding(s) past the %d-minute acknowledgment window',
+            count($fresh),
+            $minutes
+        );
+        $body = $this->overdueBody($fresh, $minutes);
+
+        if (!$this->channel->supports('secure_email')) {
+            return [$this->recordFailure(
+                self::ACK_OVERDUE,
+                $fresh[0]['__key'],
+                'This deployment cannot deliver secure_email, so overdue findings cannot be chased.',
+                []
+            )];
+        }
+
+        try {
+            $this->channel->send('secure_email', $recipients, $subject, $body);
+        } catch (\Throwable $e) {
+            // Recorded per notice without a dedupe key, so the next cron run retries all of them.
+            $results = [];
+            foreach ($fresh as $row) {
+                $results[] = $this->recordFailure(
+                    self::ACK_OVERDUE,
+                    $row['__key'],
+                    $e->getMessage(),
+                    ['record' => (string) ($row['record'] ?? ''), 'channel' => 'secure_email']
+                );
+            }
+
+            return $results;
+        }
+
+        // One row per notice chased - that is what makes each one send-once - for a single message.
+        $results = [];
+
+        foreach ($fresh as $row) {
+            $logId = $this->store->recordNotification($this->row(
+                self::ACK_OVERDUE,
+                $row['__key'],
+                NotificationResult::SENT,
+                'secure_email',
+                count($recipients),
+                $subject,
+                $body,
+                '',
+                [
+                    'record'   => (string) ($row['record'] ?? ''),
+                    'event_id' => (int) ($row['event_id'] ?? 0),
+                    'instance' => (int) ($row['instance'] ?? 0),
+                ]
+            ));
+
+            $results[] = NotificationResult::sent(
+                self::ACK_OVERDUE,
+                count($recipients),
+                ['secure_email'],
+                [],
+                $logId
+            );
+        }
+
+        return $results;
+    }
+
+    /**
+     * How many notices are overdue right now, or null when no target is set.
+     *
+     * Lives here rather than in the store because "overdue" is a policy question and the store has no
+     * policy. The digest's `overdue_acknowledgment` bucket is filled from this.
+     */
+    public function overdueCount(): ?int
+    {
+        $minutes = $this->policy->criticalAcknowledgmentMinutes();
+
+        if ($minutes === null) {
+            return null;
+        }
+
+        return count($this->store->unacknowledged($this->projectId, ($this->clock)() - ($minutes * 60)));
     }
 
     // ------------------------------------------------------------------ bodies

@@ -1058,11 +1058,15 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     {
         $now = time();
 
-        // Local midnight and the most recent Monday, in REDCap's configured timezone. The policy's
+        // Local midnight and this week's Monday, in REDCap's configured timezone. The policy's
         // per-digest `timezone` is not honoured yet; a study spanning timezones would need it, and
         // until then using the server's is at least consistent rather than arbitrary.
+        //
+        // `monday this week`, NOT `last monday`: PHP's "last X" excludes today, so on a Monday it
+        // returns the Monday before - which made the weekly digest report a window a full week stale,
+        // then send again on Tuesday for the correct one. Two emails, one of them wrong.
         $dailyUntil  = strtotime('today midnight', $now);
-        $weeklyUntil = strtotime('last monday midnight', $now + 1);
+        $weeklyUntil = strtotime('monday this week 00:00', $now);
 
         return $this->notificationCronPass(
             'mica_digest',
@@ -1934,9 +1938,17 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 // here rather than in ScanRunner because only the queue's state machine knows
                 // whether this attempt was the last one - the runner sees one attempt at a time.
                 $attempts = ((int) ($job['attempts'] ?? 0)) + 1;
-                $next = $states->afterAttempt((string) $job['status'], $outcome->runStatus, $attempts);
+                // Same call ScanQueue::finishAttempt() will make, terminal flag included, so the
+                // placeholder, the notification and the persisted job status cannot disagree about
+                // what happened to this attempt.
+                $next = $states->afterAttempt(
+                    (string) $job['status'],
+                    $outcome->runStatus,
+                    $attempts,
+                    $outcome->terminal
+                );
 
-                if ($outcome->terminal || $next['status'] === ScanJobStateMachine::MANUAL_REVIEW_REQUIRED) {
+                if ($next['status'] === ScanJobStateMachine::MANUAL_REVIEW_REQUIRED) {
                     $this->writeScanFailurePlaceholder($findings, $job, $outcome, $attempts, $projectId);
                 }
 

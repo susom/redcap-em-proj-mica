@@ -256,7 +256,9 @@ Not `mica_digest_daily` / `mica_digest_weekly` / 15-minute ack.
   A digest is therefore not lost because the server was busy at 07:00.
 - **`mica_ack_monitor` runs every 5 minutes** because
   `critical_acknowledgment_minutes` can be as low as 1, and a monitor that
-  runs less often than the deadline it enforces cannot enforce it.
+  runs less often than the deadline it enforces cannot enforce it. Its
+  send-once is keyed on the overdue *notice*, never on the cutoff — see the
+  bug note below.
 
 Both share `notificationCronPass()`, which puts each project in its own
 try/catch: one study with a broken policy or an unreachable mail server must
@@ -294,13 +296,64 @@ exists to prevent.
 
 Verified on live REDCap: a second action leaves the first checkbox set.
 
-### Bug found by testing
+### Bugs found by testing and review
 
-`NotificationResult::failed()` did not carry `actionFields`, so a delivery
+**`NotificationResult::failed()` carried no `actionFields`**, so a delivery
 that was *attempted and failed* returned nothing for the caller to persist —
 `action_delivery_status = 'failed'` would never have reached the form, and the
 finding would have read as though nothing was ever tried. Fixed;
 `testATransportFailureIsRecordedRatherThanThrown` covers it.
+
+**The ack monitor would have emailed every reviewer every five minutes,
+forever.** Its send-once key was
+`idempotencyKey(ACK_OVERDUE, 'cutoff:' . (now - minutes*60))` — a value derived
+from the clock, so every cron run computed a different key and `alreadySent()`
+could never match. It would have arrived the moment a study set
+`critical_acknowledgment_minutes`, which is the first thing they do when going
+live, about a list that only grows until somebody acknowledges something.
+
+A frozen test clock hid it perfectly: two calls compute identical keys and the
+test passes. The key is now the *notice* (`notice:<notification_id>`), which is
+the only stable thing available, so each overdue notice is chased exactly once
+ever; nags are batched into one message because twenty overdue findings should
+not be twenty emails, and one trail row is written per notice chased.
+`unacknowledged()` therefore has to return `notification_id`, and a row without
+one is a recorded failure rather than a nag — a store that cannot identify its
+own rows cannot support send-once. `NotificationServiceTest` now drives an
+**advancing** clock.
+
+**The weekly digest window was a week stale.**
+`strtotime('last monday midnight')` excludes today in PHP, so on a Monday it
+returned the *previous* Monday: the digest reported the wrong week, then sent
+again on Tuesday for the right one. `monday this week 00:00` gives one stable
+window per calendar week, covering the completed week, on every day including
+Monday and Sunday.
+
+**A terminal-but-retryable scan sent no notice.** The runner's "do not retry"
+veto lived in `ScanQueue::finishAttempt()` alone, so the queue persisted
+`manual_review_required` while the scan worker — re-deriving the status from
+the same inputs to decide whether to write a placeholder and whether to notify
+— saw `queued` and told nobody. The session went to a human and no human was
+told. The veto moved into `ScanJobStateMachine::afterAttempt()` as a fourth
+parameter (defaulting off, so existing callers are unchanged), so both call
+sites now agree by construction instead of by matching comments.
+
+**The digest's `overdue_acknowledgment` bucket counted the wrong thing.**
+`RedcapNotificationStore` filled it, but "overdue" depends on the policy's
+window and a store has no policy — so it was counting *every* unacknowledged
+notice, a much larger number, on the one line a PI is most likely to act on.
+`NotificationService` fills it now.
+
+Two verifier path assumptions also fixed: `verify-transcript-store.php` and
+`apply-safety-finding-instrument.php` both computed paths with
+`dirname(__DIR__, 3)`, which silently pointed at `/var/www/handoff` when the
+script was run from a copy under `temp/`.
+
+And one *test* bug the live verifier caught that the unit suite could not: the
+first version of the ack-monitor check counted emails, so it read a correct new
+nag — an earlier `action_delivery` notice legitimately crossing its window as
+the clock advanced — as a duplicate. It counts trail rows for the specific
+notice now.
 
 Two verifier path assumptions also fixed: `verify-transcript-store.php` and
 `apply-safety-finding-instrument.php` both computed paths with
@@ -309,7 +362,7 @@ script was run from a copy under `temp/`.
 
 ### Verified against live REDCap (PID 257)
 
-`docs/phase-3-handoff/scripts/verify-notifications.php` — 40 checks, PASS:
+`docs/phase-3-handoff/scripts/verify-notifications.php` — 46 checks, PASS:
 
 ```
 docker exec -e MICA_MODULE_DIR=/var/www/html/modules-local/proj_mica_v9.9.9 \

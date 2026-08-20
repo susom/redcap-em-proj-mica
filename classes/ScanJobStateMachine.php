@@ -101,9 +101,49 @@ class ScanJobStateMachine
      * @param string $status     current status; must be SCANNING
      * @param string $runStatus  one of EntityTypes::runStatusChoices()
      * @param int    $attempts   attempts *including* the one that just finished
+     * @param bool   $terminal   the runner says do not retry, whatever the taxonomy says
      * @return array{status:string,retryInSeconds:?int,reason:string}
      */
-    public function afterAttempt(string $status, string $runStatus, int $attempts): array
+    public function afterAttempt(
+        string $status,
+        string $runStatus,
+        int $attempts,
+        bool $terminal = false
+    ): array {
+        $outcome = $this->classify($status, $runStatus, $attempts);
+
+        /**
+         * The runner can veto a retry for a failure the taxonomy classifies as transient.
+         *
+         * The case it exists for: the model answered and verified, and the findings could not be
+         * stored because the review instrument does not exist. Retrying re-pays for the same model
+         * call against a fault that cannot resolve between attempts.
+         *
+         * Applied here rather than at the call site because there is more than one call site - the
+         * queue, which persists the transition, and the scan worker, which decides whether to write a
+         * placeholder and whether to notify. When the override lived in the queue alone, those two
+         * disagreed: a terminal-but-transient outcome was persisted as manual_review_required and got
+         * its placeholder, but the notifier saw `queued` and told nobody. One derivation means they
+         * agree by construction instead of by matching comments.
+         *
+         * It can only ever make a retryable outcome terminal, never the reverse - so it cannot be
+         * used to suppress a review.
+         */
+        if ($terminal && $outcome['status'] === self::QUEUED) {
+            return [
+                'status'         => self::MANUAL_REVIEW_REQUIRED,
+                'retryInSeconds' => null,
+                'reason'         => $outcome['reason'] . ' - but the runner reported it as not '
+                                  . 'retryable, so it goes to a human now instead of re-calling '
+                                  . 'the model for a fault that cannot fix itself',
+            ];
+        }
+
+        return $outcome;
+    }
+
+    /** @return array{status:string,retryInSeconds:?int,reason:string} */
+    private function classify(string $status, string $runStatus, int $attempts): array
     {
         if ($status !== self::SCANNING) {
             throw new \LogicException(

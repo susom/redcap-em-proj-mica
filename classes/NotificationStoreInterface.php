@@ -46,9 +46,16 @@ interface NotificationStoreInterface
     public function digestCounts(string $projectId, int $sinceTs, int $untilTs): array;
 
     /**
-     * Findings that are still awaiting acknowledgment past their window.
+     * Notices that went out and are still unacknowledged past the cutoff.
      *
-     * @return list<array<string,mixed>> record/event/instance/urgency/notified_at - no free text
+     * Must include `notification_id`. The acknowledgment monitor keys its send-once on the *notice*,
+     * not on the cutoff: a cutoff is derived from the clock and therefore differs on every cron run,
+     * which would give a fresh idempotency key every five minutes and nag every reviewer forever.
+     * One nag per overdue notice is the requirement, and the row id is the only stable thing to key it
+     * on.
+     *
+     * @return list<array<string,mixed>> notification_id/record/event_id/instance/urgency/notified_at
+     *                                   - no free text
      */
     public function unacknowledged(string $projectId, int $notifiedBeforeTs): array;
 }

@@ -496,7 +496,93 @@ try {
     note('findings in the window', (string) $counts['findings_total'] . ' (probe findings have no job)');
     note('confirmed in the window', (string) $counts['confirmed']);
 
-    echo "\n10. Launch readiness on this project\n";
+    echo "\n10. The acknowledgment monitor nags once per notice, not once per cron run\n";
+
+    // The real store, the real UNIQUE index, and a clock that advances the way five-minute cron runs
+    // do. Keying send-once on the cutoff instead of the notice would flood every reviewer, and a
+    // frozen clock cannot show it: two calls would compute the same key and look correct.
+    $ackClock = $now;
+    $ackService = new NotificationService(
+        NotificationPolicy::fromJson(
+            json_encode(array_replace_recursive(
+                $artifacts->getJson('notification_policy_default'),
+                ['ra_review_policy' => ['critical_acknowledgment_minutes' => 1]]
+            ), JSON_THROW_ON_ERROR),
+            $artifacts,
+            new SchemaValidator($artifacts)
+        ),
+        $channel,
+        $notifStore,
+        $directory,
+        $reviewStore,
+        $audit,
+        (string) $PID,
+        'https://redcap.example.org/review',
+        static function () use (&$ackClock): int {
+            return $ackClock;
+        }
+    );
+
+    // A sent reviewers-ready notice, two hours old and never acknowledged.
+    $module->query(
+        'INSERT INTO redcap_entity_mica_notification '
+        . '(created, updated, notification_type, idempotency_key, dedupe_key, project_id, record, '
+        . 'event_id, instance, status, channel, subject, sent_at) '
+        . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+            $now, $now, NotificationService::REVIEWERS_READY, 'probe-ack-' . $now,
+            'probe-ack-' . $now, $PID, $RECORD, $EVENT, $instance, 'sent', 'secure_email',
+            '[MICA] 1 SafetyScan finding(s) ready for review - highest urgency: critical',
+            $now - 7200,
+        ]
+    );
+
+    $overdue = $notifStore->unacknowledged((string) $PID, $now - 60);
+    check('the overdue read returns a notification_id', ($overdue[0]['notification_id'] ?? 0) > 0 ? 'yes' : 'no', 'yes');
+    check('and the urgency read back off the subject', $overdue[0]['urgency'] ?? 'NONE', 'critical');
+
+    $probeId = (int) $overdue[0]['notification_id'];
+    $probeKey = $ackService->idempotencyKey(NotificationService::ACK_OVERDUE, 'notice:' . $probeId);
+
+    /**
+     * How many times THIS notice has been chased.
+     *
+     * Counted by idempotency key rather than by emails sent, because earlier steps left other `sent`
+     * notices on this record and each of those legitimately earns its own first nag as the clock
+     * advances past its window. A raw email count would therefore have read a *correct* new nag as a
+     * duplicate - which is what the first version of this check did.
+     */
+    $nagsForProbe = static fn(): int => (int) $module->query(
+        'SELECT COUNT(*) AS c FROM redcap_entity_mica_notification '
+        . 'WHERE idempotency_key = ? AND status = ?',
+        [$probeKey, NotificationResult::SENT]
+    )->fetch_assoc()['c'];
+
+    $first = $ackService->notifyOverdueAcknowledgments();
+    check('the first run nags', $first[0]->outcome, NotificationResult::SENT);
+    check('once for this notice', $nagsForProbe(), 1);
+
+    foreach ([300, 600, 900, 86_400] as $elapsed) {
+        $ackClock = $now + $elapsed;
+        $ackService->notifyOverdueAcknowledgments();
+    }
+    // The point: the cutoff moved four times and this notice was still chased exactly once. Keying
+    // send-once on the cutoff would have made this 5.
+    check('and still once after four later cron runs', $nagsForProbe(), 1);
+
+    // Acknowledge it, and it leaves the overdue list.
+    $notifStore->acknowledge($probeId, $REVIEWER, $now);
+    $stillOverdue = array_column(
+        $notifStore->unacknowledged((string) $PID, $now + 90_000),
+        'notification_id'
+    );
+    check(
+        'an acknowledged notice is no longer overdue',
+        in_array($probeId, $stillOverdue, true) ? 'still listed' : 'gone',
+        'gone'
+    );
+
+    echo "\n11. Launch readiness on this project\n";
     $gates = $module->launchReadinessFor($PID);
     foreach ($gates->evaluate() as $gate) {
         printf(
@@ -519,7 +605,7 @@ try {
 
 // ---------------------------------------------------------------- cleanup
 
-echo "\n11. Cleanup\n";
+echo "\n12. Cleanup\n";
 
 if ($instance !== null) {
     $fields = $module->query(

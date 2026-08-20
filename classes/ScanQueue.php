@@ -178,22 +178,10 @@ class ScanQueue
         bool $terminal = false
     ): array {
         $attempts = ((int) ($job['attempts'] ?? 0)) + 1;
-        $outcome = $this->states->afterAttempt((string) $job['status'], $runStatus, $attempts);
-
-        // The runner can say "do not retry this" for a failure the taxonomy classifies as transient.
-        // The case it exists for: the model answered and verified, and the findings could not be
-        // stored because the review instrument does not exist. Retrying re-pays for the same model
-        // call against a fault that cannot resolve between attempts. It can only ever make a
-        // retryable outcome terminal, never the reverse - so it cannot be used to suppress a review.
-        if ($terminal && $outcome['status'] === ScanJobStateMachine::QUEUED) {
-            $outcome = [
-                'status'         => ScanJobStateMachine::MANUAL_REVIEW_REQUIRED,
-                'retryInSeconds' => null,
-                'reason'         => $outcome['reason'] . ' - but the runner reported it as not '
-                                  . 'retryable, so it goes to a human now instead of re-calling '
-                                  . 'the model for a fault that cannot fix itself',
-            ];
-        }
+        // The runner's terminal veto is applied inside afterAttempt(), so that this - which persists
+        // the transition - and the scan worker - which decides whether to notify about it - cannot
+        // reach different conclusions from the same inputs.
+        $outcome = $this->states->afterAttempt((string) $job['status'], $runStatus, $attempts, $terminal);
 
         $now = ($this->clock)();
 

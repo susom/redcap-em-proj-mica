@@ -113,6 +113,52 @@ final class ScanJobStateMachineTest extends TestCase
         return array_map(static fn(string $s): array => [$s], SM::TERMINAL);
     }
 
+    // ------------------------------------------------------ the runner's terminal veto
+
+    /**
+     * The veto lives here so that every caller derives the same status from the same inputs.
+     *
+     * It used to be applied in ScanQueue::finishAttempt() alone, which meant the queue persisted
+     * `manual_review_required` while the scan worker - re-deriving the status to decide whether to
+     * write a placeholder and whether to notify - saw `queued` and told nobody. The session went to a
+     * human and no human was told, which is the worst of the available outcomes.
+     */
+    #[DataProvider('transientFailures')]
+    public function testTheRunnersVetoTurnsARetryIntoManualReview(string $runStatus): void
+    {
+        $sm = new SM(3);
+
+        $this->assertSame(SM::QUEUED, $sm->afterAttempt(SM::SCANNING, $runStatus, 1)['status']);
+
+        $vetoed = $sm->afterAttempt(SM::SCANNING, $runStatus, 1, true);
+        $this->assertSame(SM::MANUAL_REVIEW_REQUIRED, $vetoed['status']);
+        $this->assertNull($vetoed['retryInSeconds']);
+        $this->assertStringContainsString('not retryable', $vetoed['reason']);
+    }
+
+    public function testTheVetoCanOnlyEscalateNeverSuppressAReview(): void
+    {
+        // A caller passing terminal on a SUCCESS must not be able to route a clean scan away from
+        // review. That would be a negative screen produced by a flag.
+        $ok = (new SM(3))->afterAttempt(SM::SCANNING, 'ok', 1, true);
+        $this->assertSame(SM::READY_FOR_REVIEW, $ok['status']);
+
+        // And on an already-terminal failure it changes nothing, including the reason.
+        $already = (new SM(3))->afterAttempt(SM::SCANNING, 'refusal', 1, true);
+        $this->assertSame(SM::MANUAL_REVIEW_REQUIRED, $already['status']);
+        $this->assertStringNotContainsString('not retryable', $already['reason']);
+    }
+
+    public function testTheVetoDefaultsOffSoExistingCallersAreUnchanged(): void
+    {
+        $sm = new SM(3);
+
+        $this->assertSame(
+            $sm->afterAttempt(SM::SCANNING, 'timeout', 1),
+            $sm->afterAttempt(SM::SCANNING, 'timeout', 1, false)
+        );
+    }
+
     #[DataProvider('transientFailures')]
     public function testTransientFailuresRetryUntilExhausted(string $runStatus): void
     {

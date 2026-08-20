@@ -38,6 +38,15 @@ final class NotificationServiceTest extends TestCase
     private ArtifactRegistry $artifacts;
     private SchemaValidator $validator;
 
+    /**
+     * The clock, mutable so a test can advance it.
+     *
+     * Not a frozen closure: the acknowledgment monitor's send-once has to hold across cron runs, and a
+     * frozen clock makes two calls compute identical keys - so a repeat-call test would pass green
+     * while production emailed every reviewer every five minutes forever.
+     */
+    private int $now = self::NOW;
+
     protected function setUp(): void
     {
         $this->findings = new FakeFindingReviewStore();
@@ -75,7 +84,7 @@ final class NotificationServiceTest extends TestCase
             new AuditLogger($this->auditStore, $roles),
             self::PID,
             'https://redcap.example.org/review',
-            static fn(): int => self::NOW
+            fn(): int => $this->now
         );
     }
 
@@ -670,6 +679,28 @@ final class NotificationServiceTest extends TestCase
         }
     }
 
+    public function testTheOverdueBucketMeasuresThePolicysWindowNotEveryUnacknowledgedNotice(): void
+    {
+        // The store has no policy, so it cannot know what "overdue" means - left to it, this line
+        // would have counted every unacknowledged notice. That is a much larger number, on the one
+        // line a PI is most likely to act on.
+        $this->store->overdue = [$this->overdueRow(1, '7'), $this->overdueRow(2, '8')];
+        $this->store->counts = ['overdue_acknowledgment' => 999];
+
+        // No target set: nothing can be overdue, whatever the store says.
+        $this->service($this->dailyDigest())->sendDigests('daily', self::NOW - 86400);
+        $this->assertStringContainsString('overdue acknowledgment:  0', $this->channel->last()['body']);
+
+        $this->channel->sent = [];
+        $this->store->rows = [];
+
+        $this->service(array_merge(
+            $this->dailyDigest(),
+            ['ra_review_policy' => ['critical_acknowledgment_minutes' => 60]]
+        ))->sendDigests('daily', self::NOW - 86400);
+        $this->assertStringContainsString('overdue acknowledgment:  2', $this->channel->last()['body']);
+    }
+
     public function testTheSameDigestWindowIsNotSentTwice(): void
     {
         $service = $this->service($this->dailyDigest());
@@ -699,7 +730,7 @@ final class NotificationServiceTest extends TestCase
     {
         // The shipped state, and LaunchReadiness's deliberate blocker. Silence here would be the
         // wrong outcome: the gate is what makes the undecided target visible.
-        $this->store->overdue = [['record' => '7', 'instance' => 1, 'urgency' => 'critical']];
+        $this->store->overdue = [$this->overdueRow(1, '7')];
 
         $results = $this->service()->notifyOverdueAcknowledgments();
 
@@ -711,25 +742,122 @@ final class NotificationServiceTest extends TestCase
     public function testOverdueFindingsAreChasedOnceTheTargetIsSet(): void
     {
         $this->store->overdue = [
-            ['record' => '7', 'instance' => 1, 'urgency' => 'critical', 'notified_at' => self::NOW - 7200],
-            ['record' => '8', 'instance' => 2, 'urgency' => 'high', 'notified_at' => self::NOW - 9000],
+            $this->overdueRow(1, '7', 'critical', 7200),
+            $this->overdueRow(2, '8', 'high', 9000),
         ];
 
-        $results = $this->service(['ra_review_policy' => ['critical_acknowledgment_minutes' => 60]])
-            ->notifyOverdueAcknowledgments();
+        $results = $this->ackService()->notifyOverdueAcknowledgments();
 
         $this->assertTrue($results[0]->wasSent());
+        $this->assertSame(1, $this->channel->count(), 'Two overdue notices, one email.');
         $this->assertStringContainsString('2 finding(s) past the 60-minute', $this->channel->last()['subject']);
         $this->assertStringContainsString('record 7', $this->channel->last()['body']);
+        // One row per notice chased - that is what makes each one send-once.
+        $this->assertCount(2, $this->store->withStatus(NotificationResult::SENT));
+    }
+
+    public function testAnOverdueNoticeIsChasedOnceEvenThoughTheCutoffMovesEveryRun(): void
+    {
+        // The bug this exists for: keying send-once on `now - minutes` gives a fresh key on every
+        // five-minute cron run, so alreadySent() never matches and every reviewer is emailed every
+        // five minutes for as long as anything is unacknowledged. A frozen clock hides it completely -
+        // two calls would compute the same key and the test would pass while production flooded.
+        $this->store->overdue = [$this->overdueRow(1, '7', 'critical', 7200)];
+        $service = $this->ackService();
+
+        $service->notifyOverdueAcknowledgments();
+        $this->assertSame(1, $this->channel->count());
+
+        foreach ([300, 600, 900, 86_400] as $elapsed) {
+            $this->now = self::NOW + $elapsed;
+            $results = $service->notifyOverdueAcknowledgments();
+
+            $this->assertSame(
+                NotificationResult::SKIPPED,
+                $results[0]->outcome,
+                "Re-nagged after {$elapsed}s."
+            );
+            $this->assertStringContainsString('already been chased', $results[0]->reason);
+        }
+
+        $this->assertSame(1, $this->channel->count(), 'One nag per overdue notice, ever.');
+    }
+
+    public function testANewlyOverdueNoticeIsChasedWithoutRepeatingTheOnesAlreadySent(): void
+    {
+        $this->store->overdue = [$this->overdueRow(1, '7', 'critical', 7200)];
+        $service = $this->ackService();
+        $service->notifyOverdueAcknowledgments();
+
+        $this->now = self::NOW + 3600;
+        $this->store->overdue[] = $this->overdueRow(2, '8', 'high', 4000);
+
+        $results = $service->notifyOverdueAcknowledgments();
+
+        $this->assertTrue($results[0]->wasSent());
+        $this->assertSame(2, $this->channel->count());
+        $body = $this->channel->last()['body'];
+        $this->assertStringContainsString('record 8', $body);
+        $this->assertStringNotContainsString('record 7', $body, 'Record 7 was already chased.');
+        $this->assertStringContainsString('1 finding(s) past', $this->channel->last()['subject']);
+    }
+
+    public function testAnOverdueRowWithNoIdIsRefusedRatherThanNaggedForever(): void
+    {
+        // A store that cannot identify its own rows cannot support send-once. Saying so beats
+        // emailing every reviewer on every cron run.
+        $this->store->overdue = [['record' => '7', 'instance' => 1, 'urgency' => 'critical']];
+
+        $results = $this->ackService()->notifyOverdueAcknowledgments();
+
+        $this->assertSame(NotificationResult::FAILED, $results[0]->outcome);
+        $this->assertStringContainsString('no notification_id', $results[0]->reason);
+        $this->assertSame(0, $this->channel->count());
+    }
+
+    public function testAFailedNagIsRetriedOnTheNextRun(): void
+    {
+        $this->store->overdue = [$this->overdueRow(1, '7', 'critical', 7200)];
+        $service = $this->ackService();
+        $this->channel->throwOn = 'SMTP unavailable';
+
+        $first = $service->notifyOverdueAcknowledgments();
+        $this->assertSame(NotificationResult::FAILED, $first[0]->outcome);
+
+        $this->channel->throwOn = null;
+        $this->now = self::NOW + 300;
+
+        $this->assertTrue($service->notifyOverdueAcknowledgments()[0]->wasSent());
     }
 
     public function testNothingOverdueIsASkipNotAnEmptyEmail(): void
     {
-        $results = $this->service(['ra_review_policy' => ['critical_acknowledgment_minutes' => 60]])
-            ->notifyOverdueAcknowledgments();
+        $results = $this->ackService()->notifyOverdueAcknowledgments();
 
         $this->assertSame(NotificationResult::SKIPPED, $results[0]->outcome);
         $this->assertSame(0, $this->channel->count());
+    }
+
+    private function ackService(int $minutes = 60): N
+    {
+        return $this->service(['ra_review_policy' => ['critical_acknowledgment_minutes' => $minutes]]);
+    }
+
+    /** @return array<string,mixed> */
+    private function overdueRow(
+        int $id,
+        string $record,
+        string $urgency = 'critical',
+        int $agoSeconds = 7200
+    ): array {
+        return [
+            'notification_id' => $id,
+            'record'          => $record,
+            'instance'        => $id,
+            'event_id'        => self::EVENT,
+            'urgency'         => $urgency,
+            'notified_at'     => self::NOW - $agoSeconds,
+        ];
     }
 
     // ================================================================== bookkeeping
