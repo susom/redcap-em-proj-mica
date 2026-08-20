@@ -45,6 +45,17 @@
         "completeSession",
         "fetchSavedQueries"
     ],
+    "auth-ajax-actions": [
+        "reviewQueue",
+        "reviewSession",
+        "submitDisposition",
+        "submitAction",
+        "reviewHistory",
+        "auditTrail",
+        "getPolicy",
+        "savePolicy",
+        "launchReadiness"
+    ],
     "project-settings": [
         {
             "key": "chat_host_instruments",
@@ -168,6 +179,27 @@
             "name": "<b>Scan mock mode</b> <span style=\"color:#c00\">(development only)</span><br><i>Replay fixtures instead of calling a model. Must be off in production; the launch-readiness gate refuses production while it is on.</i>",
             "required": false,
             "type": "checkbox"
+        },
+        {
+            "key": "role-ra-reviewer",
+            "name": "<b>Research assistants (reviewers)</b><br><i>Who reviews SafetyScan findings. Under the RA-first policy these are the users who actually decide - nothing reaches a care team, PI or protocol lead until one of them confirms a finding.</i>",
+            "required": false,
+            "type": "user-list",
+            "repeatable": true
+        },
+        {
+            "key": "role-pi-lead",
+            "name": "<b>PI / protocol lead</b><br><i>Everything a reviewer can do, plus the audit trail.</i>",
+            "required": false,
+            "type": "user-list",
+            "repeatable": true
+        },
+        {
+            "key": "role-auditor",
+            "name": "<b>Auditors</b><br><i>Read-only and de-identified: history aggregates and the audit trail, never a transcript and never a disposition.</i>",
+            "required": false,
+            "type": "user-list",
+            "repeatable": true
         },
         {
             "key": "enable-project-debug-logging",

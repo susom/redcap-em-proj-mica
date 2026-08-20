@@ -25,6 +25,12 @@ require_once "classes/FixtureSafetyScanCaller.php";
 require_once "classes/RedcapScanResultStore.php";
 require_once "classes/ScanRunner.php";
 require_once "classes/SecureChatSafetyScanCaller.php";
+// Stage 5: the review dashboard's services.
+require_once "classes/AuditLogger.php";
+require_once "classes/DispositionService.php";
+require_once "classes/RedcapAuditStore.php";
+require_once "classes/RedcapFindingReviewStore.php";
+require_once "classes/RoleService.php";
 
 // vendor/ is committed and deploys with the module, and opis/json-schema is a runtime dependency
 // of the turn contract, so this is a hard require again. It was briefly conditional because a

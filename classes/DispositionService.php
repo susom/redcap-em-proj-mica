@@ -125,27 +125,31 @@ class DispositionService
             'review_lock_version'  => (string) ($currentVersion + 1),
         ];
 
-        if ($rationale !== '') {
-            $write['review_rationale'] = $rationale;
-        }
-
-        $notes = trim((string) ($input['review_notes'] ?? ''));
-        if ($notes !== '') {
-            $write['review_notes'] = $notes;
-        }
-
-        // Corrections are stored SEPARATELY from the model's classification, so the original stays
-        // intact and the disagreement itself is the auditable fact.
+        // Absent key means "leave it alone"; present-but-empty means "clear it". The distinction is
+        // load-bearing: a reviewer who sets a corrected urgency and then decides on reflection that
+        // the model was right has to be able to withdraw it, and a store that only ever receives
+        // non-empty values cannot express that. A confirmed finding carrying a correction its own
+        // reviewer withdrew is worse than no correction at all.
+        //
+        // Corrections are stored SEPARATELY from the model's classification either way, so the
+        // original stays intact and the disagreement itself is the auditable fact.
         foreach (
             [
-            'review_corrected_concern_type' => 'review_corrected_concern_type',
-            'review_corrected_urgency'      => 'review_corrected_urgency',
-            ] as $from => $to
+            'review_rationale',
+            'review_notes',
+            'review_corrected_concern_type',
+            'review_corrected_urgency',
+            ] as $field
         ) {
-            $value = trim((string) ($input[$from] ?? ''));
-            if ($value !== '') {
-                $write[$to] = $value;
+            if (array_key_exists($field, $input)) {
+                $write[$field] = trim((string) $input[$field]);
             }
+        }
+
+        // The rationale is validated above, so an empty one here can only be the
+        // needs_second_review path deliberately clearing a previous reviewer's text.
+        if (($write['review_rationale'] ?? null) === '' && in_array($status, self::REQUIRES_RATIONALE, true)) {
+            throw new \LogicException('An empty rationale reached the write set on an ending disposition.');
         }
 
         $this->assertOnlyReviewFields($write);

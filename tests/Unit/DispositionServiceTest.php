@@ -119,6 +119,64 @@ final class DispositionServiceTest extends TestCase
         $this->assertSame('critical', $this->store->finding['finding_urgency']);
     }
 
+    public function testAWithdrawnCorrectionIsActuallyCleared(): void
+    {
+        // The bug this guards: saveData's `normal` mode skips empty values, so a correction a
+        // reviewer set and then withdrew would survive on a confirmed finding. The store writes
+        // with `overwrite` for exactly this - but only if the field is actually SENT, which means
+        // "absent" and "present but empty" have to mean different things.
+        $service = $this->service();
+
+        $service->submit('257', '2', 1008, 1, 'ra_alice', [
+            'review_status'            => D::CONFIRMED,
+            'review_rationale'         => 'Urgency looks overstated.',
+            'review_corrected_urgency' => 'moderate',
+            'review_lock_version'      => '0',
+        ]);
+        $this->assertSame('moderate', $this->store->finding['review_corrected_urgency']);
+
+        // On reflection, the model was right.
+        $service->submit('257', '2', 1008, 1, 'ra_alice', [
+            'review_status'            => D::CONFIRMED,
+            'review_rationale'         => 'On reflection the model was right; withdrawing.',
+            'review_corrected_urgency' => '',
+            'review_lock_version'      => '1',
+        ]);
+
+        $this->assertSame(
+            '',
+            $this->store->finding['review_corrected_urgency'],
+            'a withdrawn correction must not survive on a confirmed finding'
+        );
+        $this->assertArrayHasKey(
+            'review_corrected_urgency',
+            $this->store->lastWrite(),
+            'the field has to be SENT to be cleared - an omitted key cannot blank anything'
+        );
+    }
+
+    public function testAnAbsentFieldIsLeftAloneRatherThanCleared(): void
+    {
+        $service = $this->service();
+
+        $service->submit('257', '2', 1008, 1, 'ra_alice', [
+            'review_status'            => D::CONFIRMED,
+            'review_rationale'         => 'first pass',
+            'review_corrected_urgency' => 'moderate',
+            'review_lock_version'      => '0',
+        ]);
+
+        // A later submit that says nothing about the correction must not blank it.
+        $service->submit('257', '2', 1008, 1, 'pi_bob', [
+            'review_status'       => D::CONFIRMED,
+            'review_rationale'    => 'second pass, correction unchanged',
+            'review_lock_version' => '1',
+        ]);
+
+        $this->assertSame('moderate', $this->store->finding['review_corrected_urgency']);
+        $this->assertArrayNotHasKey('review_corrected_urgency', $this->store->lastWrite());
+    }
+
     // ------------------------------------------------------------------ the guarantees
 
     public function testModelFieldsCanNeverBeWritten(): void
