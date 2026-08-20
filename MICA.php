@@ -1004,7 +1004,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 new SchemaValidator($artifacts)
             ),
             new RedcapEmailChannel(
-                $this,
                 (string) $this->getProjectSetting('notification-from-email', $projectId)
             ),
             new RedcapNotificationStore($this, new RedcapReviewQueryStore($this)),

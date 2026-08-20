@@ -853,8 +853,12 @@ class NotificationService
             '',
         ];
 
+        // `label: n`, not space-padded columns. HTML collapses runs of spaces, so a `%-24s` column
+        // that lines up in a terminal renders ragged in every mail client - and `white-space:pre-wrap`
+        // is not dependable enough (Outlook's Word engine ignores it) to be worth relying on for
+        // alignment. This reads identically in both parts of the message.
         foreach (self::DIGEST_BUCKETS as $bucket) {
-            $lines[] = sprintf('%-24s %d', str_replace('_', ' ', $bucket) . ':', $counts[$bucket] ?? 0);
+            $lines[] = sprintf('%s: %d', ucfirst(str_replace('_', ' ', $bucket)), $counts[$bucket] ?? 0);
         }
 
         $lines[] = '';

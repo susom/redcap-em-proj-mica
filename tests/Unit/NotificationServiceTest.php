@@ -658,7 +658,7 @@ final class NotificationServiceTest extends TestCase
 
         $this->assertTrue($results[0]->wasSent());
         $body = $this->channel->last()['body'];
-        $this->assertStringContainsString('pending review:', $body);
+        $this->assertStringContainsString('Pending review: 4', $body);
         $this->assertStringContainsString('4', $body);
         $this->assertStringNotContainsString('record_12', $body);
         $this->assertStringNotContainsString('pills', $body);
@@ -675,7 +675,7 @@ final class NotificationServiceTest extends TestCase
 
         $body = $this->channel->last()['body'];
         foreach (N::DIGEST_BUCKETS as $bucket) {
-            $this->assertStringContainsString(str_replace('_', ' ', $bucket) . ':', $body);
+            $this->assertStringContainsString(ucfirst(str_replace('_', ' ', $bucket)) . ':', $body);
         }
     }
 
@@ -689,7 +689,7 @@ final class NotificationServiceTest extends TestCase
 
         // No target set: nothing can be overdue, whatever the store says.
         $this->service($this->dailyDigest())->sendDigests('daily', self::NOW - 86400);
-        $this->assertStringContainsString('overdue acknowledgment:  0', $this->channel->last()['body']);
+        $this->assertStringContainsString('Overdue acknowledgment: 0', $this->channel->last()['body']);
 
         $this->channel->sent = [];
         $this->store->rows = [];
@@ -698,7 +698,7 @@ final class NotificationServiceTest extends TestCase
             $this->dailyDigest(),
             ['ra_review_policy' => ['critical_acknowledgment_minutes' => 60]]
         ))->sendDigests('daily', self::NOW - 86400);
-        $this->assertStringContainsString('overdue acknowledgment:  2', $this->channel->last()['body']);
+        $this->assertStringContainsString('Overdue acknowledgment: 2', $this->channel->last()['body']);
     }
 
     public function testTheSameDigestWindowIsNotSentTwice(): void

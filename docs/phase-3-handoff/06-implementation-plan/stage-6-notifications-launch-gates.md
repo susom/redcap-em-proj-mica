@@ -391,10 +391,80 @@ docker exec -e MICA_MODULE_DIR=/var/www/html/modules-local/proj_mica_v9.9.9 \
   redcap_2023_1_web php /var/www/html/temp/mica/verify-notifications.php
 ```
 
-It does **not** send email — delivery goes through a capturing channel, so it
-proves the decision, the trail and the bookkeeping, not SMTP. The real
-channel's own refusal logic is checked separately. A verifier that mailed a
-study's care team every time somebody ran it would not get run.
+By default it does **not** send email — delivery goes through a capturing
+channel, so it proves the decision, the trail and the bookkeeping, not SMTP. A
+verifier that mailed a study's care team every time somebody ran it would not
+get run.
+
+`MICA_REAL_EMAIL=you@example.org` additionally delivers every message through
+the genuine `RedcapEmailChannel`, with **all recipients redirected to that one
+address** so the project's configured care-team and PI lists are never touched.
+The capture is still what the checks assert against, so turning it on cannot
+change a result — only add a way for the send itself to fail.
+
+### What real delivery found (2026-08-20)
+
+Six messages — one per body type — delivered through `REDCap::email()` to a
+local SMTP capture. Reading them turned up four rendering defects that no
+amount of reasoning about the code would have surfaced, because they all live in
+REDCap's own derivation of the text/plain alternative:
+`Message::formatPlainTextBody()` is `strip_tags(br2nl($body))` and it **never
+decodes HTML entities**.
+
+1. **`htmlspecialchars()` broke the dashboard link.** `?prefix=x&page=y&pid=257`
+   became `&amp;`, which survives `strip_tags` verbatim — so a reader on a
+   plain-text client copied a broken URL. In a minimum-necessary body the link
+   *is* the actionable part. Now only `<` and `>` are escaped, which are the two
+   characters that could begin a tag; `&` is left alone deliberately.
+2. **Apostrophes arrived as `&#039;`** ("the reviewer&#039;s rationale") — same
+   cause, merely ugly rather than harmful.
+3. **Every line was double-spaced** in the text part, because `nl2br()` emits
+   `"<br>\n"` and `br2nl` then turns that `<br>` into a *second* newline.
+   Newlines are now replaced by `<br>` rather than accompanied by one.
+4. **The digest's space-padded columns rendered ragged.** HTML collapses runs of
+   spaces, and `white-space:pre-wrap` is not dependable (Outlook's Word engine
+   ignores it), so `sprintf('%-24s %d')` became `Label: n`.
+
+URLs are now real anchors, which also gets REDCap's own `<a href="X">Y</a>` →
+`Y (X)` rewrite working for us. Two decisions inside that:
+
+- **Anchor text is the full URL, not a friendly label.** The text alternative
+  therefore reads `URL (URL)`. Accepted on purpose: a clinical notice whose
+  visible link text hides where it goes is phishing-shaped, and a reviewer
+  should see they are being sent to their own REDCap host before clicking.
+- **Only a URL alone on its own line is linked.** Found while writing the
+  tests: linking any URL anywhere meant a record id of
+  `<a href="http://evil.example">click</a>` still produced a live link to
+  evil.example — the injected tag was safely escaped, and the linkifier then
+  found the URL *in the escaped text* and anchored it. A live link to somewhere
+  else inside a genuine MICA safety notification is worth more to an attacker
+  than the tag they could not inject. Every real body puts the dashboard link on
+  its own line, and record ids cannot contain a newline.
+
+`RedcapEmailChannel` also lost its `MICA $module` constructor argument, which it
+never used — the From: address is passed in by the caller and everything else
+goes through `\REDCap::email()` and REDCap's globals. That unused dependency was
+what made the body conversion, where every one of these defects lived,
+untestable without a REDCap. It is now a pure static (`bodyToHtml()`) with 15
+tests, including a transcription of REDCap's plain-text derivation so assertions
+can be made against the part a text reader actually sees.
+
+### Delivery to a real mailbox is not proven, and cannot be from here
+
+`smtp.stanford.edu:587` is reachable from the container and offers
+`AUTH PLAIN LOGIN GSSAPI`, but unauthenticated relay is refused:
+
+```
+MAIL FROM:<redcap-server-message@stanford.edu>   250 2.1.0 Ok
+RCPT TO:<ihabz@stanford.edu>                     554 5.7.1 Access denied
+```
+
+So genuine delivery needs SMTP credentials. The stack's own relay
+(`/etc/msmtprc` → `mailhog:1025`) is commented out of `rdc/docker-compose.yml`,
+which is why the capture was stood up as a container on the existing network
+alias — no config change, nothing left behind. Everything up to and including
+the SMTP conversation is verified; the hop from a real relay to an inbox is not,
+and is a deployment concern rather than a module one.
 
 All six verify scripts PASS: entity-schema, transcript-chunking,
 transcript-store, safetyscan, disposition, notifications.

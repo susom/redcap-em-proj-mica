@@ -20,11 +20,17 @@
  *     of blanking the ones this payload does not mention;
  *   - whether the gate refuses when the *store* says pending, on a finding that really exists.
  *
- * ## What it does not do
+ * ## Email
  *
- * It does not send email. Delivery goes through a capturing channel, so this proves the decision, the
- * trail and the bookkeeping - not SMTP. The real channel's own refusal logic is checked separately in
- * step 7. A verifier that mailed a study's care team every time somebody ran it would not get run.
+ * By default this sends none. Delivery goes through a capturing channel, so the run proves the
+ * decision, the trail and the bookkeeping - not SMTP. A verifier that mailed a study's care team every
+ * time somebody ran it would not get run.
+ *
+ * Set `MICA_REAL_EMAIL=you@example.org` to also deliver every message through the real
+ * RedcapEmailChannel, with **all recipients redirected to that one address** - so the care-team and
+ * PI lists configured on the project are never touched. The checks are unaffected either way: the
+ * capture is still what they assert against. Use it to prove the mailer handoff end to end, and to
+ * read how the bodies actually render.
  *
  * Creates its own finding instance, role, and settings, and removes all of them.
  */
@@ -136,23 +142,65 @@ function note(string $label, $value): void
     printf("  ...  %-54s %s\n", $label, (string) $value);
 }
 
-/** Captures instead of mailing. See the header on why. */
+/**
+ * Captures instead of mailing, and optionally also mails for real. See the header on why.
+ *
+ * When MICA_REAL_EMAIL is set, every message additionally goes through the genuine
+ * RedcapEmailChannel - but with the recipient list replaced by that one address. Redirecting rather
+ * than passing the resolved recipients through is the whole point: the project's real care-team and PI
+ * lists must not receive a probe, and a verifier that could mail them would be one nobody dares run.
+ *
+ * The capture is what the checks assert against either way, so turning real delivery on cannot change
+ * a single result - it can only add a way for the send itself to fail.
+ */
 final class CaptureChannel implements NotificationChannelInterface
 {
     public array $sent = [];
     public ?string $throwOn = null;
+
+    /** @var list<string> real-delivery failures, so they are reported rather than swallowed */
+    public array $deliveryErrors = [];
+
+    public function __construct(
+        private ?NotificationChannelInterface $real = null,
+        private ?string $redirectTo = null
+    ) {
+    }
 
     public function send(string $channel, array $recipients, string $subject, string $body): void
     {
         if ($this->throwOn !== null) {
             throw new \RuntimeException($this->throwOn);
         }
+
         $this->sent[] = compact('channel', 'recipients', 'subject', 'body');
+
+        if ($this->real === null || $this->redirectTo === null) {
+            return;
+        }
+
+        try {
+            $this->real->send($channel, [$this->redirectTo], $subject, $body);
+        } catch (\Throwable $e) {
+            // Collected, not thrown: a mailer failure must not rewrite the outcome of a check about
+            // the gate. It is reported on its own line at the end.
+            $this->deliveryErrors[] = $subject . ' -> ' . $e->getMessage();
+        }
     }
 
     public function supports(string $channel): bool
     {
         return in_array($channel, ['secure_email', 'dashboard'], true);
+    }
+
+    /** @return array{channel:string,recipients:list<string>,subject:string,body:string} */
+    public function last(): array
+    {
+        if ($this->sent === []) {
+            throw new \RuntimeException('Nothing was sent.');
+        }
+
+        return $this->sent[count($this->sent) - 1];
     }
 }
 
@@ -242,7 +290,17 @@ $audit = new AuditLogger(new RedcapAuditStore($module), $roles);
 $artifacts = new ArtifactRegistry();
 $directory = new RedcapRecipientDirectory($module, $roles, $PID);
 $notifStore = new RedcapNotificationStore($module, new RedcapReviewQueryStore($module));
-$channel = new CaptureChannel();
+$REAL_EMAIL = getenv('MICA_REAL_EMAIL') ?: null;
+
+if ($REAL_EMAIL !== null && !filter_var($REAL_EMAIL, FILTER_VALIDATE_EMAIL)) {
+    fwrite(STDERR, "MICA_REAL_EMAIL is not a valid address: $REAL_EMAIL\n");
+    exit(1);
+}
+
+$channel = new CaptureChannel(
+    $REAL_EMAIL === null ? null : new RedcapEmailChannel(),
+    $REAL_EMAIL
+);
 $actionWriter = new RedcapActionFieldWriter($module);
 
 $now = time();
@@ -259,7 +317,10 @@ $notifications = new NotificationService(
     static fn(): int => $now
 );
 
-echo "Notification path against live REDCap (pid $PID, record $RECORD, event $EVENT)\n\n";
+echo "Notification path against live REDCap (pid $PID, record $RECORD, event $EVENT)\n";
+echo $REAL_EMAIL === null
+    ? "Email: captured only. Set MICA_REAL_EMAIL to also deliver for real.\n\n"
+    : "Email: ALSO DELIVERING FOR REAL, every recipient redirected to $REAL_EMAIL\n\n";
 
 $instance = null;
 
@@ -489,7 +550,7 @@ try {
     check('but two failed attempts with one key are allowed', $failedTwice, 'yes');
 
     echo "\n8. The real channel refuses what it cannot honour\n";
-    $realChannel = new RedcapEmailChannel($module);
+    $realChannel = new RedcapEmailChannel();
     check('secure_email', $realChannel->supports('secure_email') ? 'yes' : 'no', 'yes');
     check('dashboard', $realChannel->supports('dashboard') ? 'yes' : 'no', 'yes');
     // Claiming a pager it cannot reach would put "sent" in the trail for a notice nobody got.
@@ -596,7 +657,63 @@ try {
         'gone'
     );
 
-    echo "\n11. Launch readiness on this project\n";
+    echo "\n11. The remaining body types, so every one is exercised\n";
+
+    // reviewers_ready (both variants) and a digest are not reached by the steps above, and when
+    // MICA_REAL_EMAIL is set these are the messages worth reading: they are the ones a reviewer sees
+    // most often. Driven through the same service, so the assertions apply to real output.
+    $digestService = new NotificationService(
+        NotificationPolicy::fromJson(
+            json_encode(array_replace_recursive(
+                $artifacts->getJson('notification_policy_default'),
+                ['digests' => [[
+                    'digest_id'                        => 'probe_daily',
+                    'enabled'                          => true,
+                    'cadence'                          => 'daily',
+                    'recipient_roles'                  => ['research_assistant'],
+                    'delivery_channel'                 => 'secure_email',
+                    'include_participant_level_detail' => false,
+                ]]]
+            ), JSON_THROW_ON_ERROR),
+            $artifacts,
+            new SchemaValidator($artifacts)
+        ),
+        $channel,
+        $notifStore,
+        $directory,
+        $reviewStore,
+        $audit,
+        (string) $PID,
+        $realUrl,
+        static fn(): int => $now
+    );
+
+    $ready = $digestService->notifyReviewersReady(999_001, $RECORD, $EVENT, $instance, 'baseline', 2, 'critical');
+    check('a findings-ready notice sends', $ready->outcome, NotificationResult::SENT);
+    check(
+        'and states the RA-first rule to the RA',
+        str_contains($channel->last()['body'], 'nothing will be until you confirm') ? 'yes' : 'no',
+        'yes'
+    );
+
+    $failed = $digestService->notifyReviewersReady(999_002, $RECORD, $EVENT, $instance, 'baseline', 0, 'none', true);
+    check('a not-screened notice sends', $failed->outcome, NotificationResult::SENT);
+    check(
+        'and is not mistakable for an all-clear',
+        str_contains($channel->last()['body'], 'not an all-clear') ? 'yes' : 'no',
+        'yes'
+    );
+
+    $digests = $digestService->sendDigests('daily', $now - 86400, $now);
+    check('a digest sends', $digests[0]->outcome, NotificationResult::SENT);
+    // Space-padded columns collapse in HTML, so the body must not rely on them for alignment.
+    check(
+        'the digest uses label: value, not padded columns',
+        preg_match('/\n[A-Z][a-z ]+:  +\d/', $channel->last()['body']) ? 'padded' : 'plain',
+        'plain'
+    );
+
+    echo "\n12. Launch readiness on this project\n";
     $gates = $module->launchReadinessFor($PID);
     foreach ($gates->evaluate() as $gate) {
         printf(
@@ -619,7 +736,7 @@ try {
 
 // ---------------------------------------------------------------- cleanup
 
-echo "\n12. Cleanup\n";
+echo "\n13. Cleanup\n";
 
 if ($instance !== null) {
     $fields = $module->query(
@@ -651,7 +768,7 @@ if ($instance !== null) {
 }
 
 $module->query(
-    'DELETE FROM redcap_entity_mica_notification WHERE project_id = ? AND record = ?',
+    'DELETE FROM redcap_entity_mica_notification WHERE project_id = ? AND (record = ? OR job_id IN (999001, 999002))',
     [$PID, $RECORD]
 );
 check(
@@ -676,6 +793,16 @@ $module->setProjectSetting('role-ra-reviewer', $originalRa, $PID);
 $module->setProjectSetting('notify-care-team-emails', $originalCare, $PID);
 $module->setProjectSetting('notification-policy-json', $originalPolicy, $PID);
 echo "  ...  role, rights and settings restored\n";
+
+if ($REAL_EMAIL !== null) {
+    echo "\n14. Real delivery\n";
+    note('messages handed to the mailer', (string) count($channel->sent));
+    check('mailer failures', count($channel->deliveryErrors), 0);
+
+    foreach ($channel->deliveryErrors as $error) {
+        echo "  [FAIL] $error\n";
+    }
+}
 
 echo "\n" . ($failures === 0
     ? "PASS - the gate holds, the trail is written, and the database enforces send-once\n"
