@@ -13,7 +13,7 @@ acceptance checklist.
 | 0 — Foundations | [`stage-0-foundations.md`](stage-0-foundations.md) | — | **in progress** — 0.1–0.5 + 0.5b done (CI declined by decision — see the 0.5 record); remaining: cleanup (0.6) |
 | 1 — Counselor v2 turn contract | [`stage-1-turn-contract.md`](stage-1-turn-contract.md) | 0 | **in progress** — **1.1 done** (all four entity types, so 3.1 is done too); parts of 1.6 done (see below); 1.2–1.5 not started |
 | 2 — R01 session engine + frontend | [`stage-2-session-engine.md`](stage-2-session-engine.md) | 1 | not started — auth half (2.3) partly done, see `10-auth-implementation-pid257.md` |
-| 3 — Transcript finalization + scan queue | [`stage-3-transcripts-and-queue.md`](stage-3-transcripts-and-queue.md) | 2 | **in progress** — 3.1 (entity types + index migration) landed with 1.1 |
+| 3 — Transcript finalization + scan queue | [`stage-3-transcripts-and-queue.md`](stage-3-transcripts-and-queue.md) | ~~2~~ — **no longer blocked**, see below | **in progress** — 3.1, 3.2, 3.3 and the queue/state-machine half of 3.5 done; remaining: cron worker body (3.5) + `completeSession` rewrite (3.4) |
 | 4 — SafetyScan runner | [`stage-4-safetyscan-runner.md`](stage-4-safetyscan-runner.md) | 3 | not started |
 | 5 — RA dashboard | [`stage-5-ra-dashboard.md`](stage-5-ra-dashboard.md) | 4 | not started |
 | 6 — Notifications, digests, launch gates | [`stage-6-notifications-launch-gates.md`](stage-6-notifications-launch-gates.md) | 5 | not started |
@@ -86,6 +86,38 @@ automatic arm placement — [`../15-arm-materialization.md`](../15-arm-materiali
    Survey Login. It can only ever affect code already scheduled for deletion — provided
    the pilot deployment tracks `main`/`pilot-final` and not this branch. Confirm that
    when tagging (correction 1) and the question closes.
+
+## Sequencing change — 2026-08-19/20, stated explicitly
+
+The stage order in the table is the *plan's* order. Work is proceeding in a different
+one, deliberately, and this is the record of that rather than drift discovered later.
+
+**What changed:** after Stage 0.5, work went **1.1 → 3 → 4** instead of
+1.1 → 1.2–1.5 → 2 → 3. Stage 0.6 (chatbot cleanup) is deferred. Stages 1.2–1.5, 2, 5
+and 6 remain in scope and follow.
+
+**Why:** the deliverable the study actually asked about is the post-session path —
+finish a session, send the transcript to a model through SecureChatAI, and emit a value
+that drives an RA notification. That is Stages 3→4→6. Stages 1.2–1.5 and 2 are a
+*different* feature (the counselor-v2 turn contract and the R01 session engine), and the
+dependency the plan drew from 3 to 2 turned out not to be real:
+
+- The plan assumed Stage 3 needed a session-start timestamp from Stage 2's dictionary
+  work. There is none to need — PID 257 has no `mica_session_start_ts` and no
+  `consent_date` — so the session boundary is derived from `max_message_log_id` instead
+  (`stage-3-transcripts-and-queue.md`). Monotonic, database-assigned, needs no new field.
+- Everything else in Stage 3/4 is framework-free and testable through the existing
+  seams, exactly as cross-cutting decision 1 intends.
+
+**Why 0.6 is deferred:** it is explicitly behavior-preserving cleanup, it needs a
+before/after Playwright baseline to be worth anything, and it has an unresolved decision
+attached (the stored Twilio credentials — rotate, not delete). It contributes nothing to
+the scan path. It is still in scope.
+
+**What this costs:** Stage 3's session-form write-back targets fields PID 257 does not
+have yet (audit G4), so today it writes a named warning instead of the transcript
+pointer. The scan is queued regardless — the scanner reads the EM-log transcript row,
+not the form. Stage 2 closes it; the Stage 6 launch gate refuses production until it is.
 
 ## Working conventions
 
