@@ -275,6 +275,10 @@ final class LaunchReadinessTest extends TestCase
             'decides which model screens a session for risk',
             $this->byId()['models']->howToFix
         );
+        // Verified against PID 257, where the alias was unset and the code's fallback was not in
+        // that server's registry: an unregistered alias returns a canned apology rather than failing,
+        // so the symptom is a session that looks screened and is not.
+        $this->assertStringContainsString('canned apology', $this->byId()['models']->howToFix);
     }
 
     // ------------------------------------------------------------- gate 5, policy

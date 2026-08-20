@@ -565,7 +565,14 @@ none of them covered:
 
 And on the chatbot, the mobile banner ran to five lines of an iPhone, pushing the
 conversation off the top of the screen on the one device where the conversation is
-the whole point. The aside went from three sentences to one.
+the whole point. The aside went from three sentences to one — and then, once the
+models gate started failing too, three titles put it straight back to five lines.
+It names at most two gates now and counts the rest. That reverses an earlier
+comment of mine claiming a truncated list is worse than none: the banner is a
+*pointer* and the card is the report, the count stays exact, so nothing is hidden
+about how much is wrong, only about which. The E2E measures the banner at 16% of
+viewport height with a 20% ceiling, because eyeballing it is what let it grow back
+the first time.
 
 ### Two real defects the E2E caught that nothing else could
 
@@ -577,14 +584,32 @@ the markup**: `mica-launch` appeared once in the built CSS and zero times in the
 built JS. Every unit test would have passed. It lives in `views/Home/home.jsx`
 now, which is what actually mounts.
 
-**The models gate was green with no SafetyScan alias.** PID 257 has `llm-model`
-set and `safetyscan-model-alias` unset, and the gate read `PASSING` with a detail
-line naming the one model it found — which looks like the whole answer. The gate
-filtered unset aliases out and checked only the remainder, so "half configured"
-was indistinguishable from "configured". `stage-6 §6.3` asks for "counselor +
-scan model aliases resolve", and it now requires both, with the fix text saying
-which of the two matters more: an unset SafetyScan alias decides which model
-screens a session for risk. It correctly blocks launch on PID 257 today.
+**The models gate was green with no SafetyScan alias — and the fallback did not
+exist.** PID 257 has `llm-model` set and `safetyscan-model-alias` unset, and the
+gate read `PASSING` with a detail line naming the one model it found, which looks
+like the whole answer. The gate filtered unset aliases out and checked only the
+remainder, so "half configured" was indistinguishable from "configured".
+
+Chasing what an unset alias actually does made it worse: `MICA::scanRunnerFor()`
+falls back to a hardcoded `'gemini-2.5-flash'`, and **that alias is not in this
+deployment's SecureChatAI registry** (which currently holds only
+`claude-opus-4-7`). An unregistered alias does not fail loudly — SecureChatAI
+returns the provider's canned apology, which is how docs 14 D1 happened. So the
+symptom of the old green gate would have been sessions that looked screened and
+were not.
+
+`stage-6 §6.3` asks for "counselor + scan model aliases resolve", and the gate now
+requires both to be named explicitly. Requiring the safety-screening model to be
+named by the project rather than inherited from a literal in the code is the right
+governance stance for a safety gate.
+
+> ⚠️ **Deployment-affecting.** `mayStartSession()` is
+> `!isProductionProject() || isReady()`, so on a **production** project with
+> `safetyscan-model-alias` unset this gate now refuses every participant session.
+> That is the intended behaviour — an unscreened session is the harm the gate
+> exists to prevent — but it is a semantics change, not just a UI one. Any
+> production project must set `safetyscan-model-alias` to a registered alias
+> before this ships. PID 257 (development) is blocked by it today, correctly.
 
 Also fixed in the harness: `requestfailed` counted REDCap's own Vanderbilt footer
 logo, which Chrome blocks under Opaque Response Blocking. Off-host failures are

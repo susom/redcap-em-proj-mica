@@ -159,6 +159,13 @@ const send = async (p, text, waitMs = 25000) => {
   // development project useless for testing, which is the one thing it is for.
   check('B14 the session is still usable', ui.hasIntro && ui.inputs >= 1);
 
+  // At most two titles are named, then a count. Listing all of them took five lines and a quarter of
+  // an iPhone viewport, clipping the top of the conversation - see the comment in launchBanner.jsx.
+  check('B15 it names at most two gates and counts the rest',
+    (banner.text.match(/·/g) || []).length <= 1
+    && (!banner.boot || banner.boot.titles.length <= 2 || /and \d+ more/.test(banner.text)),
+    banner.text.replace(/\n/g, ' | ').slice(0, 100));
+
   await p.screenshot({ path: `${SHOTS}/B-loaded.png`, fullPage: true });
 
   console.log('\n=== C. CONVERSATION ===');
@@ -225,6 +232,15 @@ const send = async (p, text, waitMs = 25000) => {
     const mt = await send(m, 'Say OK.');
     check('F4 mobile turn works', /Say OK/.test(mt) && !/network difficulties/i.test(mt));
     check('F5 no MICA page errors on mobile', m._errs.length === 0, JSON.stringify(m._errs.slice(0, 2)));
+    // The banner is chrome on a page whose point is the conversation. Measured rather than eyeballed,
+    // because it grew back to five lines the moment a second gate started failing.
+    const bannerShare = await m.evaluate(() => {
+      const el = document.querySelector('.mica-launch');
+      return el ? Math.round((el.getBoundingClientRect().height / window.innerHeight) * 100) : 0;
+    });
+    check('F6 the banner leaves the conversation most of the screen', bannerShare <= 20,
+      `${bannerShare}% of viewport height`);
+
     await m.screenshot({ path: `${SHOTS}/F-mobile.png`, fullPage: true });
   }
 

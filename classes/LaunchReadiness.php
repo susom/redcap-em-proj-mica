@@ -302,15 +302,20 @@ class LaunchReadiness
                 'Model aliases resolve',
                 false,
                 sprintf(
-                    'No %s alias is configured%s.',
-                    implode(' or ', $unset),
-                    count($unset) === 1
-                        ? ' - so the model it names is whatever the code happens to default to'
-                        : ''
+                    'No %s alias is configured, so the model is inherited from a literal in the '
+                    . 'code rather than named by this project - and that literal is not checked '
+                    . 'against the registry above.',
+                    implode(' or ', $unset)
                 ),
+                // Not hypothetical: PID 257 had the SafetyScan alias unset and the code's fallback
+                // was not in that server's registry at all. An unregistered alias does not fail
+                // loudly - SecureChatAI returns the provider's canned apology, which is how docs 14
+                // D1 happened - so the symptom would have been sessions that looked screened and
+                // were not.
                 'Set both the counselor (`llm-model`) and SafetyScan (`safetyscan-model-alias`) '
-                . 'aliases to values in the SecureChatAI registry. An unset SafetyScan alias is the '
-                . 'more serious of the two: it decides which model screens a session for risk.'
+                . 'aliases to values in the SecureChatAI registry. The SafetyScan one is the more '
+                . 'serious of the two: it decides which model screens a session for risk, and an '
+                . 'alias that is not registered returns a canned apology rather than an error.'
             );
         }
 

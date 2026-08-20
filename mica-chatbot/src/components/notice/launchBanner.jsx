@@ -31,6 +31,19 @@ export function LaunchBanner({ banner }) {
     const decisions = banner.awaiting_decision || [];
     const allDecisions = decisions.length === titles.length && titles.length > 0;
 
+    /**
+     * Name at most two, then count the rest.
+     *
+     * This listed every title at first, on the reasoning that a truncated list of what is
+     * unconfigured is worse than none. Measuring it on an iPhone changed my mind: three titles took
+     * five lines and about a quarter of the viewport, clipping the top of the conversation on the one
+     * device where the conversation is the whole point. The banner is a *pointer* - the count is the
+     * alarm, and the launch-readiness card is the actual report. The count stays exact either way, so
+     * nothing is hidden about how much is wrong, only about which.
+     */
+    const shown = titles.slice(0, 2);
+    const rest = titles.length - shown.length;
+
     return (
         // `role="status"` and not `alert`: an assertive region would interrupt a screen reader
         // mid-conversation on every page load, and this is a standing condition rather than an event.
@@ -42,7 +55,8 @@ export function LaunchBanner({ banner }) {
                 <p className="mica-launch__headline">{banner.headline}</p>
                 <p className="mica-launch__detail">
                     {banner.count === 1 ? "1 gate is" : `${banner.count} gates are`} unmet:{" "}
-                    <span className="mica-launch__titles">{titles.join(" · ")}</span>
+                    <span className="mica-launch__titles">{shown.join(" · ")}</span>
+                    {rest > 0 ? ` and ${rest} more` : ""}
                 </p>
                 {/* Kept to one line where possible. The first draft ran to three sentences, which
                     took five lines of an iPhone and pushed the conversation off the top of the
