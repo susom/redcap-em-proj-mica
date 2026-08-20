@@ -27,6 +27,9 @@ final class FakeLaunchEnvironment implements LaunchEnvironmentInterface
     public array $roleMapping = [RoleService::RA => ['660']];
     public array $recipientProblems = [];
 
+    /** Counts evaluations, so a test can prove the gates are not re-run per caller. */
+    public int $verifyCalls = 0;
+
     public function __construct()
     {
         $this->policyData = [
@@ -64,6 +67,8 @@ final class FakeLaunchEnvironment implements LaunchEnvironmentInterface
 
     public function verifyArtifacts(): void
     {
+        $this->verifyCalls++;
+
         if ($this->artifactError !== null) {
             throw $this->artifactError;
         }

@@ -122,6 +122,17 @@ echo $module->initializeJavascriptModuleObject();
         'roles'        => $roles->rolesFor($username),
         'canDisposition' => $roles->can($username, 'submitDisposition'),
         'deidentified' => $roles->isDeidentifiedOnly($username),
+        // Which tabs exist at all. Asked of RoleService rather than derived from `roles` in the
+        // client, so the matrix stays the single answer to "who may do what" - a second copy of it in
+        // JavaScript is a second thing to keep in step.
+        //
+        // `canSeeQueue` matters more than it looks: a super user holds `sysadmin` and nothing else,
+        // so they reach this dashboard (rolesFor() grants sysadmin unconditionally) but `reviewQueue`
+        // refuses them. Without this the sysadmin - the person who owns the configuration the launch
+        // checklist reports on - would land on a tab that 403s and conclude the dashboard is broken.
+        'canSeeQueue'  => $roles->can($username, 'reviewQueue'),
+        'canSeeAudit'  => $roles->can($username, 'auditTrail'),
+        'canSeeLaunchGates' => $roles->can($username, 'launchReadiness'),
         'projectId'    => (string) PROJECT_ID,
         'redcapVersion' => defined('REDCAP_VERSION') ? REDCAP_VERSION : '',
     ], JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;

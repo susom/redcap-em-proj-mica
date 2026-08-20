@@ -39,15 +39,28 @@ class LaunchReadiness
 {
     private LaunchEnvironmentInterface $env;
 
+    /** @var list<GateResult>|null memoised for the life of this instance - see evaluate() */
+    private ?array $evaluated = null;
+
     public function __construct(LaunchEnvironmentInterface $env)
     {
         $this->env = $env;
     }
 
-    /** @return list<GateResult> */
+    /**
+     * Every gate's verdict.
+     *
+     * Memoised, because a single page load asks more than once: the chat page asks
+     * `mayStartSession()` and then `developmentBanner()`, and the dashboard's checklist asks
+     * `isReady()` and `evaluate()`. Without this, each of those re-hashes every pinned artifact and
+     * re-runs the user-rights join. One instance is built per request, so the cache cannot go stale
+     * within its own lifetime.
+     *
+     * @return list<GateResult>
+     */
     public function evaluate(): array
     {
-        return [
+        return $this->evaluated ??= [
             $this->acknowledgmentGate(),
             $this->reviewersGate(),
             $this->artifactsGate(),
@@ -95,6 +108,51 @@ class LaunchReadiness
             ? $configured
             : 'This session cannot start right now. Please let the study team know - they have been '
             . 'notified and will follow up with you.';
+    }
+
+    /**
+     * The banner a development project shows above the chat, or null when there is nothing to say.
+     *
+     * ## Titles and a count. Never `detail`, never `howToFix`.
+     *
+     * `pages/chatbot.php` is in `no-auth-pages`, so whatever this returns is readable by anyone with
+     * the survey link. Gate titles are generic ("Model aliases resolve"); the details are not - the
+     * models gate enumerates the SecureChatAI registry, and the recipients gate quotes configured
+     * email addresses. Those belong on the dashboard, behind authentication and a role.
+     *
+     * ## Only on a development project, and only when something fails
+     *
+     * A production project with failing gates does not get a banner - it gets a refusal, which is a
+     * stronger statement in the same place. And a development project that passes everything gets
+     * nothing: a permanent "this is dev" badge is noise that teaches people to ignore the banner,
+     * which is the one thing it cannot afford.
+     *
+     * @return array{headline:string,count:int,titles:list<string>,awaiting_decision:list<string>}|null
+     */
+    public function developmentBanner(): ?array
+    {
+        if ($this->env->isProductionProject()) {
+            return null;
+        }
+
+        $blockers = $this->blockers();
+
+        if ($blockers === []) {
+            return null;
+        }
+
+        return [
+            'headline' => 'Launch gates unmet - development only',
+            'count'    => count($blockers),
+            'titles'   => array_values(array_map(static fn(GateResult $g): string => $g->title, $blockers)),
+            // Separated so the banner can say "waiting on a decision" rather than "broken" for the
+            // acknowledgment target. Telling a study administrator to go and fix something that is
+            // actually waiting on their PI wastes the one read they will give this.
+            'awaiting_decision' => array_values(array_map(
+                static fn(GateResult $g): string => $g->title,
+                array_filter($blockers, static fn(GateResult $g): bool => $g->deliberate)
+            )),
+        ];
     }
 
     /** The staff-facing explanation, for the log and the dashboard. */

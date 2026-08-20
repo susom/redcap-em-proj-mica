@@ -107,7 +107,8 @@ if ($MODE === 'teardown') {
     echo "  removed the throwaway REDCap role \"" . ROLE . "\"\n";
 
     $module->removeProjectSetting('role-ra-reviewer', $PID);
-    echo "  cleared the reviewer role mapping\n";
+    $module->removeProjectSetting('role-pi-lead', $PID);
+    echo "  cleared the reviewer and PI role mappings\n";
 
     echo "\nDone. Nothing from this fixture remains.\n";
     exit(0);
@@ -191,6 +192,18 @@ echo "  put the user in that role, with no design and no user-rights\n";
 // The module setting is a MAPPING, not a roster: it names the REDCap role, never the person.
 $module->setProjectSetting('role-ra-reviewer', [(string) $roleId], $PID);
 echo "  mapped role_id $roleId as the MICA reviewer role\n";
+
+// Also the PI role, so one pass can exercise the launch-readiness checklist - which the matrix gives
+// to PI and sysadmin, not to an RA.
+//
+// This does not weaken the "ordinary reviewer" property the throwaway account exists to prove: that
+// is about REDCap privileges (no design, no user rights), which are still absent. A PI can do
+// everything a reviewer can, so the union covers strictly more of the dashboard in one sign-in. The
+// opposite direction - that an RA must NOT see the checklist - is an access-control property, tested
+// where access control lives: RoleServiceTest's denied-combination matrix, and the App shell's own
+// vitest for tab visibility.
+$module->setProjectSetting('role-pi-lead', [(string) $roleId], $PID);
+echo "  mapped it as the PI role too, so the launch checklist is reachable\n";
 
 // Proven rather than assumed - the mapping and the roster have to agree or the dashboard 403s.
 $check = \Stanford\MICA\RoleService::fromModule($module, $PID);

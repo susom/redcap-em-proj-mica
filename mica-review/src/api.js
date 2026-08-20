@@ -102,4 +102,5 @@ export const api = {
     call('submitDisposition', { record, event_id: eventId, instance, review }),
   history: () => call('reviewHistory', {}),
   audit: (limit) => call('auditTrail', { limit }),
+  launchGates: () => call('launchReadiness', {}),
 }

@@ -1,0 +1,72 @@
+/* A staff-facing strip, addressed to whoever is testing - so it reads as chrome, not as content.
+   Shares nothing with the message bubbles: no avatar, no speaker label, no bubble radius. The rule
+   the session notice already enforces (system state never speaks as the counselor) matters more here,
+   not less, because this one is not addressed to the participant at all. */
+
+.mica-launch {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 10px 14px calc(10px + env(safe-area-inset-left, 0px));
+    background: var(--mica-surface, #383838);
+    border-bottom: 1px solid var(--mica-hairline-strong, #5A5A5A);
+    /* The left edge carries the state, so the strip is identifiable in a screenshot at a glance -
+       which is how it will usually be seen. */
+    box-shadow: inset 3px 0 0 var(--mica-danger-on-dark, #FF9B93);
+}
+
+.mica-launch__icon {
+    flex: 0 0 auto;
+    display: inline-flex;
+    margin-top: 1px;
+    color: var(--mica-danger-on-dark, #FF9B93);
+}
+
+.mica-launch__body {
+    min-width: 0;
+}
+
+.mica-launch__headline {
+    margin: 0;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+    color: var(--mica-danger-on-dark, #FF9B93);
+}
+
+.mica-launch__detail {
+    margin: 3px 0 0;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: var(--mica-ink, #F2F3F5);
+    /* Gate titles are short but there can be several; they wrap rather than clip, because a truncated
+       list of what is unconfigured is worse than none. */
+    overflow-wrap: anywhere;
+}
+
+.mica-launch__titles {
+    font-weight: 500;
+}
+
+.mica-launch__aside {
+    margin: 3px 0 0;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    color: var(--mica-ink-soft, #B9BEC6);
+}
+
+/* On a phone the conversation is the point and this strip is not, so it gets tighter - but nothing
+   is hidden. A banner that collapses to an icon is one nobody reads, and the whole reason it exists
+   is to be read once. */
+@media (max-width: 30rem) {
+    .mica-launch {
+        padding: 8px 12px;
+        gap: 8px;
+    }
+
+    .mica-launch__headline { font-size: 0.75rem; }
+    .mica-launch__detail { font-size: 0.75rem; }
+    .mica-launch__aside { font-size: 0.6875rem; }
+}

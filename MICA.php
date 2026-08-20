@@ -550,6 +550,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         // would say so. Checked here rather than at finalization because refusing afterwards would
         // be refusing after the harm.
         $gateRefusal = null;
+        $launchBanner = null;
         try {
             $gates = $this->launchReadinessFor($pid);
 
@@ -561,6 +562,12 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     'explanation' => $gates->staffExplanation(),
                 ]);
             }
+
+            // A development project runs the session anyway - that is what development status is for
+            // - but says so, so nobody mistakes an unready configuration for a ready one. The banner
+            // is built by LaunchReadiness rather than assembled here: the chatbot has no unit-test
+            // harness, so a derivation written inline would be untested on both sides.
+            $launchBanner = $gates->developmentBanner();
         } catch (\Throwable $e) {
             // A broken gate check is not a licence to proceed. It is also not a reason to invent a
             // participant-facing error out of an internal fault, so the refusal text is the study's
@@ -585,6 +592,9 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             // scheduling one: there is no point telling someone to come back in three days if the
             // project could not screen them when they did.
             'error'                  => $gateRefusal ?? $error ?? null,
+            // Null on a production project and on a fully configured one. Titles and a count only -
+            // this page is in no-auth-pages, so gate *details* stay on the dashboard.
+            'launch_banner'          => $launchBanner,
             'login_url' => $this->getUrl('pages/chatbot.php', true, true)
         ];
         $json = json_encode($bootstrap, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT) ?: '{}';

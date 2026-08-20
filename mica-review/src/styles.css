@@ -766,3 +766,113 @@
 /* A refusal is the row an auditor is looking for, so it is findable at a glance. */
 .mica-audit-denied td { background: var(--mica-critical-tint); }
 .mica-audit-denied td:first-child { box-shadow: inset 3px 0 0 var(--mica-critical); }
+
+/* ---------------------------------------------------------------- launch readiness */
+
+.mica-gates-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.mica-gates-title {
+  font-size: 1.05rem;
+  margin: 0;
+  color: var(--mica-ink);
+}
+
+.mica-gate-list {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.mica-gate {
+  background: var(--mica-surface);
+  border: 1px solid var(--mica-border);
+  border-radius: var(--mica-radius);
+  /*
+   * The status stripe is on the left edge, matching .mica-notice, so a passing and a blocking row
+   * are distinguishable at a glance without reading. Colour is never the only signal - every row
+   * also carries a text state ("Passing" / "Blocking" / "Awaiting a decision"), because roughly one
+   * in twelve men cannot rely on the red/green pair and this is a list whose whole purpose is telling
+   * those two apart.
+   */
+  border-left: 3px solid var(--mica-border-strong);
+}
+
+.mica-gate--pass { border-left-color: var(--mica-confirmed); }
+.mica-gate--fail { border-left-color: var(--mica-critical); background: var(--mica-critical-tint); }
+.mica-gate--decision { border-left-color: var(--mica-unscreened); background: var(--mica-unscreened-tint); }
+
+.mica-gate-row {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+}
+
+.mica-gate-mark {
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--mica-ink-faint);
+}
+
+.mica-gate--pass .mica-gate-mark { color: var(--mica-confirmed); }
+.mica-gate--fail .mica-gate-mark { color: var(--mica-critical); }
+.mica-gate--decision .mica-gate-mark { color: var(--mica-unscreened); }
+
+.mica-gate-body { min-width: 0; }
+
+.mica-gate-title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--mica-ink);
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.mica-gate-state {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
+.mica-gate-state--pass { color: var(--mica-confirmed); }
+.mica-gate-state--fail { color: var(--mica-critical); }
+.mica-gate-state--decision { color: var(--mica-unscreened); }
+
+.mica-gate-detail {
+  margin: 0.25rem 0 0;
+  color: var(--mica-ink-soft);
+  /* Gate details run long - the models gate enumerates a registry - so they wrap rather than clip. */
+  overflow-wrap: anywhere;
+}
+
+.mica-gate-fix {
+  margin: 0.375rem 0 0;
+  font-size: 0.9rem;
+  color: var(--mica-ink);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 40rem) {
+  /*
+   * The mark column costs a fifth of the width on a phone for a single glyph, and every row already
+   * carries its state as text. So the glyph goes inline above the title instead of beside it.
+   */
+  .mica-gate-row { grid-template-columns: 1fr; gap: 0.25rem; }
+  .mica-gate-mark { text-align: left; }
+  .mica-gate-fix { font-size: 0.85rem; }
+}

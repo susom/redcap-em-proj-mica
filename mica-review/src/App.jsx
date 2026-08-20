@@ -4,6 +4,7 @@ import { Queue } from './components/Queue.jsx'
 import { SessionReview } from './components/SessionReview.jsx'
 import { Notice, Skeleton, Empty } from './components/Notice.jsx'
 import { AuditTrail } from './components/AuditTrail.jsx'
+import { LaunchGates } from './components/LaunchGates.jsx'
 
 /**
  * The dashboard shell.
@@ -14,7 +15,17 @@ import { AuditTrail } from './components/AuditTrail.jsx'
  */
 export function App() {
   const boot = api.bootstrap() || {}
-  const [view, setView] = useState('queue')
+
+  // Which tabs exist. Asked of the server rather than derived from `roles` here, so RoleService's
+  // matrix stays the single answer to "who may do what".
+  const canSeeQueue = boot.canSeeQueue !== false
+  const canSeeAudit = Boolean(boot.canSeeAudit)
+  const canSeeGates = Boolean(boot.canSeeLaunchGates)
+
+  // A super user holds `sysadmin` and nothing else, so they reach this page but `reviewQueue` refuses
+  // them. Landing them on a tab that 403s would read as a broken dashboard, when in fact the one
+  // thing they are entitled to - the configuration checklist - is right there.
+  const [view, setView] = useState(canSeeQueue ? 'queue' : canSeeGates ? 'gates' : 'queue')
   const [filters, setFilters] = useState({})
   const [queueState, setQueueState] = useState({ loading: true, error: null, queue: [], summary: null })
   const [sessionState, setSessionState] = useState({ loading: false, error: null, session: null })
@@ -99,7 +110,27 @@ export function App() {
     if (view === 'audit') loadAudit()
   }, [view, loadAudit])
 
-  const canSeeAudit = (boot.roles || []).some((r) => r === 'pi' || r === 'auditor')
+  const [gatesState, setGatesState] = useState({ loading: false, error: null, gates: [] })
+
+  const loadGates = useCallback(async () => {
+    setGatesState((s) => ({ ...s, loading: true, error: null }))
+    try {
+      const body = await api.launchGates()
+      setGatesState({
+        loading: false,
+        error: null,
+        gates: body.gates || [],
+        ready: Boolean(body.ready),
+        mayStartSessions: Boolean(body.may_start_sessions),
+      })
+    } catch (err) {
+      setGatesState({ loading: false, error: err.message, gates: [] })
+    }
+  }, [])
+
+  useEffect(() => {
+    if (view === 'gates') loadGates()
+  }, [view, loadGates])
 
   return (
     <div className="mica-shell">
@@ -121,14 +152,28 @@ export function App() {
       ) : null}
 
       <nav className="mica-tabs" aria-label="Views">
-        <button
-          type="button"
-          className="mica-tab"
-          aria-current={view === 'queue' ? 'page' : undefined}
-          onClick={() => setView('queue')}
-        >
-          Queue
-        </button>
+        {canSeeQueue ? (
+          <button
+            type="button"
+            className="mica-tab"
+            aria-current={view === 'queue' ? 'page' : undefined}
+            onClick={() => setView('queue')}
+          >
+            Queue
+          </button>
+        ) : null}
+        {canSeeGates ? (
+          <button
+            type="button"
+            className="mica-tab"
+            aria-current={view === 'gates' ? 'page' : undefined}
+            onClick={() => setView('gates')}
+          >
+            {/* Not "Settings": getPolicy/savePolicy are unimplemented, and a Settings tab holding
+                one read-only checklist promises something that is not there. */}
+            Launch readiness
+          </button>
+        ) : null}
         {canSeeAudit ? (
           <button
             type="button"
@@ -192,6 +237,8 @@ export function App() {
           busy={saving}
         />
       ) : null}
+
+      {view === 'gates' ? <LaunchGates state={gatesState} onRefresh={loadGates} /> : null}
 
       {view === 'audit' ? (
         auditState.loading ? (

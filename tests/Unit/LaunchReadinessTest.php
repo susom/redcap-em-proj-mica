@@ -293,6 +293,93 @@ final class LaunchReadinessTest extends TestCase
         );
     }
 
+    // ------------------------------------------------------------- the development banner
+
+    public function testADevelopmentProjectWithFailingGatesGetsABanner(): void
+    {
+        $this->env->production = false;
+        $this->env->mockMode = true;
+
+        $banner = $this->gates()->developmentBanner();
+
+        $this->assertNotNull($banner);
+        $this->assertSame(1, $banner['count']);
+        $this->assertSame(['Scan mock mode is off'], $banner['titles']);
+        $this->assertStringContainsString('development only', $banner['headline']);
+    }
+
+    public function testTheBannerCarriesNoGateDetailBecauseTheChatPageNeedsNoAuth(): void
+    {
+        // pages/chatbot.php is in no-auth-pages, so anything here is readable by anyone with the
+        // survey link. Titles are generic; details are not - the models gate enumerates the
+        // SecureChatAI registry and the recipients gate quotes configured email addresses.
+        $this->env->production = false;
+        $this->env->mockMode = true;
+        $this->env->counselor = 'not-registered';
+        $this->env->recipientProblems = ['The care team list contains care@@example.org'];
+
+        $banner = $this->gates()->developmentBanner();
+        $serialised = json_encode($banner);
+
+        $this->assertArrayNotHasKey('detail', $banner);
+        $this->assertArrayNotHasKey('how_to_fix', $banner);
+        $this->assertStringNotContainsString('not-registered', $serialised);
+        $this->assertStringNotContainsString('care@@example.org', $serialised);
+        $this->assertStringNotContainsString('gpt-5-4', $serialised, 'the model registry leaked');
+    }
+
+    public function testTheBannerSeparatesADecisionFromAMisconfiguration()
+    {
+        // The acknowledgment target is waiting on study leadership, not broken. Telling an
+        // administrator to go and fix it wastes the one read they will give this.
+        $this->env->production = false;
+        $this->env->policyData['ra_review_policy']['critical_acknowledgment_minutes'] = null;
+        $this->env->mockMode = true;
+
+        $banner = $this->gates()->developmentBanner();
+
+        $this->assertCount(2, $banner['titles']);
+        $this->assertSame(['Critical-finding acknowledgment target'], $banner['awaiting_decision']);
+    }
+
+    public function testAProductionProjectGetsNoBannerBecauseItGetsARefusal(): void
+    {
+        // A refusal is a stronger statement in the same place. Two of them would be noise.
+        $this->env->production = true;
+        $this->env->mockMode = true;
+
+        $this->assertNull($this->gates()->developmentBanner());
+    }
+
+    public function testAFullyConfiguredDevelopmentProjectGetsNoBanner(): void
+    {
+        // A permanent "this is dev" badge teaches people to ignore the banner, which is the one
+        // thing it cannot afford.
+        $this->env->production = false;
+
+        $this->assertNull($this->gates()->developmentBanner());
+    }
+
+    // ------------------------------------------------------------- evaluation cost
+
+    public function testGatesAreEvaluatedOncePerInstance(): void
+    {
+        // One page load asks more than once - the chat page calls mayStartSession() and then
+        // developmentBanner(); the dashboard calls isReady() and evaluate(). Each evaluation hashes
+        // every pinned artifact and runs a user-rights join, so without memoisation a participant's
+        // page load would pay for it several times over.
+        $gates = $this->gates();
+        $this->env->verifyCalls = 0;
+
+        $gates->evaluate();
+        $gates->isReady();
+        $gates->blockers();
+        $gates->developmentBanner();
+        $gates->staffExplanation();
+
+        $this->assertSame(1, $this->env->verifyCalls);
+    }
+
     // ------------------------------------------------------------- what the participant sees
 
     public function testTheParticipantRefusalSaysNothingAboutGates(): void

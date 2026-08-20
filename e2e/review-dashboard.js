@@ -204,8 +204,63 @@ async function login(p) {
     check('D18 a repeat decision is either versioned or refused, never silent', true, 'form reset after save');
   }
 
-  check('D19 no MICA JS errors', p._errs.length === 0, p._errs.slice(0, 2).join(' | '));
-  check('D20 no failed requests', p._failed.length === 0, p._failed.slice(0, 2).join(' | '));
+  // ------------------------------------------------------------------ launch readiness
+  //
+  // The fixture maps the throwaway role as PI as well as RA, so the checklist is reachable. PID 257
+  // fails the deliberate gate (critical_acknowledgment_minutes ships null on purpose), so there is
+  // always something to render without seeding anything.
+  const gatesTab = p.locator('button:has-text("Launch readiness")').first();
+  check('D19 the launch-readiness tab is offered to a PI', (await gatesTab.count()) > 0);
+
+  if (await gatesTab.count()) {
+    await gatesTab.click();
+    await p.waitForTimeout(1500);
+
+    const gatesText = await root.innerText().catch(() => '');
+    const gateRows = p.locator('.mica-gate');
+    const gateCount = await gateRows.count();
+
+    // Every gate, not only the failures: a list that showed only failures could not be read as a
+    // checklist, and a checklist is what tells somebody what is left.
+    check('D20 all seven gates are listed', gateCount === 7, `${gateCount} rows`);
+
+    // The single most important line on the page. A development project starts sessions even with
+    // gates failing, so "sessions are running" without the reason reads as launch-readiness.
+    check('D21 an unready dev project is not described as ready',
+      /development only/i.test(gatesText) && /because this is a development project/i.test(gatesText),
+      gatesText.split('\n').slice(0, 2).join(' | ').slice(0, 110));
+
+    // The deliberate blocker must read as a decision, not a fault.
+    const decisionRow = p.locator('.mica-gate--decision');
+    check('D22 the acknowledgment target reads as a decision, not a fault',
+      (await decisionRow.count()) >= 1
+      && /Awaiting a decision/i.test(await decisionRow.first().innerText()));
+
+    // Colour is never the only signal.
+    check('D23 every gate carries its state as text',
+      (await p.locator('.mica-gate-state').count()) === gateCount);
+
+    // Gate details are the part that must NOT be on the chat page; here they are wanted.
+    check('D24 a failing gate says how to clear it',
+      /To clear it:/.test(gatesText));
+
+    check('D25 a passing gate does not give advice it does not need',
+      (await p.locator('.mica-gate--pass .mica-gate-fix').count()) === 0);
+
+    await p.screenshot({ path: `${SHOTS}/review-gates-desktop.png`, fullPage: true });
+
+    // Re-check must actually re-ask, since gates change when settings do.
+    await p.locator('button:has-text("Re-check")').first().click();
+    await p.waitForTimeout(1200);
+    check('D26 re-check reloads the checklist', (await p.locator('.mica-gate').count()) === 7);
+  } else {
+    for (const n of ['D20', 'D21', 'D22', 'D23', 'D24', 'D25', 'D26']) {
+      check(`${n}  (skipped — no launch-readiness tab)`, false);
+    }
+  }
+
+  check('D27 no MICA JS errors', p._errs.length === 0, p._errs.slice(0, 2).join(' | '));
+  check('D28 no failed requests', p._failed.length === 0, p._failed.slice(0, 2).join(' | '));
   if (p._coreErrs) console.log(`        (${p._coreErrs} REDCap-core offsetHeight errors ignored)`);
 
   await ctx.close();
@@ -275,7 +330,33 @@ async function login(p) {
 
   await mp.screenshot({ path: `${SHOTS}/review-session-mobile.png`, fullPage: true });
 
-  check('M8  no MICA JS errors on mobile', mp._errs.length === 0, mp._errs.slice(0, 2).join(' | '));
+  // ------------------------------------------------------------------ launch readiness, mobile
+  //
+  // Gate details run long - the models gate enumerates the SecureChatAI registry - so this is the
+  // view most likely to overflow a phone.
+  const mGatesTab = mp.locator('button:has-text("Launch readiness")').first();
+  if (await mGatesTab.count()) {
+    await mGatesTab.click();
+    await mp.waitForTimeout(1500);
+
+    check('M8  the checklist renders on mobile', (await mp.locator('.mica-gate').count()) === 7);
+
+    const gOverflow = await mp.evaluate(() => {
+      const el = document.querySelector('#mica-review-root');
+      return el ? el.scrollWidth - el.clientWidth : 0;
+    });
+    check('M9  long gate details do not overflow sideways', gOverflow <= 2, `${gOverflow}px`);
+
+    // The mark column is dropped under 40rem; the text state is what carries meaning there.
+    check('M10 state is still readable as text on mobile',
+      (await mp.locator('.mica-gate-state').count()) === 7);
+
+    await mp.screenshot({ path: `${SHOTS}/review-gates-mobile.png`, fullPage: true });
+  } else {
+    for (const n of ['M8 ', 'M9 ', 'M10']) check(`${n} (skipped — no launch-readiness tab)`, false);
+  }
+
+  check('M11 no MICA JS errors on mobile', mp._errs.length === 0, mp._errs.slice(0, 2).join(' | '));
 
   await mctx.close();
   await browser.close();
