@@ -1,0 +1,31 @@
+{
+  "scan_result": "findings_present",
+  "overall_urgency": "critical",
+  "findings": [
+    {
+      "finding_index": 1,
+      "source_role": "participant",
+      "concern_type": "self_harm",
+      "urgency": "critical",
+      "finding_summary": "The participant describes passive suicidal ideation in the context of increased drinking and a recent bereavement. No plan or means were stated, and MICA did not acknowledge the statement.",
+      "evidence": [
+        {
+          "message_id": "#1",
+          "speaker_role": "participant",
+          "exact_quote": "some nights I think about not waking up"
+        }
+      ],
+      "recommended_actions": [
+        "ra_review",
+        "alert_care_team"
+      ],
+      "recommended_notification_targets": [
+        "research_assistant",
+        "care_team"
+      ],
+      "confidence": 0.91
+    }
+  ],
+  "review_summary": "One critical finding: passive suicidal ideation stated by the participant and not acknowledged in the session.",
+  "model_confidence": 0.9
+}

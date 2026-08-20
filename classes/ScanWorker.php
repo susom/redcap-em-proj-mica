@@ -49,7 +49,7 @@ class ScanWorker
     private $tokenFactory;
 
     /**
-     * @param callable(array): array{runStatus:string,error:?string} $runner
+     * @param callable(array): array{runStatus:string,error:?string,terminal?:bool} $runner
      *        Given a claimed job, performs one scan attempt and reports how it ended. Stage 4
      *        supplies ScanRunner; Stage 3's default reports `service_error`, which is honest: no
      *        scanner is configured, and the job must not look scanned.
@@ -136,17 +136,25 @@ class ScanWorker
             $result = ($this->runner)($job);
             $runStatus = (string) ($result['runStatus'] ?? 'service_error');
             $error = $result['error'] ?? null;
+            $terminal = (bool) ($result['terminal'] ?? false);
         } catch (\Throwable $e) {
             // A runner that throws must not leave the job claimed. `service_error` is the transient
             // class, so it retries and then gives up visibly - which is right for an unexpected
             // fault, and is emphatically not "nothing found".
             $runStatus = 'service_error';
             $error = get_class($e) . ': ' . $e->getMessage();
+            // An unexpected throw IS worth retrying - it may well be transient.
+            $terminal = false;
             $this->log("job {$job['id']} runner threw: $error");
         }
 
         try {
-            $this->queue->finishAttempt($job, $runStatus, $error === null ? null : (string) $error);
+            $this->queue->finishAttempt(
+                $job,
+                $runStatus,
+                $error === null ? null : (string) $error,
+                $terminal
+            );
         } catch (\Throwable $e) {
             // The bookkeeping itself failed, so the job is still marked `scanning`. Nothing to do
             // here but say so loudly; the reaper will pick it up, which is the correct recovery.

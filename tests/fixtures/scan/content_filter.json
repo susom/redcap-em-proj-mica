@@ -1,0 +1,4 @@
+{
+  "__runStatus": "content_filter",
+  "__error": "The provider blocked the request (scripted by fixture for the terminal-failure path)."
+}

@@ -238,6 +238,47 @@ final class ScanQueueTest extends TestCase
         $this->assertNull($queue->claimNext('t4'), 'an exhausted job is not re-claimed');
     }
 
+    public function testTheTerminalFlagSkipsPointlessRetries(): void
+    {
+        // The case: the model answered and verified, then findings could not be stored because the
+        // review instrument does not exist. service_error is the honest classification and it is
+        // transient - so without this flag the job re-calls the model twice more, paying for it
+        // each time, against a fault that cannot resolve between attempts.
+        $queue = $this->queue(3);
+        $this->enqueue($queue);
+        $job = $queue->claimNext('t1');
+
+        $outcome = $queue->finishAttempt($job, 'service_error', 'no review instrument', true);
+
+        $this->assertSame(SM::MANUAL_REVIEW_REQUIRED, $outcome['status'], 'straight to a human');
+        $this->assertSame(1, $this->store->findJob(1)['attempts'], 'no attempts wasted');
+        $this->assertStringContainsString('not retryable', $outcome['reason']);
+        $this->assertNull($queue->claimNext('t2'), 'and it is not picked up again');
+    }
+
+    public function testTheTerminalFlagCannotSuppressAReview(): void
+    {
+        // It may only escalate a retry into manual review. A caller passing terminal on a SUCCESS
+        // must not be able to divert a clean scan away from the queue.
+        $queue = $this->queue(3);
+        $this->enqueue($queue);
+
+        $outcome = $queue->finishAttempt($queue->claimNext('t1'), 'ok', null, true);
+
+        $this->assertSame(SM::READY_FOR_REVIEW, $outcome['status']);
+    }
+
+    public function testTheTerminalFlagDoesNotChangeAnAlreadyTerminalFailure(): void
+    {
+        $queue = $this->queue(3);
+        $this->enqueue($queue);
+
+        $outcome = $queue->finishAttempt($queue->claimNext('t1'), 'refusal', 'declined', true);
+
+        $this->assertSame(SM::MANUAL_REVIEW_REQUIRED, $outcome['status']);
+        $this->assertStringNotContainsString('not retryable', $outcome['reason'], 'already terminal');
+    }
+
     public function testAStaleClaimIsReturnedToTheQueue(): void
     {
         // Without reaping, a killed worker leaves the job in `scanning` forever: no retry, no

@@ -104,6 +104,27 @@ class RedcapTranscriptStore implements TranscriptStoreInterface
         ];
     }
 
+    public function readTranscript(string $projectId, int $logId): ?array
+    {
+        // Straight at the parameters table rather than through queryLogs(): the chunk count is not
+        // known in advance, and queryLogs() has no way to say "every parameter on this row" - its
+        // select list is a list of names. project_id is in the where clause so a log_id from
+        // another project cannot be read.
+        $result = $this->module->query(
+            'SELECT p.name AS n, p.value AS v FROM redcap_external_modules_log_parameters p '
+            . 'JOIN redcap_external_modules_log l ON l.log_id = p.log_id '
+            . 'WHERE p.log_id = ? AND l.project_id = ?',
+            [$logId, $projectId]
+        );
+
+        $params = [];
+        while ($row = $result->fetch_assoc()) {
+            $params[(string) $row['n']] = (string) $row['v'];
+        }
+
+        return $params === [] ? null : $params;
+    }
+
     public function writeTranscript(array $params): int
     {
         // Nulls are dropped rather than stored: the EAV parameters table has no null semantics, and

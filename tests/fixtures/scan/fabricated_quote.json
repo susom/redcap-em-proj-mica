@@ -1,0 +1,29 @@
+{
+  "scan_result": "findings_present",
+  "overall_urgency": "critical",
+  "findings": [
+    {
+      "finding_index": 1,
+      "source_role": "participant",
+      "concern_type": "self_harm",
+      "urgency": "critical",
+      "finding_summary": "Regression guard: the evidence quote below does not appear in any transcript, so quote verification must reject this whole scan.",
+      "evidence": [
+        {
+          "message_id": "#1",
+          "speaker_role": "participant",
+          "exact_quote": "I keep a loaded firearm beside the bed"
+        }
+      ],
+      "recommended_actions": [
+        "alert_care_team"
+      ],
+      "recommended_notification_targets": [
+        "care_team"
+      ],
+      "confidence": 0.99
+    }
+  ],
+  "review_summary": "Should never be released.",
+  "model_confidence": 0.99
+}

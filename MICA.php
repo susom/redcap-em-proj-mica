@@ -19,6 +19,12 @@ require_once "classes/RedcapTranscriptStore.php";
 require_once "classes/ScanWorker.php";
 require_once "classes/SessionHostMap.php";
 require_once "classes/TranscriptFinalizer.php";
+// Stage 4: the scan itself.
+require_once "classes/FindingWriter.php";
+require_once "classes/FixtureSafetyScanCaller.php";
+require_once "classes/RedcapScanResultStore.php";
+require_once "classes/ScanRunner.php";
+require_once "classes/SecureChatSafetyScanCaller.php";
 
 // vendor/ is committed and deploys with the module, and opis/json-schema is a runtime dependency
 // of the turn contract, so this is a hard require again. It was briefly conditional because a
@@ -1559,14 +1565,140 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             fn(string $m) => $this->emDebug("scan queue (pid $projectId): $m")
         );
 
-        // No runner yet - ScanWorker's default reports service_error, which keeps an unscanned job
-        // visibly unscanned. Stage 4 injects ScanRunner here.
+        $runner = $this->scanRunnerFor($projectId);
+        $results = new RedcapScanResultStore($this);
+        $findings = new FindingWriter($results);
+
         return new ScanWorker(
             $queue,
-            null,
+            function (array $job) use ($runner, $findings, $states, $projectId): array {
+                $outcome = $runner->run($job);
+
+                // A job about to be given up on gets a visible review task, not silence. Written
+                // here rather than in ScanRunner because only the queue's state machine knows
+                // whether this attempt was the last one - the runner sees one attempt at a time.
+                $attempts = ((int) ($job['attempts'] ?? 0)) + 1;
+                $next = $states->afterAttempt((string) $job['status'], $outcome->runStatus, $attempts);
+
+                if ($outcome->terminal || $next['status'] === ScanJobStateMachine::MANUAL_REVIEW_REQUIRED) {
+                    $this->writeScanFailurePlaceholder($findings, $job, $outcome, $attempts, $projectId);
+                }
+
+                return [
+                    'runStatus' => $outcome->runStatus,
+                    'error'     => $outcome->error,
+                    'terminal'  => $outcome->terminal,
+                ];
+            },
             null,
             fn(string $m) => $this->emDebug("scan worker (pid $projectId): $m")
         );
+    }
+
+    /**
+     * The `scan_failure` placeholder instance for a session the scanner gave up on.
+     *
+     * Its own method, and its own try/catch, because it must not be able to turn a
+     * `manual_review_required` into an exception: the job is already going to a human, and losing
+     * that transition to a failed placeholder write would be strictly worse than a missing
+     * placeholder. Both outcomes are logged as errors.
+     */
+    private function writeScanFailurePlaceholder(
+        FindingWriter $findings,
+        array $job,
+        ScanOutcome $outcome,
+        int $attempts,
+        int $projectId
+    ): void {
+        try {
+            $findings->writeScanFailure(
+                (string) $job['project_id'],
+                (string) $job['record'],
+                (int) ($job['event_id'] ?? 0),
+                $outcome->scanRunId,
+                $outcome->runStatus,
+                $attempts,
+                $outcome->error
+            );
+
+            $this->emError('SafetyScan gave up on a session; a manual-review task was created', [
+                'project_id' => $projectId,
+                'job_id'     => $job['id'] ?? null,
+                'run_status' => $outcome->runStatus,
+                'attempts'   => $attempts,
+            ]);
+        } catch (\Throwable $e) {
+            // Most likely cause on PID 257 today: the mica_safety_finding instrument does not exist
+            // (audit G5). The job still lands in manual_review_required, so the session is not lost
+            // - but nobody will see it in a REDCap queue until the instrument is built.
+            $this->emError(
+                'SafetyScan gave up on a session AND its manual-review task could not be created. '
+                . 'The job is in manual_review_required but will not appear in the review '
+                . 'instrument. Reason: ' . $e->getMessage(),
+                [
+                    'project_id' => $projectId,
+                    'job_id'     => $job['id'] ?? null,
+                    'run_status' => $outcome->runStatus,
+                ]
+            );
+        }
+    }
+
+    /**
+     * Wires the SafetyScan runner. `scan-mock-mode` swaps only the caller, so a mock-mode scan goes
+     * through exactly the same validation and quote verification as a real one.
+     */
+    private function scanRunnerFor(int $projectId): ScanRunner
+    {
+        $registry = new ArtifactRegistry();
+        $mock = (bool) $this->getProjectSetting('scan-mock-mode', $projectId);
+
+        $caller = $mock
+            ? new FixtureSafetyScanCaller(
+                null,
+                'no_supported_concern',
+                fn(string $m) => $this->emDebug("scan runner (pid $projectId): $m")
+            )
+            : new SecureChatSafetyScanCaller($this, $projectId);
+
+        if ($mock) {
+            $this->emDebug("scan-mock-mode is ON for pid $projectId - no model will be called");
+        }
+
+        return new ScanRunner(
+            $registry,
+            new SchemaValidator($registry),
+            new RedcapTranscriptStore($this),
+            $caller,
+            new RedcapScanResultStore($this),
+            new FindingWriter(new RedcapScanResultStore($this)),
+            (string) ($this->getProjectSetting('safetyscan-model-alias', $projectId) ?: 'gemini-2.5-flash'),
+            $this->appVersion(),
+            null,
+            fn(string $m) => $this->emDebug("scan runner (pid $projectId): $m")
+        );
+    }
+
+    /**
+     * Module version plus the deployed git short SHA, recorded on every scan run and counselor turn.
+     *
+     * The handoff requires knowing which build produced a given result; a version alone cannot tell
+     * two deployments of `9.9.9` apart. The SHA is read from a `VERSION` file if the build writes
+     * one and is otherwise omitted rather than guessed.
+     */
+    public function appVersion(): string
+    {
+        $version = (string) ($this->getConfig()['version'] ?? $this->VERSION ?? 'unknown');
+        $shaFile = $this->getModulePath() . 'VERSION';
+
+        if (is_file($shaFile)) {
+            $sha = trim((string) file_get_contents($shaFile));
+            if ($sha !== '') {
+                return $version . '+' . substr($sha, 0, 12);
+            }
+        }
+
+        return $version;
     }
 
     /**

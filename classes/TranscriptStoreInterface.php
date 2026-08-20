@@ -35,6 +35,17 @@ interface TranscriptStoreInterface
     ): ?array;
 
     /**
+     * Read a finalized transcript row's parameters by log_id, for the scanner.
+     *
+     * Returns the raw parameter map - payload_json chunks included - rather than a decoded payload,
+     * because the caller has to re-join and re-hash the stored bytes before trusting them. Handing
+     * back something already parsed would make that check easy to skip.
+     *
+     * @return array<string,string>|null
+     */
+    public function readTranscript(string $projectId, int $logId): ?array;
+
+    /**
      * Append a transcript row to the EM log.
      *
      * @param array<string,string|int|null> $params

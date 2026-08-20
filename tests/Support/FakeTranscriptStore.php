@@ -96,6 +96,22 @@ final class FakeTranscriptStore implements TranscriptStoreInterface
         return $logId;
     }
 
+    public function readTranscript(string $projectId, int $logId): ?array
+    {
+        foreach ($this->transcripts as $row) {
+            if ((int) $row['log_id'] === $logId) {
+                // Returned as strings, like the parameters table does, so a test cannot pass on
+                // types the real store would never produce.
+                return array_map(static fn($v): string => (string) $v, array_filter(
+                    $row,
+                    static fn($v): bool => $v !== null
+                ));
+            }
+        }
+
+        return null;
+    }
+
     public function existingFields(string $projectId, array $fieldNames): array
     {
         return array_values(array_intersect($fieldNames, $this->dictionary));
