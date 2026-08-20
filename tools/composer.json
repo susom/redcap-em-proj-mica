@@ -10,7 +10,8 @@
         "Install with `composer test:install` from the module root. tools/vendor is gitignored."
     ],
     "require": {
-        "phpunit/phpunit": "^11.5"
+        "phpunit/phpunit": "^11.5",
+        "squizlabs/php_codesniffer": "^3.11"
     },
     "config": {
         "sort-packages": true

@@ -215,4 +215,7 @@ return array(
     'Stanford\\MICA\\ArtifactRegistry' => $baseDir . '/classes/ArtifactRegistry.php',
     'Stanford\\MICA\\MICAQuery' => $baseDir . '/classes/MICAQuery.php',
     'Stanford\\MICA\\Sanitizer' => $baseDir . '/classes/Sanitizer.php',
+    'Stanford\\MICA\\SchemaValidationResult' => $baseDir . '/classes/SchemaValidationResult.php',
+    'Stanford\\MICA\\SchemaValidator' => $baseDir . '/classes/SchemaValidator.php',
+    'Stanford\\MICA\\UserRightsCheck' => $baseDir . '/classes/UserRightsCheck.php',
 );

@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main, mica-phase-3, 'design/**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  php:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 8.3 is what REDCap runs on here; 8.4 is the development host. Both, because the
+        # suite has already caught a version-dependent difference once (see stage-0-foundations).
+        php: ['8.3', '8.4']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache the test toolchain
+        uses: actions/cache@v4
+        with:
+          path: tools/vendor
+          key: tools-${{ matrix.php }}-${{ hashFiles('tools/composer.lock') }}
+
+      - name: Install the test toolchain
+        run: composer test:install --no-interaction --no-progress
+
+      # vendor/ is committed on purpose (a REDCap EM deploys by directory copy), so CI must check
+      # that what is committed is what composer.json actually resolves to - a stale or hand-edited
+      # vendor/ would otherwise pass every test and then fail in production. This check found the
+      # committed tree built with dev deps and a classmap three classes behind, so it earns its keep.
+      #
+      # installed.php / installed.json are excluded because composer stamps the *current git SHA*
+      # into them, so they differ on every commit no matter what. Nothing depends on that value
+      # here; the parts that matter (package contents, the autoload classmap, the lock) are checked.
+      - name: Verify the committed vendor/ matches composer.json
+        run: |
+          composer validate --strict --no-check-publish
+          composer install --no-interaction --no-progress --no-dev
+          git diff --exit-code -- composer.lock vendor \
+            ':(exclude)vendor/composer/installed.php' \
+            ':(exclude)vendor/composer/installed.json' \
+            || { echo '::error::vendor/ is out of date - commit the result of `composer install --no-dev`'; exit 1; }
+
+      - name: Lint and test
+        run: composer test
+
+      - name: Audit runtime dependencies
+        run: composer audit --no-dev
+
+  frontend:
+    name: mica-chatbot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: mica-chatbot/package-lock.json
+
+      - run: npm ci
+        working-directory: mica-chatbot
+
+      - run: npm run lint
+        working-directory: mica-chatbot
+
+      - run: npm run build
+        working-directory: mica-chatbot
+
+  # Playwright runs against a live REDCap with a real project, which GitHub-hosted runners do
+  # not have. The suite in e2e/ is run locally per the plan's stage conventions; this job exists
+  # to say so out loud rather than leave a reader assuming CI covers it.
+  e2e:
+    name: e2e (local only - not run in CI)
+    runs-on: ubuntu-latest
+    if: false
+    steps:
+      - run: echo "see e2e/README.md"

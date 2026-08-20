@@ -144,9 +144,8 @@ and are sequenced as their own pass; D2's fix is the same edit as the Stage 1
 - [x] `handoff/` complete; vendoring-time hash check documented (record below)
 - [x] Tamper test fails closed — and mutation-checked (record below)
 - [x] All vendored schemas load and validate fixtures (draft 2020-12)
-- [ ] `composer test` green in CI; PSR-12 clean on new files — suite green
-      locally on PHP 8.3 + 8.4; **no CI workflow yet, no phpcs yet** (see the
-      PSR-12 baseline question below)
+- [x] `composer test` green in CI; PSR-12 clean on new files (2026-08-19 —
+      `phpcs.xml` + `.github/workflows/ci.yml`; record below)
 - [x] `../14-live-defects.md` D1 fixed on dev (`e407183`); PID 257 holds
       `claude-opus-4-7`, which matches the dev registry — **prod value still
       unverified**, two read-only checks in `../14-live-defects.md` §D1
@@ -317,12 +316,73 @@ so it never exercised the registration it claimed to cover. It was rewritten
 against a schema whose validation tree really does contain a cross-file `$ref`,
 and now fails when the registration is removed.
 
+## Implementation record — 0.5 lint + CI (2026-08-19)
+
+### PSR-12 scope: exclusions, not inclusions
+
+Open decision 1 (below) is resolved. `phpcs.xml` includes `classes/` and `tests/`
+**wholesale** and names the three pilot-era files as `exclude-pattern`s
+(`ASEMLO`, `MICAQuery`, `Sanitizer`). The polarity matters: an include-list would
+let a new file escape the standard by being forgotten, whereas an exclusion list
+lints new work by default and can only ever shrink — one entry deleted per legacy
+file cleaned. `MICA.php` stays out until 0.6 touches it; scoping phpcs at it today
+would be red from the first run and stay red.
+
+Two deliberate rule adjustments, both documented inline in `phpcs.xml`:
+
+- `Generic.Files.LineLength` at 120 as an **error**, not the inherited warning —
+  a warning in a `--max-warnings`-less runner is advice nobody reads.
+- `PSR1.Files.SideEffects.FoundWithSymbols` excluded. `ArtifactRegistry` and
+  `SchemaValidator` pair `require_once` with a class declaration on purpose: a
+  REDCap EM cannot assume the composer autoloader is present, and the integrity
+  gate must load even when it is not. Everything else in PSR-1 stays on.
+
+Six over-long lines were fixed rather than grandfathered. One of them improved the
+test it was in: `ArtifactRegistryTest::malformedManifests` had nine hand-written
+JSON manifests, so a "mutate one field" case could drift from the valid shape in
+some *other* field without anyone noticing. It now builds each case from one valid
+pin with a single override.
+
+### `composer test` = lint + unit
+
+`composer test` runs `phpcs` then `phpunit`; `composer lint` / `lint:fix` are
+separately callable. **77 tests / 179 assertions and phpcs clean.**
+
+### CI (`.github/workflows/ci.yml`)
+
+Three jobs: PHP (8.3 + 8.4 matrix), `mica-chatbot` (eslint + build), and a
+disabled `e2e` placeholder that exists to state out loud that Playwright is
+local-only — it needs a live REDCap with a real project, which a GitHub-hosted
+runner does not have. Leaving it unmentioned would let a reader assume CI covers
+the E2E suite.
+
+The PHP job checks something the plan had not asked for: that the **committed
+`vendor/` matches `composer.json`**. Since `vendor/` is committed and deploys
+verbatim, a stale tree passes every test and then fails in production. It found
+two real problems on the first run:
+
+1. The committed `vendor/` had been built **with** dev dependencies
+   (`installed.php` said `'dev' => true`), which is exactly what the `tools/`
+   split exists to prevent.
+2. Its autoload classmap was three classes behind — `SchemaValidator`,
+   `SchemaValidationResult` and `UserRightsCheck` were absent. Not yet a
+   production fault (the PSR-4 map is still registered as a fallback, and
+   `MICA.php` requires the other new classes explicitly), but the committed
+   autoloader was not describing the committed code.
+
+Both fixed by regenerating with `--no-dev` and committing the result. The check
+excludes `vendor/composer/installed.php` and `installed.json`: composer stamps the
+*current git SHA* into them, so they differ on every commit regardless of
+dependencies. Nothing here reads that value, and leaving them in would make the
+check fail permanently — a check that always fails is a check that gets deleted.
+
+`composer validate --strict` also needed a `license` field (`proprietary`) to pass.
+
 ## Open decisions this work surfaced
 
-1. **PSR-12 baseline** (blocks the `composer test` checklist line). 0.5 specifies
-   `phpcs --standard=PSR12 classes/ MICA.php`, which on today's legacy `MICA.php`
-   would be red from the first run and stay red — the opposite of "every stage
-   ends green". Scope phpcs to files this phase adds, and widen it as each legacy
-   file is cleaned. `composer test` is phpunit-only until that is settled.
+1. ~~**PSR-12 baseline**~~ — **resolved 2026-08-19**, see the 0.5 record above.
 2. **Stored Twilio credentials** — see the warning above. Needs a decision before
-   0.6 removes the settings.
+   0.6 removes the settings. Still open: this instance has values stored for all
+   three `twilio-*` system settings, and deleting the declarations would orphan
+   them in `redcap_external_module_settings` (invisible in the UI, still in the
+   database). If they are real credentials they want **rotating**, not deleting.

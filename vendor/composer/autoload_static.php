@@ -248,6 +248,9 @@ class ComposerStaticInit75d890558dc1e976efb11b28f8360706
         'Stanford\\MICA\\ArtifactRegistry' => __DIR__ . '/../..' . '/classes/ArtifactRegistry.php',
         'Stanford\\MICA\\MICAQuery' => __DIR__ . '/../..' . '/classes/MICAQuery.php',
         'Stanford\\MICA\\Sanitizer' => __DIR__ . '/../..' . '/classes/Sanitizer.php',
+        'Stanford\\MICA\\SchemaValidationResult' => __DIR__ . '/../..' . '/classes/SchemaValidationResult.php',
+        'Stanford\\MICA\\SchemaValidator' => __DIR__ . '/../..' . '/classes/SchemaValidator.php',
+        'Stanford\\MICA\\UserRightsCheck' => __DIR__ . '/../..' . '/classes/UserRightsCheck.php',
     );
 
     public static function getInitializer(ClassLoader $loader)

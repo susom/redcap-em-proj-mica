@@ -204,7 +204,9 @@ class ArtifactRegistry
 
         $manifest = json_decode((string) file_get_contents($path), true);
         if (!is_array($manifest) || !isset($manifest['artifacts']) || !is_array($manifest['artifacts'])) {
-            throw new ArtifactIntegrityException("Handoff manifest is not a JSON object with an 'artifacts' map: $path");
+            throw new ArtifactIntegrityException(
+                "Handoff manifest is not a JSON object with an 'artifacts' map: $path"
+            );
         }
         if ($manifest['artifacts'] === []) {
             throw new ArtifactIntegrityException("Handoff manifest pins no artifacts: $path");

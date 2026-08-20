@@ -200,6 +200,6 @@
             "install-path": "../opis/uri"
         }
     ],
-    "dev": true,
+    "dev": false,
     "dev-package-names": []
 }

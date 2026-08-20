@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<ruleset name="MICA">
+    <description>
+        PSR-12 over the phase-3 code.
+
+        The polarity here is deliberate: classes/ and tests/ are included wholesale and the
+        pilot-era files are named as exclusions. A new file is therefore linted by default and
+        cannot escape the standard by being forgotten; the exclusion list only ever shrinks, one
+        entry per legacy file cleaned. (Stage 0.5 open decision 1 in
+        docs/phase-3-handoff/06-implementation-plan/stage-0-foundations.md: scoping phpcs at
+        today's MICA.php would be red from the first run and stay red, which is the opposite of
+        "every stage ends green".)
+    </description>
+
+    <file>classes</file>
+    <file>tests</file>
+
+    <!-- Pilot-era, pre-dates this phase. Delete an entry when the file is cleaned. -->
+    <exclude-pattern>classes/ASEMLO\.php</exclude-pattern>
+    <exclude-pattern>classes/MICAQuery\.php</exclude-pattern>
+    <exclude-pattern>classes/Sanitizer\.php</exclude-pattern>
+
+    <arg name="colors"/>
+    <arg name="basepath" value="."/>
+    <arg value="sp"/>
+
+    <rule ref="PSR12">
+        <!--
+            A REDCap external module cannot assume the composer autoloader is present: `vendor/` is
+            built by hand and deploys by directory copy, and the classes that enforce artifact
+            integrity have to load even when it is missing (otherwise a missing autoloader turns the
+            integrity gate off silently). So these files pair `require_once` with a class
+            declaration on purpose. PSR-1's "declare or execute, not both" is the right default and
+            stays on everywhere else - it is the explicit `require_once` line that is the exception,
+            not the file.
+        -->
+        <exclude name="PSR1.Files.SideEffects.FoundWithSymbols"/>
+    </rule>
+
+    <!--
+        PSR-12 has no opinion on line length; PSR-2's 120-char soft limit is inherited as a
+        warning. Make it an error so `composer test` fails on it rather than printing advice
+        nobody reads, and keep the absolute limit at the same number (the default 0/absolute
+        would let a line run forever once the warning is ignored).
+    -->
+    <rule ref="Generic.Files.LineLength">
+        <properties>
+            <property name="lineLimit" value="120"/>
+            <property name="absoluteLineLimit" value="120"/>
+        </properties>
+    </rule>
+</ruleset>

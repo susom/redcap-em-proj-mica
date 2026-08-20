@@ -195,19 +195,29 @@ final class ArtifactRegistryTest extends TestCase
 
     public static function malformedManifests(): array
     {
+        // Each case is the single `p` pin, mutated one way. json_encode rather than hand-written
+        // JSON so the mutation under test is the only thing that differs from a valid manifest.
+        $pin = static fn(array $entry): string => json_encode(['artifacts' => ['p' => $entry]]);
         $sha = hash('sha256', 'hello');
+
         return [
-            'not json'          => ['{ not json',                                              '/not a JSON object/'],
-            'no artifacts key'  => ['{"source":{}}',                                           '/not a JSON object/'],
-            'artifacts not map' => ['{"artifacts":"nope"}',                                     '/not a JSON object/'],
-            'pins nothing'      => ['{"artifacts":{}}',                                        '/pins no artifacts/'],
-            'entry has no file' => ['{"artifacts":{"p":{"type":"text","sha256":"' . $sha . '"}}}', "/missing 'file'/"],
-            'entry has no hash' => ['{"artifacts":{"p":{"file":"prompt.txt","type":"text"}}}',  "/missing 'sha256'/"],
-            'short hash'        => ['{"artifacts":{"p":{"file":"prompt.txt","type":"text","sha256":"abc"}}}', '/malformed sha256/'],
-            'unknown type'      => ['{"artifacts":{"p":{"file":"prompt.txt","type":"yaml","sha256":"' . $sha . '"}}}', '/unknown type/'],
+            'not json'          => ['{ not json', '/not a JSON object/'],
+            'no artifacts key'  => ['{"source":{}}', '/not a JSON object/'],
+            'artifacts not map' => ['{"artifacts":"nope"}', '/not a JSON object/'],
+            'pins nothing'      => ['{"artifacts":{}}', '/pins no artifacts/'],
+            'entry has no file' => [$pin(['type' => 'text', 'sha256' => $sha]), "/missing 'file'/"],
+            'entry has no hash' => [$pin(['file' => 'prompt.txt', 'type' => 'text']), "/missing 'sha256'/"],
+            'short hash'        => [$pin(self::pin(['sha256' => 'abc'])), '/malformed sha256/'],
+            'unknown type'      => [$pin(self::pin(['type' => 'yaml'])), '/unknown type/'],
             // A pin that can reach outside handoff/ describes a file the deployer never reviewed.
-            'path traversal'    => ['{"artifacts":{"p":{"file":"../MICA.php","type":"text","sha256":"' . $sha . '"}}}', '/points outside/'],
+            'path traversal'    => [$pin(self::pin(['file' => '../MICA.php'])), '/points outside/'],
         ];
+    }
+
+    /** A valid pin for `prompt.txt` ("hello"), with the field under test overridden. */
+    private static function pin(array $override): array
+    {
+        return $override + ['file' => 'prompt.txt', 'type' => 'text', 'sha256' => hash('sha256', 'hello')];
     }
 
     public function testJsonRequestedForATextArtifactIsACallerBug(): void

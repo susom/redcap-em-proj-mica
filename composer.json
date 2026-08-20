@@ -1,5 +1,6 @@
 {
     "description": "REDCap external module: Project MICA. Runtime dependencies only - see tools/composer.json for the test toolchain.",
+    "license": "proprietary",
     "require": {
         "php": ">=8.2",
         "opis/json-schema": "^2.4"
@@ -17,7 +18,17 @@
         }
     },
     "scripts": {
-        "test": "tools/vendor/bin/phpunit",
+        "lint": "tools/vendor/bin/phpcs",
+        "lint:fix": "tools/vendor/bin/phpcbf",
+        "test": [
+            "@lint",
+            "tools/vendor/bin/phpunit"
+        ],
         "test:install": "composer install --working-dir=tools"
+    },
+    "scripts-descriptions": {
+        "lint": "PSR-12 over the phase-3 code (scope and exclusions in phpcs.xml).",
+        "lint:fix": "Auto-fix what phpcs can fix; re-run `composer lint` after.",
+        "test": "Lint then unit tests. What CI runs; what every stage must leave green."
     }
 }

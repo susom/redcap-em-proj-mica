@@ -55,11 +55,15 @@ final class UserRightsCheckTest extends TestCase
             'whitespace username'        => [self::PROJECT, '   ', 'whitespace is not a user'],
             'empty project'              => [[], 'ihabz', 'no rights rows means no rights'],
             'rights row not an array'    => [['ihabz' => 'yes'], 'ihabz', 'a malformed row must not pass'],
-            'user_rights key absent'     => [['ihabz' => ['design' => '1']], 'ihabz', 'a missing key is not permission'],
+            'user_rights key absent'     => [['ihabz' => ['design' => '1']], 'ihabz', 'a missing key is not it'],
             'user_rights null'           => [['ihabz' => ['user_rights' => null]], 'ihabz', 'null is not permission'],
             'user_rights empty string'   => [['ihabz' => ['user_rights' => '']], 'ihabz', 'empty is not permission'],
             'user_rights zero string'    => [['ihabz' => ['user_rights' => '0']], 'ihabz', '0 is not permission'],
-            'design rights are not it'   => [['ihabz' => ['design' => '1', 'user_rights' => '0']], 'ihabz', 'design != user_rights'],
+            'design rights are not it'   => [
+                ['ihabz' => ['design' => '1', 'user_rights' => '0']],
+                'ihabz',
+                'design rights are not user_rights',
+            ],
         ];
     }
 
