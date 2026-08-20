@@ -152,6 +152,49 @@ instead of inside a nested box.
 
 ---
 
+## 4b. Tuning what reaches the queue (the PI's dial)
+
+Two settings under **External Modules → MICA → Configure**:
+
+| Setting | Effect |
+|---|---|
+| Minimum urgency reaching the review queue | Blank = show everything (default). `moderate` / `high` set a floor. |
+| Concern types to keep out of the review queue | Repeatable. Names a category the PI does not want in the queue. |
+
+**This is a post-scan filter, not a prompt change.** The model is still asked about everything, and
+its full answer is still stored verbatim on the insert-only scan-run row — so a filtered finding is
+recoverable in full, and turning the filter off makes it reappear in future scans. Narrowing the
+*prompt* instead would be cheaper and is the wrong trade for a safety instrument: a concern the model
+was never asked about is one nobody can later discover was there.
+
+Three things a study cannot switch off, all verified on live settings:
+
+1. **`critical` always reaches the queue**, even if its concern type is excluded. A floor above
+   critical is not a preference, it is a way of not being told.
+2. **Four concern types can never be excluded** — self-harm, violence, medical emergency, and abuse
+   or environmental danger. Selecting one is silently ignored rather than honoured.
+3. **The `scan_failure` marker is never filtered.** "Not screened" is the last thing a filter should
+   be able to hide.
+
+The list is a **denylist** on purpose. An allowlist would mean adding a concern type to the taxonomy
+later silently hides it on every project already configured — a new category of harm arriving switched
+off.
+
+### Seeing what was held back
+
+A short queue and a quiet session must not look the same. When anything is filtered, the scan-run row
+records both the thresholds in force and what they held back:
+
+```bash
+docker exec redcap_2023_1_db mysql -uroot -proot redcap -e \
+  "SELECT model_output_json FROM redcap_entity_mica_scan_run ORDER BY id DESC LIMIT 1\G"
+```
+
+Look for `thresholds` and `filtered` in the JSON — each filtered entry names the finding index, the
+concern type, the urgency and the rule that held it. It carries no participant text: the words stay
+in `model_output` in the same row, which is the authoritative copy. Nothing is added to the row on a
+project that filters nothing, so diffing two runs stays meaningful.
+
 ## 5. The launch-readiness checklist
 
 Still in the dashboard: the **Launch readiness** tab (visible to PI and sysadmin, not to a plain

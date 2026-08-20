@@ -7,6 +7,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Stanford\MICA\ArtifactRegistry;
 use Stanford\MICA\CanonicalJson;
+use Stanford\MICA\FindingThresholds;
 use Stanford\MICA\FindingWriter;
 use Stanford\MICA\SchemaValidator;
 use Stanford\MICA\ScanRunner;
@@ -84,7 +85,7 @@ final class ScanRunnerTest extends TestCase
         ];
     }
 
-    private function runner(StubSafetyScanCaller $caller): ScanRunner
+    private function runner(StubSafetyScanCaller $caller, ?FindingThresholds $thresholds = null): ScanRunner
     {
         $registry = new ArtifactRegistry(self::HANDOFF);
 
@@ -100,7 +101,8 @@ final class ScanRunnerTest extends TestCase
             null,
             function (string $m): void {
                 $this->logs[] = $m;
-            }
+            },
+            $thresholds
         );
     }
 
@@ -526,5 +528,104 @@ final class ScanRunnerTest extends TestCase
             $this->assertStringNotContainsString('waking up', $line);
             $this->assertStringNotContainsString('drinking', $line);
         }
+    }
+
+    // ---------------------------------------------------------------- post-scan thresholds
+
+    /**
+     * The filter decides what an RA works through, never what the model was asked or what is stored.
+     *
+     * These are the integration half: FindingThresholdsTest covers the decision itself exhaustively.
+     */
+    public function testAFilteredFindingIsNotWrittenButIsStillOnTheRunRow(): void
+    {
+        $logId = $this->storeTranscript();
+        $caller = new StubSafetyScanCaller(
+            StubSafetyScanCaller::ok($this->scanOutput('findings_present', 'moderate', [
+                $this->finding(['finding_index' => 1, 'concern_type' => 'privacy', 'urgency' => 'moderate']),
+            ]))
+        );
+
+        $outcome = $this->runner($caller, new FindingThresholds('high'))->run($this->job($logId));
+
+        $this->assertSame('ok', $outcome->runStatus);
+        $this->assertSame(0, $outcome->findingsWritten, 'a filtered finding reached the queue');
+
+        // The model's full answer is still there, so a filtered finding is recoverable in full.
+        $payload = json_decode($this->results->runs[0]['model_output_json'], true);
+        $this->assertCount(1, $payload['model_output']['findings']);
+        $this->assertSame('privacy', $payload['model_output']['findings'][0]['concern_type']);
+
+        // And the row says what was held back, and under which rule.
+        $this->assertSame('high', $payload['thresholds']['minimum_urgency']);
+        $this->assertCount(1, $payload['filtered']);
+        $this->assertStringContainsString('below', $payload['filtered'][0]['reason']);
+    }
+
+    public function testAnUnconfiguredProjectLeavesTheRunRowUntouched(): void
+    {
+        // Only written when something was actually filtered, so diffing two runs stays meaningful.
+        $logId = $this->storeTranscript();
+        $caller = new StubSafetyScanCaller(
+            StubSafetyScanCaller::ok($this->scanOutput('findings_present', 'critical', [$this->finding()]))
+        );
+
+        $this->runner($caller)->run($this->job($logId));
+
+        $payload = json_decode($this->results->runs[0]['model_output_json'], true);
+        $this->assertArrayNotHasKey('thresholds', $payload);
+        $this->assertArrayNotHasKey('filtered', $payload);
+    }
+
+    public function testTheFilterCannotHoldBackALifeSafetyFinding(): void
+    {
+        $logId = $this->storeTranscript();
+        $caller = new StubSafetyScanCaller(
+            StubSafetyScanCaller::ok($this->scanOutput('findings_present', 'quality', [
+                $this->finding(['concern_type' => 'self_harm', 'urgency' => 'quality']),
+            ]))
+        );
+
+        // Everything a study could set, pointed at it.
+        $outcome = $this->runner($caller, new FindingThresholds('high', ['self_harm']))
+            ->run($this->job($logId));
+
+        $this->assertSame(1, $outcome->findingsWritten);
+    }
+
+    public function testAScanWhoseOnlyFindingsWereFilteredDoesNotNeedTheInstrument(): void
+    {
+        // The look-ahead uses the ADMITTED list: a scan with nothing to release must not fail for
+        // want of an instrument it was never going to write to.
+        $logId = $this->storeTranscript();
+        $this->results->instrumentExists = false;
+        $caller = new StubSafetyScanCaller(
+            StubSafetyScanCaller::ok($this->scanOutput('findings_present', 'moderate', [
+                $this->finding(['concern_type' => 'privacy', 'urgency' => 'moderate']),
+            ]))
+        );
+
+        $outcome = $this->runner($caller, new FindingThresholds('high'))->run($this->job($logId));
+
+        $this->assertSame('ok', $outcome->runStatus, $outcome->error ?? '');
+        $this->assertSame(0, $outcome->findingsWritten);
+    }
+
+    public function testFilteringIsLoggedSoAShortQueueIsExplainable(): void
+    {
+        $logId = $this->storeTranscript();
+        $caller = new StubSafetyScanCaller(
+            StubSafetyScanCaller::ok($this->scanOutput('findings_present', 'moderate', [
+                $this->finding(['finding_index' => 1, 'concern_type' => 'privacy', 'urgency' => 'moderate']),
+                $this->finding(['finding_index' => 2, 'concern_type' => 'self_harm', 'urgency' => 'critical']),
+            ]))
+        );
+
+        $this->runner($caller, new FindingThresholds('high'))->run($this->job($logId));
+
+        $this->assertNotEmpty(array_filter(
+            $this->logs,
+            static fn(string $m): bool => str_contains($m, '1 of 2 finding(s) held back')
+        ));
     }
 }

@@ -4,6 +4,7 @@ namespace Stanford\MICA;
 
 require_once __DIR__ . "/ArtifactRegistry.php";
 require_once __DIR__ . "/CanonicalJson.php";
+require_once __DIR__ . "/FindingThresholds.php";
 require_once __DIR__ . "/FindingWriter.php";
 require_once __DIR__ . "/QuoteVerifier.php";
 require_once __DIR__ . "/SafetyScanCallerInterface.php";
@@ -67,6 +68,7 @@ class ScanRunner
     private SafetyScanCallerInterface $caller;
     private ScanResultStoreInterface $results;
     private FindingWriter $findings;
+    private FindingThresholds $thresholds;
     private QuoteVerifier $quotes;
     private string $modelAlias;
     private string $appVersion;
@@ -84,7 +86,10 @@ class ScanRunner
         string $modelAlias,
         string $appVersion,
         ?QuoteVerifier $quotes = null,
-        ?callable $logger = null
+        ?callable $logger = null,
+        // Last, and optional: every existing caller passes positionally, so inserting it
+        // earlier would have silently shifted $modelAlias into $thresholds.
+        ?FindingThresholds $thresholds = null
     ) {
         $this->artifacts = $artifacts;
         $this->validator = $validator;
@@ -92,6 +97,8 @@ class ScanRunner
         $this->caller = $caller;
         $this->results = $results;
         $this->findings = $findings;
+        // Null means filter nothing, which is the shipped state - see FindingThresholds.
+        $this->thresholds = $thresholds ?? new FindingThresholds();
         $this->modelAlias = $modelAlias;
         $this->appVersion = $appVersion;
         $this->quotes = $quotes ?? new QuoteVerifier();
@@ -180,7 +187,32 @@ class ScanRunner
         // findings have nowhere to go - leaves an `ok` row under a job that released nothing, which
         // is exactly the shape a reviewer misreads. Provenance forces run-before-findings
         // (finding_scan_run points at the run id), so the check has to be a look-ahead.
-        $findings = $output['findings'] ?? [];
+        /**
+         * The project's post-scan filter, applied here and nowhere else.
+         *
+         * After validation and quote verification, before the write-back. The model was asked about
+         * everything and its full answer is already on its way to the run row below, so this only
+         * decides what an RA has to work through - and what it held back is recorded there too, with
+         * the rule that held it. A filter whose effects cannot be read back is indistinguishable from
+         * a scanner that found nothing.
+         *
+         * The instrument look-ahead below deliberately uses the ADMITTED list: a scan whose only
+         * findings were filtered out has nothing to release, so it must not fail for want of an
+         * instrument it was never going to write to.
+         */
+        $split = $this->thresholds->apply($output['findings'] ?? []);
+        $findings = $split['admitted'];
+
+        if ($split['filtered'] !== []) {
+            $this->log(sprintf(
+                'job %s: %d of %d finding(s) held back by this project\'s thresholds (%s)',
+                $job['id'],
+                count($split['filtered']),
+                count($output['findings'] ?? []),
+                implode('; ', array_column($split['filtered'], 'reason'))
+            ));
+        }
+
         if ($findings !== [] && !$this->results->findingInstrumentExists($projectId)) {
             return $this->recordFailure(
                 $job,
@@ -205,7 +237,7 @@ class ScanRunner
 
         // Every attempt leaves a row, and this one is written before findings so the authoritative
         // copy of the output exists no matter what the write-back does.
-        $runId = $this->insertRun($job, $attempt, 'ok', $result, $output, null);
+        $runId = $this->insertRun($job, $attempt, 'ok', $result, $output, null, $split);
 
         try {
             $written = $this->findings->write($projectId, $record, $eventId, $runId, $findings);
@@ -327,7 +359,8 @@ class ScanRunner
         string $runStatus,
         ?array $result,
         ?array $output,
-        ?string $error
+        ?string $error,
+        ?array $split = null
     ): int {
         // Hashes of what was actually used, from the registry rather than from the manifest, so the
         // row describes reality (ArtifactRegistry::getHash).
@@ -347,7 +380,7 @@ class ScanRunner
             // Verbatim, and present even on a failure when there was any output at all: it is the
             // authoritative record, and a schema_invalid or citation_mismatch row without the
             // output it is about cannot be reviewed.
-            'model_output_json'    => $this->runPayload($result, $output, $error),
+            'model_output_json'    => $this->runPayload($result, $output, $error, $split),
         ];
 
         return $this->results->insertRun($data);
@@ -357,13 +390,34 @@ class ScanRunner
      * The `model_output_json` column: the model's output verbatim when there was one, wrapped with
      * the attempt's diagnostics so a failed row is self-describing.
      */
-    private function runPayload(?array $result, ?array $output, ?string $error): string
-    {
+    private function runPayload(
+        ?array $result,
+        ?array $output,
+        ?string $error,
+        ?array $split = null
+    ): string {
         $payload = [
             'model_output'    => $output,
             'error'           => $error,
             'schema_was_sent' => $result['schemaWasSent'] ?? null,
         ];
+
+        /**
+         * What the project's thresholds held back, recorded beside the output they applied to.
+         *
+         * Here rather than in a new column on purpose: this payload is already the
+         * self-describing record of one attempt, and `model_output` above still holds every finding
+         * the model reported - so a filtered finding is recoverable in full from this row. What the
+         * filter adds is *which* were held back and under which rule, because otherwise a short
+         * queue and a quiet session look identical.
+         *
+         * Only written when something was actually filtered, so a row from an unconfigured project
+         * is unchanged and diffing two runs stays meaningful.
+         */
+        if ($split !== null && ($split['filtered'] ?? []) !== []) {
+            $payload['thresholds'] = $this->thresholds->toArray();
+            $payload['filtered'] = $split['filtered'];
+        }
 
         return json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}';
     }

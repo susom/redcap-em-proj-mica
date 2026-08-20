@@ -20,6 +20,7 @@ require_once "classes/ScanWorker.php";
 require_once "classes/SessionHostMap.php";
 require_once "classes/TranscriptFinalizer.php";
 // Stage 4: the scan itself.
+require_once "classes/FindingThresholds.php";
 require_once "classes/FindingWriter.php";
 require_once "classes/FixtureSafetyScanCaller.php";
 require_once "classes/RedcapScanResultStore.php";
@@ -2246,7 +2247,11 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             (string) ($this->getProjectSetting('safetyscan-model-alias', $projectId) ?: 'gemini-2.5-flash'),
             $this->appVersion(),
             null,
-            fn(string $m) => $this->emDebug("scan runner (pid $projectId): $m")
+            fn(string $m) => $this->emDebug("scan runner (pid $projectId): $m"),
+            // The project's post-scan filter. Unconfigured means it admits everything, so this is
+            // inert until a PI narrows the queue - and even then it only decides what becomes a
+            // review item: the model's full answer is still stored on the run row.
+            FindingThresholds::fromModule($this, $projectId)
         );
     }
 

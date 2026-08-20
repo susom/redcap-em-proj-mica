@@ -208,6 +208,99 @@
             "repeatable": true
         },
         {
+            "key": "finding-minimum-urgency",
+            "name": "<b>Minimum urgency reaching the review queue</b><br><i>Blank shows everything, which is the default. A finding below this urgency is still scanned for, still returned by the model, and still stored verbatim on the scan-run row — it just does not become a queue item. <b>Critical always reaches the queue</b> regardless of this setting, and so do self-harm, violence, medical emergency and abuse/environmental danger at any urgency.</i>",
+            "required": false,
+            "type": "dropdown",
+            "choices": [
+                {
+                    "value": "",
+                    "name": "Show everything (default)"
+                },
+                {
+                    "value": "moderate",
+                    "name": "Moderate and above"
+                },
+                {
+                    "value": "high",
+                    "name": "High and above"
+                }
+            ]
+        },
+        {
+            "key": "finding-excluded-concern-types",
+            "name": "<b>Concern types to keep out of the review queue</b><br><i>Repeatable. A named type is still scanned for and still stored on the scan-run row; it just does not become a queue item. Use it to stop a category of finding nobody acts on from teaching reviewers to skim. The four life-safety types are listed for completeness but are ignored if selected — they can never be excluded, and neither can anything at <b>critical</b> urgency, or the “scan did not complete” marker.</i>",
+            "required": false,
+            "type": "dropdown",
+            "repeatable": true,
+            "choices": [
+                {
+                    "value": "self_harm",
+                    "name": "Self-harm (cannot be excluded)"
+                },
+                {
+                    "value": "violence",
+                    "name": "Violence (cannot be excluded)"
+                },
+                {
+                    "value": "medical_emergency",
+                    "name": "Medical emergency (cannot be excluded)"
+                },
+                {
+                    "value": "abuse_or_environmental_danger",
+                    "name": "Abuse or environmental danger (cannot be excluded)"
+                },
+                {
+                    "value": "severe_withdrawal",
+                    "name": "Severe withdrawal"
+                },
+                {
+                    "value": "impaired_capacity",
+                    "name": "Impaired capacity"
+                },
+                {
+                    "value": "dangerous_alcohol_use",
+                    "name": "Dangerous alcohol use"
+                },
+                {
+                    "value": "unsupported_treatment",
+                    "name": "Unsupported treatment"
+                },
+                {
+                    "value": "medical_inaccuracy",
+                    "name": "Medical inaccuracy"
+                },
+                {
+                    "value": "invented_history",
+                    "name": "Invented history"
+                },
+                {
+                    "value": "discrimination_or_shaming",
+                    "name": "Discrimination or shaming"
+                },
+                {
+                    "value": "dangerous_endorsement",
+                    "name": "Dangerous endorsement"
+                },
+                {
+                    "value": "privacy",
+                    "name": "Privacy"
+                },
+                {
+                    "value": "prompt_injection",
+                    "name": "Prompt injection"
+                },
+                {
+                    "value": "protocol_or_quality",
+                    "name": "Protocol or quality"
+                },
+                {
+                    "value": "other",
+                    "name": "Other"
+                }
+            ]
+        },
+        {
             "key": "notification-policy-json",
             "name": "<b>Notification policy (JSON)</b><br><i>Leave blank to use the vendored default, which is the conservative one: reviewers are notified when findings are ready, nobody is notified before a human confirms, and no digest is enabled. A policy that fails its pinned schema is discarded <b>whole</b> and the default applies - it is never partly used. The critical-finding acknowledgment target ships as <code>null</code> on purpose and blocks launch until study leadership sets it.</i>",
             "required": false,
