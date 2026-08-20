@@ -126,6 +126,28 @@ docker exec redcap_2023_1_web php \
 
 Idempotent — safe to re-run. On PID 257 it is already applied to events 1008, 1009, 1012, 1014.
 
+### Which instruments repeat, and why it is not symmetric
+
+| Instrument | Repeats? | Why |
+|---|---|---|
+| `mica_safety_finding` | **yes** | A scan produces N findings and each one is a repeat instance. Non-repeating would cap a session at a single finding, so a scan reporting self-harm *and* hazardous alcohol use could only record one of them, and `FindingWriter` would fail on the second write. |
+| `mica_ed_session`, `mica_booster_session` | **no** | One ED session and one booster per participant. A repeating host also renders REDCap's "Take this survey again" button, which lets a participant mint their own extra session instance. |
+
+Repeated chats still work on a non-repeating host: they all land in instance 1 and the transcript is
+*versioned* instead (v1, v2, …), with each finalize superseding the last. Verified end to end after the
+change — session → transcript v6 → job at instance 1 → `ready_for_review`.
+
+To reset a record between manual tests:
+
+```bash
+docker exec redcap_2023_1_web php .../reset-test-record.php 257 2 --dry-run   # counts first
+docker exec redcap_2023_1_web php .../reset-test-record.php 257 2
+```
+
+It removes the conversation, transcripts, scan queue, notifications and instrument data for that one
+record, and leaves the study data alone — including `last_name`, which is the Survey Login credential
+the link depends on.
+
 Now look at the form itself, in REDCap: **Record Status Dashboard → any record → Mica Safety
 Finding**. Three things to check by eye:
 
