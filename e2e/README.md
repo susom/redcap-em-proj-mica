@@ -34,7 +34,11 @@ real, expected, and tracked: PID 257 lacks the session/transcript fields the fin
 needs (`docs/phase-3-handoff/09-pid-257-structure-audit.md`, gaps G1/G4). It is Stage 2
 work, not a defect in the turn path.
 
-## Not yet done (Stage 0.5)
+## Why this is run by hand
 
-This is a plain node script, not a `@playwright/test` suite, and there is no CI job. Both
-are open 0.5 items — see `docs/phase-3-handoff/06-implementation-plan/stage-0-foundations.md`.
+There is no CI job, by decision: the module is packaged into the REDCap docker image, and
+a GitHub runner has no REDCap to test against anyway. See the 0.5 record in
+`docs/phase-3-handoff/06-implementation-plan/stage-0-foundations.md`.
+
+Still open: this is a plain node script rather than a `@playwright/test` suite, so there is
+no retry/reporter/trace support. Converting it is a loose end, not a blocker.

@@ -137,7 +137,7 @@ null as a generic failure, and never bypass it with `$ensureThatRecordExists = f
 - Keep the wire shape from Stage 1 (`content` + `end_session`) — no API
   churn.
 - Add `vitest` for pure logic (countdown, message shaping); Playwright specs
-  under `e2e/` (first E2E in the repo — wire the CI job).
+  under `e2e/` (run locally; there is no CI job by decision — see stage 0.5).
 
 ## Tests
 

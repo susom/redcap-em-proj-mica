@@ -24,11 +24,17 @@
             "@lint",
             "tools/vendor/bin/phpunit"
         ],
-        "test:install": "composer install --working-dir=tools"
+        "test:install": "composer install --working-dir=tools",
+        "check:vendor": [
+            "composer validate --strict --no-check-publish",
+            "composer install --no-interaction --no-progress --no-dev",
+            "git diff --exit-code -- composer.lock vendor ':(exclude)vendor/composer/installed.php' ':(exclude)vendor/composer/installed.json' || (echo '' && echo 'vendor/ is out of date - commit the result of the install above.' && exit 1)"
+        ]
     },
     "scripts-descriptions": {
         "lint": "PSR-12 over the phase-3 code (scope and exclusions in phpcs.xml).",
         "lint:fix": "Auto-fix what phpcs can fix; re-run `composer lint` after.",
-        "test": "Lint then unit tests. What CI runs; what every stage must leave green."
+        "test": "Lint then unit tests. Run before every commit; every stage must leave it green.",
+        "check:vendor": "Prove the committed vendor/ is what composer.json resolves to. Run after ANY dependency change - vendor/ is committed and baked into the REDCap image verbatim, so a stale tree passes every test and then ships. Requires a clean working tree. installed.php/installed.json are excluded because composer stamps the current git SHA into them, so they differ on every commit regardless of dependencies."
     }
 }

@@ -76,11 +76,11 @@ final class SchemaValidator {
   classes must not require a REDCap bootstrap), `fixtures/` (schema
   valid/invalid payloads, model-output fixtures used by later stages).
   Copy the layouts from the `redcap-external-module` skill's
-  `assets/templates/tests/` + `e2e/` (Workflow D) instead of hand-rolling;
-  same for the CI workflow (`assets/templates/ci/`).
-- CI workflow (`.github/workflows/ci.yml`): PHP 8.3, `composer install`,
+  `assets/templates/tests/` + `e2e/` (Workflow D) instead of hand-rolling.
+- ~~CI workflow (`.github/workflows/ci.yml`): PHP 8.3, `composer install`,
   `composer test`. (Playwright job added in Stage 2 when the first E2E
-  exists.)
+  exists.)~~ **Declined 2026-08-19** — the module is baked into the REDCap
+  docker image, which changes the calculus. See the decision record below.
 - Keep `emLoggerTrait` logging in all new classes reachable from the module;
   pure classes receive a logger callable instead.
 
@@ -144,8 +144,10 @@ and are sequenced as their own pass; D2's fix is the same edit as the Stage 1
 - [x] `handoff/` complete; vendoring-time hash check documented (record below)
 - [x] Tamper test fails closed — and mutation-checked (record below)
 - [x] All vendored schemas load and validate fixtures (draft 2020-12)
-- [x] `composer test` green in CI; PSR-12 clean on new files (2026-08-19 —
-      `phpcs.xml` + `.github/workflows/ci.yml`; record below)
+- [x] `composer test` green; PSR-12 clean on new files (2026-08-19 — `phpcs.xml`;
+      record below). **CI deliberately declined** — the module ships inside the
+      REDCap docker image; reasoning and the conditions for reopening it are in
+      the 0.5 record below
 - [x] `../14-live-defects.md` D1 fixed on dev (`e407183`); PID 257 holds
       `claude-opus-4-7`, which matches the dev registry — **prod value still
       unverified**, two read-only checks in `../14-live-defects.md` §D1
@@ -348,18 +350,55 @@ pin with a single override.
 `composer test` runs `phpcs` then `phpunit`; `composer lint` / `lint:fix` are
 separately callable. **77 tests / 179 assertions and phpcs clean.**
 
-### CI (`.github/workflows/ci.yml`)
+### CI — built, then deliberately removed (decision 2026-08-19, with Ihab)
 
-Three jobs: PHP (8.3 + 8.4 matrix), `mica-chatbot` (eslint + build), and a
-disabled `e2e` placeholder that exists to state out loud that Playwright is
-local-only — it needs a live REDCap with a real project, which a GitHub-hosted
-runner does not have. Leaving it unmentioned would let a reader assume CI covers
-the E2E suite.
+**There is no CI workflow, and that is a decision, not an omission. Do not
+re-add one without revisiting the reasoning here.**
 
-The PHP job checks something the plan had not asked for: that the **committed
-`vendor/` matches `composer.json`**. Since `vendor/` is committed and deploys
-verbatim, a stale tree passes every test and then fails in production. It found
-two real problems on the first run:
+A `.github/workflows/ci.yml` was written (PHP 8.3 + 8.4 matrix, `mica-chatbot`
+eslint + build, a disabled `e2e` placeholder) and then deleted, because the
+deployment model makes it close to redundant: **the MICA EM is packaged into the
+REDCap docker image and deployed with it.** What that changes:
+
+- **A docker build answers "did the files copy?", never "does the code work?"**
+  Nothing in the image build runs a test, so CI's only real role here would be
+  gating a commit *before* the bake. That is worth something — but everything it
+  would run, `composer test` runs locally in under a tenth of a second.
+- **Half the matrix was pointless.** The image is `php:8.3-apache-bookworm`.
+  Testing 8.4 was for the development host, not for any deployment target.
+- **It never actually ran.** Nothing was pushed after it was added, and whether
+  GitHub Actions is even enabled for `susom/redcap-em-proj-mica` was never
+  confirmed. An unrun workflow is worse than none: a reader takes the file as
+  evidence of coverage.
+
+So the gate is `composer test`, run before committing, plus the E2E suite run by
+hand. Two arguments were weighed and judged not to outweigh the above, but they
+are the ones that would justify reopening this:
+
+1. **Parallel workers on one branch.** Local discipline does not compose across
+   people or sessions — the stale classmap below is exactly that failure, and it
+   happened twice.
+2. **The prompt is the intervention.** Hash-pin verification that runs
+   unconditionally is a different kind of assurance from one that runs when
+   someone remembers, and it produces a build record. If IRB or Stanford
+   security ever asks how you know the deployed prompt is the validated one, that
+   is the artifact they will want.
+
+If either becomes pressing, the better home is the **image build pipeline**, not
+GitHub Actions: a check there fails the *image* rather than a commit, and cannot
+be bypassed by pushing to whatever branch the packager reads.
+
+### What survived: `composer check:vendor`
+
+The one thing in that workflow the plan had not asked for was worth keeping, so
+it is now a composer script rather than a CI step: **prove the committed
+`vendor/` is what `composer.json` resolves to.** Since `vendor/` is committed and
+baked into the image verbatim, a stale tree passes every test and then ships.
+
+Run it after **any** dependency change, and after adding a class (the optimized
+classmap is part of the committed tree). It needs a clean working tree.
+
+It found two real problems the first time it ran:
 
 1. The committed `vendor/` had been built **with** dev dependencies
    (`installed.php` said `'dev' => true`), which is exactly what the `tools/`

@@ -79,7 +79,7 @@ production until leadership resolves the deliberate blockers.
 ### 6.5 Full regression + release
 
 - Entire Playwright suite (participant + RA paths, desktop + mobile),
-  PHPUnit, vitest, lint — all green in CI.
+  PHPUnit, vitest, lint — all green via `composer test` / `npm test` (no CI; see stage 0.5).
 - Update module `README.md` (architecture summary, settings reference,
   Entity/SecureChatAI dependencies + minimum versions, ops runbook: cron
   cadence, Entity DB manager, refinalize procedure), `CHANGELOG.md`.
