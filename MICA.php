@@ -4,6 +4,7 @@ namespace Stanford\MICA;
 require_once "emLoggerTrait.php";
 require_once "classes/Sanitizer.php";
 require_once "classes/MICAQuery.php";
+require_once "classes/UserRightsCheck.php";
 // Required explicitly rather than left to the composer autoloader below: the integrity gate on the
 // hash-pinned handoff artifacts must not become unreachable just because vendor/ is absent.
 require_once "classes/ArtifactRegistry.php";
@@ -85,10 +86,25 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      */
     function redcap_module_link_check_display($project_id, $link)
     {
-        //Replace web link on sidebar with direct noauth link
-        if (isset($link) && array_key_exists('url', $link) && str_contains($link['url'], 'chatbot')) {
+        // This hook is not just cosmetic: ExternalModules/index.php calls it before including the
+        // page file and exits when it returns null, so it gates page *access*, not only the sidebar
+        // entry. The previous version returned $link unconditionally and never called the parent,
+        // which removed the framework's design-rights default for BOTH links - so any user with
+        // access to the project could open "Mica Session Admin". Combined with the missing rights
+        // check in pages/sessionSelector.php, that let them close any participant's session.
+        // See docs/phase-3-handoff/14-live-defects.md D4.
+        $link = parent::redcap_module_link_check_display($project_id, $link);
+        if (empty($link)) {
+            return null;
+        }
+
+        // Participants never use this sidebar entry - they reach the chatbot through the survey
+        // page - but pages/chatbot.php is declared in no-auth-pages, so staff opening it from here
+        // need NOAUTH on the URL for the page's own bootstrap to behave the same way.
+        if (array_key_exists('url', $link) && str_contains($link['url'], 'chatbot')) {
             $link['url'] = $link['url'] . '&NOAUTH';
         }
+
         return $link;
     }
 
@@ -1296,13 +1312,23 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     }
 
     /**
+     * Whether the *current* user may administer MICA sessions.
+     *
+     * The decision itself lives in UserRightsCheck (unit-tested); this method only supplies the
+     * REDCap facts. It used to read `current(getPrivileges(PROJECT_ID)[PROJECT_ID])`, which returns
+     * the alphabetically-first user in the project rather than the caller - see UserRightsCheck's
+     * docblock and docs/phase-3-handoff/14-live-defects.md D4.
+     *
      * @return bool
      */
-    public function validatePermissions() {
-        $test = current(UserRights::getPrivileges(PROJECT_ID)[PROJECT_ID]);
-        if($test['user_rights'] === '1')
-            return true;
-        return false;
+    public function validatePermissions(): bool {
+        $username = \ExternalModules\ExternalModules::getUsername();
+
+        return UserRightsCheck::hasSessionAdminRights(
+            UserRights::getPrivileges(PROJECT_ID, $username)[PROJECT_ID] ?? [],
+            $username,
+            \ExternalModules\ExternalModules::isSuperUser()
+        );
     }
 
     /**

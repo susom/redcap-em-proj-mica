@@ -42,3 +42,6 @@ docs/project-structure
 
 # handoff/ is deliberately NOT ignored either. Those artifacts are hash-pinned and
 # the running code refuses to work without them - see classes/ArtifactRegistry.php.
+
+# E2E screenshots
+e2e/shots/

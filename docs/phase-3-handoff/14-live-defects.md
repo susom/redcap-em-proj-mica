@@ -1,7 +1,7 @@
 # 14 — Live defects found during the SecureChatAI audit (2026-08-18)
 
 **Status:** FINDINGS — most verified by code reading. **Fixed and verified so far:
-D1, D2, D3, D6, D7, D8, D10, D11, D13, D16, D22.** Still open: D4, D5, D9, D12,
+D1, D2, D3, D4, D6, D7, D8, D10, D11, D13, D16, D22.** Still open: D5, D9, D12,
 D14, D15, D17-D21
 **Scope:** defects in the code as it stands on `mica-phase-3` @ `ab81cca`.
 These are distinct from the SOW migration work in
@@ -402,14 +402,76 @@ legal in local parts but rare. I chose a certain guarantee over guessing REDCap'
 match the e-mail in PHP as well (a full-project read on a no-auth login action,
 which is why it was not done pre-emptively).
 
-### D4 — Unauthenticated session completion on the admin page
+### D4 — Any project user could close any participant's session
 
-**Severity:** medium-high
+**Severity:** high (raised from medium-high)
+**Status: FIXED 2026-08-19.** Investigated properly before fixing, which corrected
+two claims in the original write-up and found a worse defect than the one described.
 
-`pages/sessionSelector.php:5-11` executes `completeSession` **before and without**
-`validatePermissions()` (which is only called inside `fetchIncompleteSessions()`,
-`:942-947`), with no CSRF token and an unsanitized `$_POST['participant_id']`.
-`:57` then echoes that value unescaped into a `value` attribute.
+#### What the original entry got wrong
+
+- **"no CSRF token" — wrong.** CSRF *is* enforced. The framework calls
+  `checkCSRFToken($page)` in `ExternalModules/index.php:150`, before the page file is
+  included; MICA is framework 14 and `CSRF_MIN_FRAMEWORK_VERSION` is 8, and the module
+  declares no `no-csrf-pages`. REDCap core supplies the token without the page doing
+  anything: `HtmlPage.php:197` → `System::createCsrfToken()` → `appendCsrfTokenToForm()`
+  adds `redcap_csrf_token` to **every** form, and
+  `ExternalModules/redcap_connect.php:21` maps it onto the token the framework checks.
+  So the "Complete Session" button was never broken, and CSRF needed no fix.
+- **"`:57` echoes that value"** — it echoes `$session['participant_id']` from
+  `REDCap::getData()`, not `$_POST`. Still unescaped in an HTML attribute while every
+  sibling cell escaped, so still worth fixing; just not a reflection of POST input.
+
+#### The actual defect (worse than described)
+
+Two things compounded:
+
+1. **`MICA.php:86-93` overrode `redcap_module_link_check_display()` and returned `$link`
+   unconditionally, never calling the parent.** That hook is not cosmetic — `index.php`
+   exits when it returns null, so it gates page *access*, not just the sidebar entry. The
+   framework's default (`AbstractExternalModule.php:70-88`) restricts project links to
+   **design-rights** users; the override removed that for **both** MICA links. Anyone with
+   access to the project could open "Mica Session Admin".
+2. **`validatePermissions()` did not check the calling user at all.** It read
+   `current(UserRights::getPrivileges(PROJECT_ID)[PROJECT_ID])` — and `getPrivileges($pid)`
+   with no `$userid` returns *every* user in the project ordered by username, so `current()`
+   took the **alphabetically first user**. The answer was independent of who was asking.
+
+   Demonstrated on PID 257 rather than argued: adding `test` (`user_rights=0, design=0`)
+   alongside `ihabz` (`user_rights=1`) made the expression return `'1'`, so `test` was
+   granted. The mirror case denies a legitimate administrator whenever the
+   alphabetically-first user lacks the right. The fixture was removed afterwards.
+
+Net effect: any user with project access could open the page and click Complete Session on
+an arbitrary participant, and the one function meant to stop them would have said yes.
+
+#### Fix
+
+- `redcap_module_link_check_display()` now calls
+  `parent::redcap_module_link_check_display()` first and returns null when the parent
+  refuses. The `&NOAUTH` rewrite for the chatbot link is applied only after approval.
+  Verified this does **not** break participant access: `isNoAuth()` is
+  `isset($_GET['NOAUTH'])`, so the parent approves a `&NOAUTH` request, and
+  `index.php:88` independently refuses `NOAUTH` on any page outside `no-auth-pages`
+  (`['pages/chatbot']`) — confirmed by request: the admin page with `&NOAUTH` returns
+  *"The NOAUTH parameter is not allowed on this page."*
+- `validatePermissions()` delegates to the new, unit-tested
+  [`classes/UserRightsCheck.php`](../../classes/UserRightsCheck.php), which requires a
+  username, looks it up **by key**, and honours super users. 13 tests, including both
+  directions of the ordering bug.
+  One non-obvious interaction it defends against: `getPrivileges($pid, '')` does *not*
+  scope the query — its guard is `if ($userid != null)` and `'' != null` is false — so an
+  empty username returns every user. The check refuses anonymous before any lookup.
+- `pages/sessionSelector.php` gates on `validatePermissions()` at the top of the file,
+  before the POST branch, and renders an explicit refusal. `completeSession()` is wrapped
+  (it throws) so a failure shows a message instead of a bare REDCap error page, and the
+  `participant_id` attribute is escaped.
+
+#### Not addressed here
+
+The pilot runs from the `pilot-final` tag and does **not** receive this fix. Whether to
+ship a pilot hotfix off that tag is a study decision — see `CHANGELOG.md` for the
+branch policy.
 
 ### D5 — PHI in module debug logs
 
