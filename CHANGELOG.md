@@ -89,29 +89,35 @@ change if MICA ever does.
 **981 PHP tests** (10 new, including a regression guard that asserts the *old*
 behaviour so a bypass upstream would fail it), **43/43 participant E2E**, lint clean.
 
-### `safetyscan-prompt-override` — a configurable post-session analysis prompt
+### `safetyscan-prompt-addendum` — study guidance appended to the analysis prompt
 
-New project setting holding the SafetyScan system prompt. **Blank uses the
-hash-pinned prompt the research team validated**, which is the recommended state
-and is what PID 257 is set to; a value here *replaces* it.
+New project setting carrying extra instructions for the post-session safety
+analysis. It is **appended to** the hash-pinned prompt the research team validated,
+never substituted for it. Blank — the normal state, and where PID 257 is left —
+sends the pinned artifact byte-identically.
+
+Appending, not replacing, is what makes it safe: the validated prompt is always sent
+in full, so the two properties the 120-case suite established are still instructed
+by the text the research team wrote. Because that prompt's own last line is *"Return
+only the JSON object required by the schema"*, study text appended after it would
+otherwise be the last thing the model reads — so the addendum goes inside a labelled
+block and the output and verbatim-quote contracts are **restated after it**, with
+precedence stated explicitly. An addendum can compete for the model's attention; it
+cannot remove a contract, and none of the app-side gates depend on the prompt anyway.
 
 The load-bearing part is provenance. `ScanRunner` used to read the prompt text
-(`getText`) and its hash (`getHash`) as two independent registry calls, so applying
-an override to the first alone would have left every run row recording the
-*validated* prompt's hash while the model was sent something else. The prompt is
-now resolved once, memoized, into text + sha256 + source, and both the call and the
-run row use that one resolution. A run row therefore always says which prompt
-produced it: `prompt_sha256` is the hash of what was sent, and `prompt_source` is
-written into `model_output_json` when it was **not** the pinned artifact — absent
-means validated, the same convention `schema_in_prompt` already uses. In the payload
-rather than a new column because `redcap_entity` cannot ALTER an existing type.
+(`getText`) and its hash (`getHash`) as two independent registry calls, so composing
+in the first alone would have left every run row recording the *bare pinned* hash
+while the model was sent something longer. The prompt is now resolved once,
+memoized, into text + sha256 + source + addendum hash, and both the model call and
+the run row use that one resolution. So a run row always says exactly what produced
+it: `prompt_sha256` is the hash of the composed prompt, and `prompt_source` plus
+`prompt_addendum_sha256` are written into `model_output_json` only when an addendum
+was used — absent means the validated prompt unmodified, the same convention
+`schema_in_prompt` already uses. In the payload rather than a new column because
+`redcap_entity` cannot ALTER an existing type.
 
-An override changes the prompt, not the contracts: output still has to satisfy the
-pinned schema and evidence still has to be verbatim, so a prompt that drops either
-fails every scan into `manual_review_required`. That is safe but noisy, and it is
-said plainly in the setting's own help text. `verify-settings.php` reports which
-prompt is in force either way, and flags an override for attention rather than
-noting it in passing.
+`verify-settings.php` reports which prompt is in force either way.
 
 ### Chatbot cleanup (0.6, partial — see 18 §5.1)
 

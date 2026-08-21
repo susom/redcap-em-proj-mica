@@ -72,16 +72,33 @@ class ScanRunner
     private QuoteVerifier $quotes;
     private string $modelAlias;
     private string $appVersion;
-    private ?string $promptOverride;
-    /** @var array{text:string,sha256:string,source:string}|null memoized by resolvePrompt() */
+    private ?string $promptAddendum;
+    /** @var array{text:string,sha256:string,source:string,addendumSha256:?string}|null memoized */
     private ?array $resolvedPrompt = null;
     /** @var callable(string): void */
     private $logger;
 
-    /** The prompt was the validated, hash-pinned artifact. */
+    /** The prompt was the validated, hash-pinned artifact, unmodified. */
     public const PROMPT_PINNED = 'pinned_artifact';
-    /** The prompt came from the project's `safetyscan-prompt-override` setting. Unvalidated. */
-    public const PROMPT_OVERRIDE = 'project_setting';
+    /** The pinned artifact plus the project's `safetyscan-prompt-addendum`. */
+    public const PROMPT_PINNED_PLUS_ADDENDUM = 'pinned_plus_addendum';
+
+    /**
+     * The frame the addendum is wrapped in, and the reinstatement that follows it.
+     *
+     * Both matter, for the same reason. The pinned prompt's **last** line is "Return only the JSON
+     * object required by the schema", and appending after it would make study text the last thing
+     * the model reads - so the two contracts an addendum must not weaken are restated after it, and
+     * precedence is stated explicitly. The delimiters also mean a stored prompt can be read later
+     * and the study's own words picked out of it without guessing.
+     */
+    private const ADDENDUM_HEADER =
+        "--- ADDITIONAL STUDY-SPECIFIC GUIDANCE (appended by the local REDCap configuration) ---";
+    private const ADDENDUM_FOOTER = "--- END ADDITIONAL STUDY-SPECIFIC GUIDANCE ---";
+    private const ADDENDUM_REINSTATEMENT =
+        "The instructions above this block remain in force and take precedence over the additional "
+        . "guidance where they conflict. In particular: return only the JSON object required by the "
+        . "schema, and copy every evidence quote verbatim from the transcript.";
 
     /** @param callable(string): void|null $logger */
     public function __construct(
@@ -98,8 +115,8 @@ class ScanRunner
         // Last, and optional: every existing caller passes positionally, so inserting it
         // earlier would have silently shifted $modelAlias into $thresholds.
         ?FindingThresholds $thresholds = null,
-        // Same reason - appended, not inserted. Null or blank means the pinned artifact.
-        ?string $promptOverride = null
+        // Same reason - appended, not inserted. Null or blank means the pinned artifact alone.
+        ?string $promptAddendum = null
     ) {
         $this->artifacts = $artifacts;
         $this->validator = $validator;
@@ -113,9 +130,9 @@ class ScanRunner
         $this->appVersion = $appVersion;
         $this->quotes = $quotes ?? new QuoteVerifier();
         // Trimmed here so "blank" is decided once. A REDCap textarea saved empty comes back as ''
-        // rather than null, and '' is not a prompt.
-        $trimmed = $promptOverride === null ? '' : trim($promptOverride);
-        $this->promptOverride = $trimmed === '' ? null : $trimmed;
+        // rather than null, and '' is not guidance.
+        $trimmed = $promptAddendum === null ? '' : trim($promptAddendum);
+        $this->promptAddendum = $trimmed === '' ? null : $trimmed;
         $this->logger = $logger ?? static function (string $m): void {
         };
     }
@@ -123,18 +140,26 @@ class ScanRunner
     /**
      * The prompt to send, its hash, and where it came from - resolved **once**.
      *
-     * All three together on purpose. The text goes to the model and the hash goes on the run row,
-     * and those used to be two independent registry calls: `getText()` at the call site and
-     * `getHash()` when the row was written. Adding an override to the first alone would have left
-     * every run row recording the *pinned* hash while the model was sent something else - a run row
-     * that names a prompt it did not use is worse than one that names none, because it is the record
-     * a reviewer trusts when they ask which prompt produced a finding.
+     * The validated prompt is always sent in full. A project addendum is **appended** to it, never
+     * substituted for it, so the two properties the 120-case validation established - output that
+     * satisfies the pinned schema, and evidence quoted verbatim - are still instructed by the text
+     * the research team wrote. An addendum can conflict with them, which is why the reinstatement
+     * follows it and says which wins; it cannot remove them.
      *
-     * `source` is stored beside the hash rather than left to be inferred from it. A hash alone cannot
-     * say "this was the validated artifact" without something to compare against, and the obvious
-     * comparison - re-hashing the setting - is against a value the study may since have edited.
+     * All three values together on purpose. The text goes to the model and the hash goes on the run
+     * row, and those used to be two independent registry calls: `getText()` at the call site and
+     * `getHash()` when the row was written. Composing the prompt in the first alone would have left
+     * every run row recording the *bare pinned* hash while the model was sent something longer - a
+     * run row that names a prompt it did not use is worse than one that names none, because it is
+     * the record a reviewer trusts when they ask which prompt produced a finding.
      *
-     * @return array{text:string,sha256:string,source:string}
+     * `source` is stored beside the hash rather than left to be inferred from it. A hash alone
+     * cannot say "this was the validated artifact" without something to compare against, and the
+     * obvious comparison - recomposing from the setting - is against a value the study may since
+     * have edited. `addendumSha256` is kept for the same reason at one level finer: it identifies
+     * *which* addendum was in force without reading the setting back.
+     *
+     * @return array{text:string,sha256:string,source:string,addendumSha256:?string}
      */
     private function resolvePrompt(): array
     {
@@ -145,20 +170,31 @@ class ScanRunner
             return $this->resolvedPrompt;
         }
 
-        if ($this->promptOverride !== null) {
+        // From the registry, which recomputes it, rather than from the manifest - so what follows
+        // describes the bytes actually read (ArtifactRegistry::getHash).
+        $pinned = $this->artifacts->getText('safetyscan_prompt');
+
+        if ($this->promptAddendum === null) {
             return $this->resolvedPrompt = [
-                'text'   => $this->promptOverride,
-                'sha256' => hash('sha256', $this->promptOverride),
-                'source' => self::PROMPT_OVERRIDE,
+                'text'           => $pinned,
+                'sha256'         => $this->artifacts->getHash('safetyscan_prompt'),
+                'source'         => self::PROMPT_PINNED,
+                'addendumSha256' => null,
             ];
         }
 
+        $composed = $pinned . "\n\n"
+            . self::ADDENDUM_HEADER . "\n"
+            . $this->promptAddendum . "\n"
+            . self::ADDENDUM_FOOTER . "\n\n"
+            . self::ADDENDUM_REINSTATEMENT . "\n";
+
         return $this->resolvedPrompt = [
-            'text'   => $this->artifacts->getText('safetyscan_prompt'),
-            // From the registry, which recomputes it, rather than from the manifest - so the row
-            // describes the bytes that were actually read (ArtifactRegistry::getHash).
-            'sha256' => $this->artifacts->getHash('safetyscan_prompt'),
-            'source' => self::PROMPT_PINNED,
+            'text'   => $composed,
+            // The composed prompt, not the artifact and not the addendum: this is what was sent.
+            'sha256' => hash('sha256', $composed),
+            'source' => self::PROMPT_PINNED_PLUS_ADDENDUM,
+            'addendumSha256' => hash('sha256', $this->promptAddendum),
         ];
     }
 
@@ -185,12 +221,13 @@ class ScanRunner
 
         $prompt = $this->resolvePrompt();
 
-        if ($prompt['source'] === self::PROMPT_OVERRIDE) {
-            // Every scan, not once at startup: this is the line that explains a queue full of
+        if ($prompt['source'] === self::PROMPT_PINNED_PLUS_ADDENDUM) {
+            // Every scan, not once at startup: this is the line that explains a queue of
             // schema_invalid or citation_mismatch rows, and whoever is reading the log then is
             // reading it because scans are failing.
             ($this->logger)(sprintf(
-                'using the project prompt override (sha256 %s), NOT the validated pinned prompt',
+                'the pinned prompt plus this project\'s addendum (addendum sha256 %s, composed %s)',
+                substr((string) $prompt['addendumSha256'], 0, 12),
                 substr($prompt['sha256'], 0, 12)
             ));
         }
@@ -533,18 +570,21 @@ class ScanRunner
         /**
          * Which prompt produced this row.
          *
-         * Only written when it was NOT the pinned artifact, so every existing row and every normal
-         * row is unchanged and its absence means "the validated prompt" - the same convention
-         * `schema_in_prompt` above uses. In the payload rather than a new column for the reason given
-         * below for `filtered`: redcap_entity cannot ALTER an existing type
+         * Only written when the pinned artifact was not sent alone, so every existing row and every
+         * normal row is unchanged and its absence means "the validated prompt, unmodified" - the
+         * same convention `schema_in_prompt` above uses. In the payload rather than a new column for
+         * the reason given below for `filtered`: redcap_entity cannot ALTER an existing type
          * (docs 84234d0), and this payload is already the self-describing record of one attempt.
          *
-         * `prompt_sha256` on the row is the hash of whatever was used, so the two together answer
-         * "which prompt, and was it the validated one" without re-reading a setting that may have
+         * `prompt_sha256` on the row is the hash of the composed prompt actually sent, and
+         * `prompt_addendum_sha256` identifies the study text inside it. Together they answer "which
+         * prompt, and what did this study add to it" without reading back a setting that may have
          * changed since.
          */
-        if (($this->resolvePrompt()['source'] ?? null) === self::PROMPT_OVERRIDE) {
-            $payload['prompt_source'] = self::PROMPT_OVERRIDE;
+        $prompt = $this->resolvePrompt();
+        if ($prompt['source'] === self::PROMPT_PINNED_PLUS_ADDENDUM) {
+            $payload['prompt_source'] = self::PROMPT_PINNED_PLUS_ADDENDUM;
+            $payload['prompt_addendum_sha256'] = $prompt['addendumSha256'];
         }
 
         /**

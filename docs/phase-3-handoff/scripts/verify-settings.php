@@ -361,35 +361,33 @@ if ($attempts === null || $attempts === '') {
 }
 
 /**
- * Which prompt the scanner will actually use.
+ * What the scanner is actually prompted with.
  *
- * Reported either way, and never as a plain "unset" note: the pinned prompt is the validated one, so
- * its absence is the finding here rather than its presence. A study that has replaced it should see
- * that stated every time somebody checks this project's configuration, with the hash that will
- * appear on its run rows.
+ * Reported either way rather than only when set. The addendum cannot replace the validated prompt,
+ * so a value here is not a failure - but it does change what the model was told, and anyone checking
+ * this project's configuration should be able to see that without opening the settings form.
  */
-$promptOverride = trim((string) $get('safetyscan-prompt-override'));
-if ($promptOverride === '') {
-    $registry = new \Stanford\MICA\ArtifactRegistry(dirname(__DIR__, 3) . '/handoff');
+$registry = new \Stanford\MICA\ArtifactRegistry(dirname(__DIR__, 3) . '/handoff');
+$pinnedHash = substr($registry->getHash('safetyscan_prompt'), 0, 12);
+$addendum = trim((string) $get('safetyscan-prompt-addendum'));
+
+if ($addendum === '') {
     ok_(
-        'safetyscan-prompt-override',
-        sprintf(
-            'blank - the scan uses the hash-pinned validated prompt (sha256 %s...)',
-            substr($registry->getHash('safetyscan_prompt'), 0, 12)
-        )
+        'safetyscan-prompt-addendum',
+        sprintf('blank - the hash-pinned validated prompt is sent alone (sha256 %s...)', $pinnedHash)
     );
 } else {
-    bad_(
-        'safetyscan-prompt-override',
+    note_(
+        'safetyscan-prompt-addendum',
         sprintf(
-            'SET (%d chars, sha256 %s...) - the scan runs an UNVALIDATED prompt, not the pinned one',
-            strlen($promptOverride),
-            substr(hash('sha256', $promptOverride), 0, 12)
-        ),
-        'Deliberate on some studies, so not necessarily wrong - but it retires the v1.1 validation '
-        . '(120 cases, 100% critical detection, 100% quote traceability) that the no-live-alert '
-        . 'design was accepted on. It must reproduce the output schema and demand verbatim quotes or '
-        . 'every scan fails into manual review. Clear the setting to go back to the pinned prompt.'
+            '%d chars appended to the pinned prompt (addendum sha256 %s...). The validated prompt '
+            . '(%s...) is still sent in full and its output/quote contracts are restated after this '
+            . 'text, so the scan is not unvalidated - but the model was given extra instructions. '
+            . 'Additions are safe; corrections of the validated prompt are not.',
+            strlen($addendum),
+            substr(hash('sha256', $addendum), 0, 12),
+            $pinnedHash
+        )
     );
 }
 

@@ -443,97 +443,152 @@ final class ScanRunnerTest extends TestCase
         $this->assertSame($registry->getHash('safetyscan_output_schema'), $run['output_schema_sha256']);
     }
 
-    // ------------------------------------------------------ the prompt override (safetyscan-prompt-override)
+    // -------------------------------------------- the prompt addendum (safetyscan-prompt-addendum)
+
+    private const ADDENDUM = 'Also flag any mention of firearms in the home.';
+
+    /**
+     * The property that makes this setting safe: the validated prompt is **still sent, in full**.
+     * An addendum adds to it and cannot cut it down, so the 120-case validation still describes the
+     * instructions the model received.
+     */
+    public function testTheValidatedPromptIsStillSentInFullWithAnAddendum(): void
+    {
+        $pinned = (new ArtifactRegistry(self::HANDOFF))->getText('safetyscan_prompt');
+        $caller = new StubSafetyScanCaller(StubSafetyScanCaller::ok(['scan_result' => 'no_supported_concern']));
+
+        $this->runner($caller, null, self::ADDENDUM)->run($this->job($this->storeTranscript()));
+
+        $sent = $caller->calls[0]['systemPrompt'];
+        $this->assertStringStartsWith($pinned, $sent, 'the pinned prompt is intact and comes first');
+        $this->assertStringContainsString(self::ADDENDUM, $sent);
+    }
+
+    /**
+     * The pinned prompt's last line is "Return only the JSON object required by the schema". Append
+     * after it and study text becomes the last thing the model reads, so the contracts are restated
+     * afterwards and precedence is stated. Asserted on order, because that is the whole point.
+     */
+    public function testTheOutputContractIsRestatedAfterTheAddendum(): void
+    {
+        $caller = new StubSafetyScanCaller(StubSafetyScanCaller::ok(['scan_result' => 'no_supported_concern']));
+
+        $this->runner($caller, null, self::ADDENDUM)->run($this->job($this->storeTranscript()));
+        $sent = $caller->calls[0]['systemPrompt'];
+
+        $this->assertGreaterThan(
+            strpos($sent, self::ADDENDUM),
+            strpos($sent, 'take precedence'),
+            'the reinstatement must come after the study text, not before it'
+        );
+        $this->assertStringContainsString('verbatim', $sent);
+        $this->assertStringContainsString('only the JSON object', $sent);
+    }
 
     /**
      * The defect this guards against, which is the whole risk of making the prompt configurable:
      * the text was read with `getText()` at the call site and the hash with `getHash()` when the row
-     * was written. Two independent reads. An override applied to the first alone would leave every
-     * run row claiming the *validated* prompt's hash while the model was sent something else - a
-     * false provenance record on the one row a reviewer consults to ask which prompt produced a
-     * finding.
+     * was written. Two independent reads. Composing in the first alone would leave every run row
+     * claiming the *bare pinned* hash while the model was sent something longer - a false provenance
+     * record on the one row a reviewer consults to ask which prompt produced a finding.
      */
-    public function testAnOverriddenPromptIsSentAndItsOwnHashIsRecorded(): void
+    public function testTheRunRowRecordsTheComposedPromptNotTheBarePinnedOne(): void
     {
-        $custom = 'Read the transcript and report anything concerning. Quote verbatim.';
+        $registry = new ArtifactRegistry(self::HANDOFF);
         $caller = new StubSafetyScanCaller(StubSafetyScanCaller::ok(['scan_result' => 'no_supported_concern']));
 
-        $this->runner($caller, null, $custom)->run($this->job($this->storeTranscript()));
-
-        $this->assertSame($custom, $caller->calls[0]['systemPrompt'], 'the override is what was sent');
+        $this->runner($caller, null, self::ADDENDUM)->run($this->job($this->storeTranscript()));
 
         $run = $this->results->lastRun();
-        $this->assertSame(hash('sha256', $custom), $run['prompt_sha256'], 'the hash is of what was sent');
-        $this->assertNotSame(
-            (new ArtifactRegistry(self::HANDOFF))->getHash('safetyscan_prompt'),
+        $this->assertSame(
+            hash('sha256', $caller->calls[0]['systemPrompt']),
             $run['prompt_sha256'],
-            'it must NOT claim the pinned prompt it did not use'
+            'the hash is of exactly what was sent'
+        );
+        $this->assertNotSame(
+            $registry->getHash('safetyscan_prompt'),
+            $run['prompt_sha256'],
+            'it must NOT claim the unmodified pinned prompt'
         );
 
         $payload = json_decode($run['model_output_json'], true);
-        $this->assertSame(ScanRunner::PROMPT_OVERRIDE, $payload['prompt_source']);
+        $this->assertSame(ScanRunner::PROMPT_PINNED_PLUS_ADDENDUM, $payload['prompt_source']);
+        $this->assertSame(
+            hash('sha256', self::ADDENDUM),
+            $payload['prompt_addendum_sha256'],
+            'which addendum, without reading back a setting that may have changed'
+        );
     }
 
-    /** Blank is not a prompt. A REDCap textarea saved empty comes back '' rather than null. */
-    #[DataProvider('blankOverrides')]
-    public function testABlankOverrideFallsBackToThePinnedPrompt(?string $blank): void
+    /** Blank is not guidance. A REDCap textarea saved empty comes back '' rather than null. */
+    #[DataProvider('blankAddenda')]
+    public function testABlankAddendumSendsThePinnedPromptAlone(?string $blank): void
     {
         $registry = new ArtifactRegistry(self::HANDOFF);
         $caller = new StubSafetyScanCaller(StubSafetyScanCaller::ok(['scan_result' => 'no_supported_concern']));
 
         $this->runner($caller, null, $blank)->run($this->job($this->storeTranscript()));
 
-        $this->assertSame($registry->getText('safetyscan_prompt'), $caller->calls[0]['systemPrompt']);
+        $this->assertSame(
+            $registry->getText('safetyscan_prompt'),
+            $caller->calls[0]['systemPrompt'],
+            'byte-identical - no header, no reinstatement, nothing appended'
+        );
 
         $run = $this->results->lastRun();
         $this->assertSame($registry->getHash('safetyscan_prompt'), $run['prompt_sha256']);
         $this->assertArrayNotHasKey(
             'prompt_source',
             json_decode($run['model_output_json'], true),
-            'absent means the validated prompt - the same convention schema_in_prompt uses'
+            'absent means the validated prompt unmodified - the convention schema_in_prompt uses'
         );
     }
 
     /** @return array<string,array{0:?string}> */
-    public static function blankOverrides(): array
+    public static function blankAddenda(): array
     {
         return ['null' => [null], 'empty string' => [''], 'whitespace' => ["  \n\t "]];
     }
 
-    /** A surrounding-whitespace edit must not change the prompt's identity. */
-    public function testAnOverrideIsTrimmedBeforeItIsHashed(): void
+    /** A surrounding-whitespace edit must not change the composed prompt's identity. */
+    public function testAnAddendumIsTrimmedBeforeItIsComposed(): void
     {
-        $caller = new StubSafetyScanCaller(StubSafetyScanCaller::ok(['scan_result' => 'no_supported_concern']));
+        $caller = new StubSafetyScanCaller(
+            StubSafetyScanCaller::ok(['scan_result' => 'no_supported_concern']),
+            StubSafetyScanCaller::ok(['scan_result' => 'no_supported_concern'])
+        );
 
-        $this->runner($caller, null, "  Analyse this.\n ")->run($this->job($this->storeTranscript()));
+        $this->runner($caller, null, "  " . self::ADDENDUM . "\n ")->run($this->job($this->storeTranscript()));
+        $padded = $this->results->lastRun()['prompt_sha256'];
 
-        $this->assertSame('Analyse this.', $caller->calls[0]['systemPrompt']);
-        $this->assertSame(hash('sha256', 'Analyse this.'), $this->results->lastRun()['prompt_sha256']);
+        $this->runner($caller, null, self::ADDENDUM)->run($this->job($this->storeTranscript()));
+
+        $this->assertSame($padded, $this->results->lastRun()['prompt_sha256']);
     }
 
-    /** Whoever is reading the log during a queue full of schema_invalid rows needs this line. */
-    public function testAnOverrideIsAnnouncedInTheLog(): void
+    /** Whoever is reading the log during a queue of failing scans needs this line. */
+    public function testAnAddendumIsAnnouncedInTheLog(): void
     {
         $caller = new StubSafetyScanCaller(StubSafetyScanCaller::ok(['scan_result' => 'no_supported_concern']));
 
-        $this->runner($caller, null, 'Custom.')->run($this->job($this->storeTranscript()));
+        $this->runner($caller, null, self::ADDENDUM)->run($this->job($this->storeTranscript()));
 
         $this->assertNotEmpty(array_filter(
             $this->logs,
-            static fn(string $m): bool => str_contains($m, 'override') && str_contains($m, 'NOT the validated')
+            static fn(string $m): bool => str_contains($m, 'addendum')
         ));
     }
 
     /**
-     * An override does not weaken any gate. It replaces the prompt, not the output contract - a
-     * response that does not satisfy the pinned schema is still rejected whole, which is the
-     * realistic failure mode of a hand-written prompt.
+     * An addendum weakens no gate. The output contract is enforced in code, not by the prompt, so a
+     * response that does not satisfy the pinned schema is still rejected whole - and a rejection is
+     * never a clean screen.
      */
-    public function testAnOverrideDoesNotBypassOutputSchemaValidation(): void
+    public function testAnAddendumDoesNotBypassOutputSchemaValidation(): void
     {
         $caller = new StubSafetyScanCaller(StubSafetyScanCaller::ok(['concern' => 'self_harm_risk']));
 
-        $outcome = $this->runner($caller, null, 'Report concerns however you like.')
+        $outcome = $this->runner($caller, null, self::ADDENDUM)
             ->run($this->job($this->storeTranscript()));
 
         $this->assertSame('schema_invalid', $outcome->runStatus);
