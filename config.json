@@ -474,6 +474,13 @@
             "name": "<b>Allocation field</b><br><i>Field holding the assigned study group. Its value must be the arm number (1, 2, 3). Defaults to <code>study_group</code>.</i>",
             "required": false,
             "type": "field-list"
+        },
+        {
+            "key": "e2e-fixture-saved-roles",
+            "name": "<i>Internal.</i> Set only by <code>e2e-review-fixture.php</code> while a test run holds the project's role mappings, so teardown can put them back instead of clearing them. Removed on teardown. Do not edit.",
+            "required": false,
+            "type": "textarea",
+            "hidden": true
         }
     ],
     "system-settings": [

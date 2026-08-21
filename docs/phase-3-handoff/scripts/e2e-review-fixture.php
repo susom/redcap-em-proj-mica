@@ -139,9 +139,22 @@ if ($MODE === 'teardown') {
     );
     echo "  removed notification rows for record $RECORD\n";
 
-    $module->removeProjectSetting('role-ra-reviewer', $PID);
-    $module->removeProjectSetting('role-pi-lead', $PID);
-    echo "  cleared the reviewer and PI role mappings\n";
+    // Put back whatever the project had, rather than clearing. See the note at the setup site.
+    $saved = json_decode((string) $module->getProjectSetting('e2e-fixture-saved-roles', $PID), true);
+
+    foreach (['role-ra-reviewer', 'role-pi-lead'] as $key) {
+        $was = is_array($saved) ? ($saved[$key] ?? null) : null;
+
+        if ($was === null || $was === [] || $was === '') {
+            $module->removeProjectSetting($key, $PID);
+            echo "  $key restored to unset\n";
+        } else {
+            $module->setProjectSetting($key, $was, $PID);
+            echo "  $key restored to " . implode(',', (array) $was) . "\n";
+        }
+    }
+
+    $module->removeProjectSetting('e2e-fixture-saved-roles', $PID);
 
     echo "\nDone. Nothing from this fixture remains.\n";
     exit(0);
@@ -223,6 +236,20 @@ $module->query(
 echo "  put the user in that role, with no design and no user-rights\n";
 
 // The module setting is a MAPPING, not a roster: it names the REDCap role, never the person.
+/**
+ * Stash the project's real role mappings before overwriting them.
+ *
+ * Teardown used to `removeProjectSetting()` these, which is not the inverse of what setup does - it
+ * is the inverse of "they were never set". Running the fixture on a configured project therefore
+ * DELETED the study's own reviewer and PI mappings, and the symptom shows up much later as "nobody
+ * can open the review dashboard". Stored under the module's own settings so a crashed run does not
+ * lose them.
+ */
+$module->setProjectSetting('e2e-fixture-saved-roles', json_encode([
+    'role-ra-reviewer' => $module->getProjectSetting('role-ra-reviewer', $PID),
+    'role-pi-lead'     => $module->getProjectSetting('role-pi-lead', $PID),
+]), $PID);
+
 $module->setProjectSetting('role-ra-reviewer', [(string) $roleId], $PID);
 echo "  mapped role_id $roleId as the MICA reviewer role\n";
 
