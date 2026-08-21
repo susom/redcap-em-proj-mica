@@ -55,6 +55,40 @@ against `platform.php = 8.2` rather than the developer's PHP.
 `php-ml` and `twilio/sdk` were dropped: 2,598 files and 17.5 MB with zero
 references anywhere in the codebase. `vendor/` is 235 files / 1.3 MB.
 
+### SecureChatAI conformance — SOW "update API calls, request/response handling"
+
+The three items `13 §7` listed as *must change for correctness* / *leaves value on
+the table*, scoped from [`18-sow-status-review.md`](docs/phase-3-handoff/18-sow-status-review.md) §5.
+
+- **A provider failure is no longer stored as counselor speech.** `callAI()` never
+  throws; it rewrites a failure as an assistant message carrying a canned apology,
+  which is shape-indistinguishable from an answer — so it was being written into
+  the participant's transcript as words MICA said, and that transcript is what
+  SafetyScan analyses. The apology still reaches the screen; the stored row has its
+  counselor text emptied and carries a `provider_error` block instead
+  (`classes/ProviderFailure.php`). `TranscriptBuilder` and `MICAQuery::getLogsFor()`
+  already dropped an empty-content turn, so the failed turn now takes a path that
+  was written for it.
+- **`session_id` is sent, so provider turn rows exist at all.** Without it
+  `logConversationTurn()` returns early and MICA's conversations produced **zero**
+  turn rows. The value is the **session pseudo id** — the same salted digest the
+  scan path derives, so a counselor turn and its SafetyScan run group under one
+  identifier. Verified live: turn rows now carry
+  `session_id 2b8490313901f2765cdc6ba29a247054`, and the scan of that session
+  reports the same `session_id_pseudonymous`.
+- **`$username` is passed** when a REDCap user drives the chat. On the participant
+  path it stays null, deliberately: a participant holds no REDCap account, and
+  synthesizing one — or passing the record id — would put a direct identifier into
+  another module's audit log.
+
+The failure heuristic (`model === null && usage === null`) is now defined once and
+shared with `SecureChatSafetyScanCaller`. It is sound only because MICA never opts
+into agent mode; that reasoning is in the class docblock, along with what has to
+change if MICA ever does.
+
+**981 PHP tests** (10 new, including a regression guard that asserts the *old*
+behaviour so a bypass upstream would fail it), **43/43 participant E2E**, lint clean.
+
 ### Earlier phase-3 work on this branch
 
 Landed through the live-defect pass ([`14-live-defects.md`](docs/phase-3-handoff/14-live-defects.md))

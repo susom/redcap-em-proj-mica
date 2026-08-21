@@ -5,6 +5,12 @@ require_once "emLoggerTrait.php";
 require_once "classes/Sanitizer.php";
 require_once "classes/MICAQuery.php";
 require_once "classes/UserRightsCheck.php";
+// The counselor turn's failure guard. Required with the participant-path classes above rather than
+// the pipeline ones below: without it a provider outage is stored as something MICA said.
+require_once "classes/ProviderFailure.php";
+// Reached transitively through TranscriptFinalizer, but the counselor turn needs it too - and this
+// file's convention is to require what it uses so a load failure names the right class.
+require_once "classes/SessionPseudoId.php";
 // Required explicitly rather than left to the composer autoloader below: the integrity gate on the
 // hash-pinned handoff artifacts must not become unreachable just because vendor/ is absent.
 require_once "classes/ArtifactRegistry.php";
@@ -887,15 +893,61 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     // Alter model parameters if set by user
                     $this->setModelParameters($params);
 
+                    // Without `session_id` the provider's own turn logging returns early
+                    // (SecureChatAI.php:2242), so MICA's conversations produced ZERO provider turn
+                    // rows - verified empirically, 13 §7 item 3. Omitted, not faked, when the
+                    // session cannot be identified: see counselorSessionId().
+                    $sessionId = $this->counselorSessionId(
+                        $participant_id,
+                        $payload,
+                        is_string($instrument) ? $instrument : null,
+                        (int) $repeat_instance
+                    );
+                    if ($sessionId !== null) {
+                        $params['session_id'] = $sessionId;
+                    }
+
                     $this->assertModelIsRegistered($model);
-                    $response = $this->getSecureChatInstance()->callAI($model, $params, PROJECT_ID );
+                    $response = $this->getSecureChatInstance()->callAI(
+                        $model,
+                        $params,
+                        PROJECT_ID,
+                        $this->authenticatedUsername()
+                    );
                     $result = $this->formatResponse($response);
 
                     $result['user_id'] = $participant_id;
                     $result['query']   = $recent_query;
 
+                    /**
+                     * A provider failure must not be stored as counselor speech.
+                     *
+                     * `callAI()` never throws; it rewrites a failure as an assistant message
+                     * carrying a canned apology, which `formatResponse()` cannot tell from an
+                     * answer. The apology still goes back to the SPA - the participant has to see
+                     * something - but the row written to the transcript has its counselor text
+                     * emptied, so SafetyScan never reads an outage as words MICA said.
+                     * See classes/ProviderFailure.php.
+                     */
+                    $providerFailed = is_array($response) && ProviderFailure::looksSanitized($response);
+
+                    if ($providerFailed) {
+                        $result['provider_error'] = true;
+                        $this->emError('callAI: the provider failed and the reply was NOT stored as a '
+                            . 'counselor turn', [
+                                'participant_id' => $participant_id,
+                                'project_id'     => PROJECT_ID,
+                                'model'          => $model,
+                            ]);
+                    }
+
                     // Add response to database
-                    $this->logMICAQuery(json_encode($result), $participant_id);
+                    $this->logMICAQuery(
+                        json_encode($providerFailed
+                            ? ProviderFailure::redactCounselorTurn($result, 'no model and no usage')
+                            : $result),
+                        $participant_id
+                    );
 
                     return json_encode($result);
 
@@ -2094,6 +2146,78 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             null,
             fn(string $m) => $this->emDebug("finalizer: $m")
         );
+    }
+
+    /**
+     * The `session_id` sent to SecureChatAI for a counselor turn, or null if it cannot be derived.
+     *
+     * **It is the session pseudo id, deliberately** - the same value the scan path derives
+     * (`TranscriptFinalizer.php:219`), from the same four inputs, so a provider turn row and the
+     * SafetyScan run for one session carry the same identifier. That is the whole reason to send one:
+     * `session_id` is what SecureChatAI groups its audit rows by (`SecureChatAI.php:2317`), and a
+     * counselor-path id that did not match the scan-path id would create the grouping and then make
+     * it useless.
+     *
+     * It is also the only session identifier that may leave the application: a REDCap record id is a
+     * direct identifier in this study, and the pseudo id is a salted one-way digest of it
+     * (classes/SessionPseudoId.php). We are handing this to another module's log, so that matters
+     * more here than it does internally.
+     *
+     * **Never throws.** Every input can legitimately be unavailable - an admin-initiated call with
+     * no survey context, an instrument that maps to no configured host - and a turn the participant
+     * is waiting on must not fail because its audit id could not be computed. A missing `session_id`
+     * costs a provider log row; a throw costs the participant their answer.
+     */
+    private function counselorSessionId(
+        $participantId,
+        $payload,
+        ?string $hostInstrument,
+        int $hostInstance
+    ): ?string {
+        try {
+            $instrument = $this->resolveSessionHostInstrument($payload, $hostInstrument);
+            $hosts = SessionHostMap::fromSetting($this->getProjectSetting('session-host-map'));
+            $sessionType = $hosts->resolve($instrument)['session_type'];
+
+            return SessionPseudoId::derive(
+                $this->sessionPseudoIdSalt(),
+                (string) PROJECT_ID,
+                (string) $participantId,
+                $sessionType,
+                // Mirrors finalizeSessionTranscript(): the framework's instance, falling back to the
+                // payload and then to 1. A mismatch here would silently split one session's rows.
+                $hostInstance ?: (int) ($payload['repeat_instance'] ?? 1)
+            );
+        } catch (\Throwable $e) {
+            $this->emDebug(
+                'callAI: no session_id was sent - the session could not be identified, so the '
+                . 'provider will not group this turn. The turn itself is unaffected.',
+                ['participant_id' => $participantId, 'error' => $e->getMessage()]
+            );
+            return null;
+        }
+    }
+
+    /**
+     * The REDCap username to attribute a turn to, or null when there is genuinely no user.
+     *
+     * A participant is not a REDCap user - they hold no account by design (08-auth-discovery.md
+     * filter F2) - so on the survey path there is no username and null is the honest answer. It is
+     * NOT a placeholder for something better: synthesizing one, or passing the record id, would put
+     * a direct identifier into another module's audit log, which is exactly what SessionPseudoId
+     * exists to avoid. `SecureChatSafetyScanCaller.php:89-91` makes the same call for the same
+     * reason.
+     *
+     * Staff *do* have one, and passing it is the point of item 3: an authenticated user driving the
+     * chat (testing a session, or the admin selector) gets their turns attributed to them, and
+     * SecureChatAI's user-scoped rehydration works for them instead of returning an empty session
+     * (13 §1.1).
+     */
+    private function authenticatedUsername(): ?string
+    {
+        $username = $_SESSION['username'] ?? null;
+
+        return (is_string($username) && $username !== '') ? $username : null;
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace Stanford\MICA;
 
+require_once __DIR__ . "/ProviderFailure.php";
 require_once __DIR__ . "/SafetyScanCallerInterface.php";
 
 /**
@@ -235,7 +236,10 @@ class SecureChatSafetyScanCaller implements SafetyScanCallerInterface
      */
     private function looksLikeASanitizedFailure(array $response): bool
     {
-        return ($response['model'] ?? null) === null && ($response['usage'] ?? null) === null;
+        // One definition, shared with the counselor turn - which has the same problem for a
+        // different reason (a failure stored as counselor speech rather than released as a clean
+        // screen). See classes/ProviderFailure.php for why the heuristic is sound for this module.
+        return ProviderFailure::looksSanitized($response);
     }
 
     /**
