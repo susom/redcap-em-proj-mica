@@ -296,15 +296,31 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         return $sanitizedPayload;
     }
 
+    /**
+     * The `choices[0]` fallback that used to live here is gone (13 §7 item 4).
+     *
+     * It was unreachable and would have been wrong if reached. `callAI()` always returns the output
+     * of `sanitizeOutputForUI()`, which sets `content` for every chat model MICA can select, so the
+     * first branch always won. And `extractResponseText()` no longer parses `choices[0]` at all -
+     * it returns `json_encode($response)` as a last resort, so the "raw GPT-4o pass-through" branch
+     * would have put a JSON blob on screen and into the transcript as counselor speech.
+     *
+     * A missing `content` is now treated as what it is - no answer - rather than being papered over.
+     * An empty string is a shape the rest of the module already handles: `TranscriptBuilder` drops
+     * such a turn and `MICAQuery::getLogsFor()` skips it, the same path a detected provider failure
+     * takes (classes/ProviderFailure.php).
+     */
     public function formatResponse($response) {
-        // Check if the response is normalized (has `content`)
-        if (isset($response['content'])) {
-            $content = $response['content'];
-            $role = $response['role'] ?? 'assistant';
-        } else {
-            // Handle raw responses (e.g., GPT-4o, Ada-002 pass-through)
-            $content = $this->getSecureChatInstance()->extractResponseText($response);
-            $role = $response['choices'][0]['message']['role'] ?? 'assistant';
+        $role = $response['role'] ?? 'assistant';
+        $content = $response['content'] ?? null;
+
+        if (!is_string($content)) {
+            $this->emError(
+                'formatResponse: the provider response carried no `content` string, so this turn has '
+                . 'no answer. Not stored as counselor text.',
+                ['keys' => is_array($response) ? array_keys($response) : gettype($response)]
+            );
+            $content = '';
         }
 
         // Common fields
@@ -1731,29 +1747,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $flat_context = ['role' => 'system', 'content' => "Previous session summaries:\n" . $summaryText];
         return [$flat_context];
     }
-    
- /**
- * Send SMS with body payload
- * @param $body
- * @param $phone_number
- * @return void
- */
-//public function sendSMS($body, $phone_number): void
-//{
-//    $sid = $this->getSystemSetting('twilio-sid');
-//    $auth = $this->getSystemSetting('twilio-auth-token');
-//    $fromNumber = $this->getSystemSetting('twilio-from-number');
-//
-//    $twilio = new Client($sid, $auth);
-//    $twilio->messages
-//        ->create(
-//            "$phone_number",
-//            array(
-//                'body' => $body,
-//                'from' => $fromNumber
-//            )
-//        );
-//}
+
     /**
      * Does this project have the pilot's session scaffolding at all?
      *

@@ -89,6 +89,21 @@ change if MICA ever does.
 **981 PHP tests** (10 new, including a regression guard that asserts the *old*
 behaviour so a bypass upstream would fail it), **43/43 participant E2E**, lint clean.
 
+### Chatbot cleanup (0.6, partial — see 18 §5.1)
+
+- **The Twilio credentials are gone.** `twilio-sid` / `-auth-token` / `-from-number` removed
+  from `config.json`, the commented-out `sendSMS()` deleted, and the three orphaned rows
+  purged from `redcap_external_module_settings` — undeclaring a setting leaves its value in
+  the database, invisible in the UI, which is worse than leaving it declared.
+  `verify-settings.php` §9 now checks for the orphan rather than the unused value.
+  **Owed by a human:** rotate the token in Twilio, purge the rows on any other instance
+  where this module was enabled.
+- **`formatResponse()`'s `choices[0]` fallback deleted** — unreachable, and wrong if reached.
+- **The pilot code paths were deliberately NOT deleted.** Decision 5 conditions that on
+  Stage 2, which is out of scope; `getSystemContextForRecord()` is the only implementation of
+  the session-completed / study-completed gates, so deleting it would turn a gap into a
+  blank page. Reasoning in [`18 §5.1`](docs/phase-3-handoff/18-sow-status-review.md).
+
 ### Earlier phase-3 work on this branch
 
 Landed through the live-defect pass ([`14-live-defects.md`](docs/phase-3-handoff/14-live-defects.md))

@@ -158,13 +158,33 @@ question is answered with verified evidence rather than assumption, and the one 
 broke every turn is fixed. The clause's own verbs ("clean up", "update API calls",
 "conform") are not.
 
-**The stated blocker on the cleanup is gone.** `06-implementation-plan/README.md:112` deferred
-0.6 because it "needs a before/after Playwright baseline to be worth anything". That baseline
-now exists (43 checks, above), so the deferral reason no longer holds. One caveat that is *not*
-resolved: `twilio-sid` / `twilio-auth-token` / `twilio-from-number` hold **live credentials**
-for a `sendSMS()` that is commented out (recorded in `0ba5eee`, deliberately left alone). That
-is a **rotate-then-delete**, not a delete — and it needs doing regardless of the cleanup,
-because a live auth token is sitting in the database for code that cannot run it.
+### 5.1 The cleanup, split three ways (2026-08-21)
+
+`06-implementation-plan/README.md:112` deferred 0.6 for want of a before/after Playwright
+baseline. That baseline now exists (43 checks, above), so the deferral reason is gone — but the
+cleanup is not one item, and the three parts have very different risk:
+
+| Part | Status | Detail |
+|---|---|---|
+| **Credential hygiene** | ✅ **done** | `twilio-sid` / `-auth-token` / `-from-number` removed from `config.json`, the commented-out `sendSMS()` deleted, and the three **orphaned rows purged** from `redcap_external_module_settings`. Undeclaring a setting does not delete its stored value — the live token would have stayed in the database, now invisible in the module UI, which is worse than leaving it declared. `verify-settings.php` §9 was inverted to catch exactly that. **Still owed by a human:** rotate the token in the Twilio console, and purge the same rows anywhere else this module was enabled |
+| **Dead code** | ✅ **done** | `formatResponse()`'s `choices[0]` fallback (`13 §7` item 4) — unreachable, and wrong if reached: `extractResponseText()` no longer parses `choices[0]`, so it would have put `json_encode($response)` on screen and into the transcript as counselor speech. A missing `content` is now treated as no answer, which is a shape the module already handles |
+| **Pilot code paths** | ⏸️ **deferred, deliberately** | See below |
+
+**Why the pilot paths were not deleted.** Cross-cutting decision 5 authorises deleting them
+*"once Stage 2 lands"* — and §10 A6 cancelled Stage 2. The precondition can never be met, and the
+premise is gone with it: decision 5 assumed the R01 engine would replace what gets deleted, and
+now nothing does. Concretely, `getSystemContextForRecord()` lines 1596–1631 are the **only
+implementation of gates 1 and 3 from the §10 A6 table** — the `month3_fu_complete == 2` /
+`session_info_complete === 2` / `des_mica === 0` refusals, including the participant-facing
+wording. A6 calls those gates *unowned*; deleting the code would make them *unwritten*, and it is
+the reference for what the study's session semantics are when `SessionEntryGate` is scoped.
+
+They are also not dead by the definition used everywhere else in this review:
+`hasPilotSessionScaffolding()` is a **runtime branch**, not a stale artifact — it is what lets one
+codebase serve both project shapes. "Never executes on PID 257" is not "unreachable".
+
+**Unblocks on either:** `SessionEntryGate` landing first (so the gates survive the deletion), or
+confirmation that no project will ever run this branch against a pilot dictionary.
 
 One caution: the plan's counselor-v2 contract would satisfy this clause many times over, but
 it is a much larger scope than the SOW bought. The conformance items in `13 §7` are the

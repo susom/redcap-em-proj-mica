@@ -528,23 +528,42 @@ $get('enable-project-debug-logging')
 
 echo "\n9. System settings\n";
 
-$twilio = [];
+/**
+ * The `twilio-*` settings were REMOVED from config.json along with the commented-out `sendSMS()`.
+ *
+ * This check outlived them on purpose. Undeclaring a setting does not delete its stored row - the
+ * value stays in `redcap_external_module_settings`, now invisible in the module's own UI, which is
+ * strictly worse than leaving it declared. So the check inverts: it used to report a value that
+ * had no code, and now it reports a value that has no *setting*. Either way the finding is the
+ * same live auth token in the database.
+ *
+ * Purged locally on 2026-08-21. It has to be purged wherever else this module was ever enabled,
+ * and the credential itself rotated in Twilio - neither of which a config.json change can do.
+ */
+$twilioOrphans = [];
 foreach (['twilio-sid', 'twilio-auth-token', 'twilio-from-number'] as $key) {
     $v = trim((string) $module->getSystemSetting($key));
     if ($v !== '') {
-        $twilio[] = $key;
+        $twilioOrphans[] = $key;
     }
 }
 
-if ($twilio !== []) {
+if ($twilioOrphans !== []) {
     bad_(
-        'twilio-*',
-        sprintf('%s hold values, but sendSMS() is commented out in MICA.php', implode(', ', $twilio)),
-        'A live auth token in the database for code that cannot run it. Rotate the credential and '
-        . 'clear these settings, or restore the feature - but not neither. This is handoff item 0.6.'
+        'twilio-* (orphaned)',
+        sprintf(
+            '%s still hold values, but the settings no longer exist in config.json and sendSMS() '
+            . 'is deleted',
+            implode(', ', $twilioOrphans)
+        ),
+        'An orphaned credential: unreachable by code, unreadable in the UI, still in the database. '
+        . 'Rotate the token in the Twilio console, then purge the rows: DELETE FROM '
+        . "redcap_external_module_settings WHERE `key` IN ('twilio-sid','twilio-auth-token',"
+        . "'twilio-from-number') AND external_module_id = (SELECT external_module_id FROM "
+        . "redcap_external_modules WHERE directory_prefix='proj_mica');"
     );
 } else {
-    ok_('twilio-*', 'empty - matches the commented-out sendSMS()');
+    ok_('twilio-*', 'no orphaned rows - the settings and sendSMS() are both gone');
 }
 
 // ------------------------------------------------------------------ config.json self-consistency

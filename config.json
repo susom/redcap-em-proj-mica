@@ -489,24 +489,6 @@
             "name": "<b>Enable Debug Logging (system-wide)</b><i>(optional)</i> Requires installation and configuration of emLogger",
             "required": false,
             "type": "checkbox"
-        },
-        {
-            "key": "twilio-sid",
-            "name": "<b>Twilio SID</b>",
-            "required": false,
-            "type": "text"
-        },
-        {
-            "key": "twilio-auth-token",
-            "name": "<b>Twilio Auth token</b>",
-            "required": false,
-            "type": "text"
-        },
-        {
-            "key": "twilio-from-number",
-            "name": "<b>Twilio From Number </b><br><i>e.g +16124823490</i>",
-            "required": false,
-            "type": "text"
         }
     ],
     "compatibility": {
