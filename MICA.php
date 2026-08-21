@@ -2472,7 +2472,10 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             // The project's post-scan filter. Unconfigured means it admits everything, so this is
             // inert until a PI narrows the queue - and even then it only decides what becomes a
             // review item: the model's full answer is still stored on the run row.
-            FindingThresholds::fromModule($this, $projectId)
+            FindingThresholds::fromModule($this, $projectId),
+            // Blank means the hash-pinned prompt the research team validated, which is the
+            // recommended state. ScanRunner trims and records which one it used on every run row.
+            (string) $this->getProjectSetting('safetyscan-prompt-override', $projectId)
         );
     }
 

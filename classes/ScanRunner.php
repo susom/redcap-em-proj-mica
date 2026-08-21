@@ -72,8 +72,16 @@ class ScanRunner
     private QuoteVerifier $quotes;
     private string $modelAlias;
     private string $appVersion;
+    private ?string $promptOverride;
+    /** @var array{text:string,sha256:string,source:string}|null memoized by resolvePrompt() */
+    private ?array $resolvedPrompt = null;
     /** @var callable(string): void */
     private $logger;
+
+    /** The prompt was the validated, hash-pinned artifact. */
+    public const PROMPT_PINNED = 'pinned_artifact';
+    /** The prompt came from the project's `safetyscan-prompt-override` setting. Unvalidated. */
+    public const PROMPT_OVERRIDE = 'project_setting';
 
     /** @param callable(string): void|null $logger */
     public function __construct(
@@ -89,7 +97,9 @@ class ScanRunner
         ?callable $logger = null,
         // Last, and optional: every existing caller passes positionally, so inserting it
         // earlier would have silently shifted $modelAlias into $thresholds.
-        ?FindingThresholds $thresholds = null
+        ?FindingThresholds $thresholds = null,
+        // Same reason - appended, not inserted. Null or blank means the pinned artifact.
+        ?string $promptOverride = null
     ) {
         $this->artifacts = $artifacts;
         $this->validator = $validator;
@@ -102,8 +112,54 @@ class ScanRunner
         $this->modelAlias = $modelAlias;
         $this->appVersion = $appVersion;
         $this->quotes = $quotes ?? new QuoteVerifier();
+        // Trimmed here so "blank" is decided once. A REDCap textarea saved empty comes back as ''
+        // rather than null, and '' is not a prompt.
+        $trimmed = $promptOverride === null ? '' : trim($promptOverride);
+        $this->promptOverride = $trimmed === '' ? null : $trimmed;
         $this->logger = $logger ?? static function (string $m): void {
         };
+    }
+
+    /**
+     * The prompt to send, its hash, and where it came from - resolved **once**.
+     *
+     * All three together on purpose. The text goes to the model and the hash goes on the run row,
+     * and those used to be two independent registry calls: `getText()` at the call site and
+     * `getHash()` when the row was written. Adding an override to the first alone would have left
+     * every run row recording the *pinned* hash while the model was sent something else - a run row
+     * that names a prompt it did not use is worse than one that names none, because it is the record
+     * a reviewer trusts when they ask which prompt produced a finding.
+     *
+     * `source` is stored beside the hash rather than left to be inferred from it. A hash alone cannot
+     * say "this was the validated artifact" without something to compare against, and the obvious
+     * comparison - re-hashing the setting - is against a value the study may since have edited.
+     *
+     * @return array{text:string,sha256:string,source:string}
+     */
+    private function resolvePrompt(): array
+    {
+        // Memoized, so "resolved once" is literal rather than a convention the call sites keep. The
+        // text and the hash on the run row are then the same resolution by construction, not by two
+        // callers agreeing.
+        if ($this->resolvedPrompt !== null) {
+            return $this->resolvedPrompt;
+        }
+
+        if ($this->promptOverride !== null) {
+            return $this->resolvedPrompt = [
+                'text'   => $this->promptOverride,
+                'sha256' => hash('sha256', $this->promptOverride),
+                'source' => self::PROMPT_OVERRIDE,
+            ];
+        }
+
+        return $this->resolvedPrompt = [
+            'text'   => $this->artifacts->getText('safetyscan_prompt'),
+            // From the registry, which recomputes it, rather than from the manifest - so the row
+            // describes the bytes that were actually read (ArtifactRegistry::getHash).
+            'sha256' => $this->artifacts->getHash('safetyscan_prompt'),
+            'source' => self::PROMPT_PINNED,
+        ];
     }
 
     /**
@@ -127,9 +183,21 @@ class ScanRunner
             return $this->recordFailure($job, $attempt, 'service_error', $e->getMessage());
         }
 
+        $prompt = $this->resolvePrompt();
+
+        if ($prompt['source'] === self::PROMPT_OVERRIDE) {
+            // Every scan, not once at startup: this is the line that explains a queue full of
+            // schema_invalid or citation_mismatch rows, and whoever is reading the log then is
+            // reading it because scans are failing.
+            ($this->logger)(sprintf(
+                'using the project prompt override (sha256 %s), NOT the validated pinned prompt',
+                substr($prompt['sha256'], 0, 12)
+            ));
+        }
+
         $result = $this->caller->scan(
             $this->modelAlias,
-            $this->artifacts->getText('safetyscan_prompt'),
+            $prompt['text'],
             CanonicalJson::encode($transcript),
             $this->artifacts->getJson('safetyscan_output_schema')
         );
@@ -421,7 +489,7 @@ class ScanRunner
             'attempt'              => $attempt,
             'model_alias'          => $this->modelAlias,
             'resolved_model'       => $result['resolvedModel'] ?? null,
-            'prompt_sha256'        => $this->artifacts->getHash('safetyscan_prompt'),
+            'prompt_sha256'        => $this->resolvePrompt()['sha256'],
             'input_schema_sha256'  => $this->artifacts->getHash('safetyscan_input_schema'),
             'output_schema_sha256' => $this->artifacts->getHash('safetyscan_output_schema'),
             'app_version'          => $this->appVersion,
@@ -460,6 +528,23 @@ class ScanRunner
 
         if (($result['schemaInPrompt'] ?? false) === true) {
             $payload['schema_in_prompt'] = true;
+        }
+
+        /**
+         * Which prompt produced this row.
+         *
+         * Only written when it was NOT the pinned artifact, so every existing row and every normal
+         * row is unchanged and its absence means "the validated prompt" - the same convention
+         * `schema_in_prompt` above uses. In the payload rather than a new column for the reason given
+         * below for `filtered`: redcap_entity cannot ALTER an existing type
+         * (docs 84234d0), and this payload is already the self-describing record of one attempt.
+         *
+         * `prompt_sha256` on the row is the hash of whatever was used, so the two together answer
+         * "which prompt, and was it the validated one" without re-reading a setting that may have
+         * changed since.
+         */
+        if (($this->resolvePrompt()['source'] ?? null) === self::PROMPT_OVERRIDE) {
+            $payload['prompt_source'] = self::PROMPT_OVERRIDE;
         }
 
         /**

@@ -89,6 +89,30 @@ change if MICA ever does.
 **981 PHP tests** (10 new, including a regression guard that asserts the *old*
 behaviour so a bypass upstream would fail it), **43/43 participant E2E**, lint clean.
 
+### `safetyscan-prompt-override` — a configurable post-session analysis prompt
+
+New project setting holding the SafetyScan system prompt. **Blank uses the
+hash-pinned prompt the research team validated**, which is the recommended state
+and is what PID 257 is set to; a value here *replaces* it.
+
+The load-bearing part is provenance. `ScanRunner` used to read the prompt text
+(`getText`) and its hash (`getHash`) as two independent registry calls, so applying
+an override to the first alone would have left every run row recording the
+*validated* prompt's hash while the model was sent something else. The prompt is
+now resolved once, memoized, into text + sha256 + source, and both the call and the
+run row use that one resolution. A run row therefore always says which prompt
+produced it: `prompt_sha256` is the hash of what was sent, and `prompt_source` is
+written into `model_output_json` when it was **not** the pinned artifact — absent
+means validated, the same convention `schema_in_prompt` already uses. In the payload
+rather than a new column because `redcap_entity` cannot ALTER an existing type.
+
+An override changes the prompt, not the contracts: output still has to satisfy the
+pinned schema and evidence still has to be verbatim, so a prompt that drops either
+fails every scan into `manual_review_required`. That is safe but noisy, and it is
+said plainly in the setting's own help text. `verify-settings.php` reports which
+prompt is in force either way, and flags an override for attention rather than
+noting it in passing.
+
 ### Chatbot cleanup (0.6, partial — see 18 §5.1)
 
 - **The Twilio credentials are gone.** `twilio-sid` / `-auth-token` / `-from-number` removed

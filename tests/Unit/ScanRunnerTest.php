@@ -85,8 +85,11 @@ final class ScanRunnerTest extends TestCase
         ];
     }
 
-    private function runner(StubSafetyScanCaller $caller, ?FindingThresholds $thresholds = null): ScanRunner
-    {
+    private function runner(
+        StubSafetyScanCaller $caller,
+        ?FindingThresholds $thresholds = null,
+        ?string $promptOverride = null
+    ): ScanRunner {
         $registry = new ArtifactRegistry(self::HANDOFF);
 
         return new ScanRunner(
@@ -102,7 +105,8 @@ final class ScanRunnerTest extends TestCase
             function (string $m): void {
                 $this->logs[] = $m;
             },
-            $thresholds
+            $thresholds,
+            $promptOverride
         );
     }
 
@@ -437,6 +441,108 @@ final class ScanRunnerTest extends TestCase
         $this->assertSame($registry->getHash('safetyscan_prompt'), $run['prompt_sha256']);
         $this->assertSame($registry->getHash('safetyscan_input_schema'), $run['input_schema_sha256']);
         $this->assertSame($registry->getHash('safetyscan_output_schema'), $run['output_schema_sha256']);
+    }
+
+    // ------------------------------------------------------ the prompt override (safetyscan-prompt-override)
+
+    /**
+     * The defect this guards against, which is the whole risk of making the prompt configurable:
+     * the text was read with `getText()` at the call site and the hash with `getHash()` when the row
+     * was written. Two independent reads. An override applied to the first alone would leave every
+     * run row claiming the *validated* prompt's hash while the model was sent something else - a
+     * false provenance record on the one row a reviewer consults to ask which prompt produced a
+     * finding.
+     */
+    public function testAnOverriddenPromptIsSentAndItsOwnHashIsRecorded(): void
+    {
+        $custom = 'Read the transcript and report anything concerning. Quote verbatim.';
+        $caller = new StubSafetyScanCaller(StubSafetyScanCaller::ok(['scan_result' => 'no_supported_concern']));
+
+        $this->runner($caller, null, $custom)->run($this->job($this->storeTranscript()));
+
+        $this->assertSame($custom, $caller->calls[0]['systemPrompt'], 'the override is what was sent');
+
+        $run = $this->results->lastRun();
+        $this->assertSame(hash('sha256', $custom), $run['prompt_sha256'], 'the hash is of what was sent');
+        $this->assertNotSame(
+            (new ArtifactRegistry(self::HANDOFF))->getHash('safetyscan_prompt'),
+            $run['prompt_sha256'],
+            'it must NOT claim the pinned prompt it did not use'
+        );
+
+        $payload = json_decode($run['model_output_json'], true);
+        $this->assertSame(ScanRunner::PROMPT_OVERRIDE, $payload['prompt_source']);
+    }
+
+    /** Blank is not a prompt. A REDCap textarea saved empty comes back '' rather than null. */
+    #[DataProvider('blankOverrides')]
+    public function testABlankOverrideFallsBackToThePinnedPrompt(?string $blank): void
+    {
+        $registry = new ArtifactRegistry(self::HANDOFF);
+        $caller = new StubSafetyScanCaller(StubSafetyScanCaller::ok(['scan_result' => 'no_supported_concern']));
+
+        $this->runner($caller, null, $blank)->run($this->job($this->storeTranscript()));
+
+        $this->assertSame($registry->getText('safetyscan_prompt'), $caller->calls[0]['systemPrompt']);
+
+        $run = $this->results->lastRun();
+        $this->assertSame($registry->getHash('safetyscan_prompt'), $run['prompt_sha256']);
+        $this->assertArrayNotHasKey(
+            'prompt_source',
+            json_decode($run['model_output_json'], true),
+            'absent means the validated prompt - the same convention schema_in_prompt uses'
+        );
+    }
+
+    /** @return array<string,array{0:?string}> */
+    public static function blankOverrides(): array
+    {
+        return ['null' => [null], 'empty string' => [''], 'whitespace' => ["  \n\t "]];
+    }
+
+    /** A surrounding-whitespace edit must not change the prompt's identity. */
+    public function testAnOverrideIsTrimmedBeforeItIsHashed(): void
+    {
+        $caller = new StubSafetyScanCaller(StubSafetyScanCaller::ok(['scan_result' => 'no_supported_concern']));
+
+        $this->runner($caller, null, "  Analyse this.\n ")->run($this->job($this->storeTranscript()));
+
+        $this->assertSame('Analyse this.', $caller->calls[0]['systemPrompt']);
+        $this->assertSame(hash('sha256', 'Analyse this.'), $this->results->lastRun()['prompt_sha256']);
+    }
+
+    /** Whoever is reading the log during a queue full of schema_invalid rows needs this line. */
+    public function testAnOverrideIsAnnouncedInTheLog(): void
+    {
+        $caller = new StubSafetyScanCaller(StubSafetyScanCaller::ok(['scan_result' => 'no_supported_concern']));
+
+        $this->runner($caller, null, 'Custom.')->run($this->job($this->storeTranscript()));
+
+        $this->assertNotEmpty(array_filter(
+            $this->logs,
+            static fn(string $m): bool => str_contains($m, 'override') && str_contains($m, 'NOT the validated')
+        ));
+    }
+
+    /**
+     * An override does not weaken any gate. It replaces the prompt, not the output contract - a
+     * response that does not satisfy the pinned schema is still rejected whole, which is the
+     * realistic failure mode of a hand-written prompt.
+     */
+    public function testAnOverrideDoesNotBypassOutputSchemaValidation(): void
+    {
+        $caller = new StubSafetyScanCaller(StubSafetyScanCaller::ok(['concern' => 'self_harm_risk']));
+
+        $outcome = $this->runner($caller, null, 'Report concerns however you like.')
+            ->run($this->job($this->storeTranscript()));
+
+        $this->assertSame('schema_invalid', $outcome->runStatus);
+        $this->assertNotSame(
+            'no_supported_concern',
+            $outcome->scanResult,
+            'a rejected response must never read as a clean screen'
+        );
+        $this->assertSame(0, $outcome->findingsWritten, 'nothing unvalidated reaches the record');
     }
 
     public function testAFailedRunRowStillCarriesWhateverTheModelSaid(): void

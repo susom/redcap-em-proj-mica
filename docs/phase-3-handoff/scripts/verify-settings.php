@@ -360,6 +360,39 @@ if ($attempts === null || $attempts === '') {
     ok_('safetyscan-max-attempts', (string) (int) $attempts);
 }
 
+/**
+ * Which prompt the scanner will actually use.
+ *
+ * Reported either way, and never as a plain "unset" note: the pinned prompt is the validated one, so
+ * its absence is the finding here rather than its presence. A study that has replaced it should see
+ * that stated every time somebody checks this project's configuration, with the hash that will
+ * appear on its run rows.
+ */
+$promptOverride = trim((string) $get('safetyscan-prompt-override'));
+if ($promptOverride === '') {
+    $registry = new \Stanford\MICA\ArtifactRegistry(dirname(__DIR__, 3) . '/handoff');
+    ok_(
+        'safetyscan-prompt-override',
+        sprintf(
+            'blank - the scan uses the hash-pinned validated prompt (sha256 %s...)',
+            substr($registry->getHash('safetyscan_prompt'), 0, 12)
+        )
+    );
+} else {
+    bad_(
+        'safetyscan-prompt-override',
+        sprintf(
+            'SET (%d chars, sha256 %s...) - the scan runs an UNVALIDATED prompt, not the pinned one',
+            strlen($promptOverride),
+            substr(hash('sha256', $promptOverride), 0, 12)
+        ),
+        'Deliberate on some studies, so not necessarily wrong - but it retires the v1.1 validation '
+        . '(120 cases, 100% critical detection, 100% quote traceability) that the no-live-alert '
+        . 'design was accepted on. It must reproduce the output schema and demand verbatim quotes or '
+        . 'every scan fails into manual review. Clear the setting to go back to the pinned prompt.'
+    );
+}
+
 $get('scan-mock-mode')
     ? bad_(
         'scan-mock-mode',
