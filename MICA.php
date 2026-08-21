@@ -24,6 +24,9 @@ require_once "classes/RedcapScanQueueStore.php";
 require_once "classes/RedcapTranscriptStore.php";
 require_once "classes/ScanWorker.php";
 require_once "classes/SessionHostMap.php";
+require_once "classes/SessionWindow.php";
+// Used by the session closer to read a finalized transcript back for its first message time.
+require_once "classes/CanonicalJson.php";
 require_once "classes/TranscriptFinalizer.php";
 // Stage 4: the scan itself.
 require_once "classes/FindingThresholds.php";
@@ -1666,8 +1669,77 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * `booster` both fall outside that regex, so the general context and the session context are all
      * that is assembled.
      */
+    /**
+     * Is this session closed?
+     *
+     * Reads the host instrument's form status, which is the control surface a CRC uses: Complete
+     * means closed, and setting it back to Incomplete on the record page reopens it. The cron writes
+     * it when a window passes (see closeExpiredSessions()), and the participant's own End Session
+     * does NOT - a finished session is still inside its window, and the existing terminal notice in
+     * the SPA is what tells them it is over.
+     *
+     * ⚠️ This check is the enforcement. Writing `<form>_complete` does not set
+     * `redcap_surveys_response.completion_time`, so REDCap will happily keep serving the survey -
+     * nobody later should assume the form status is blocking entry on its own.
+     */
+    private function sessionIsClosed($recordId, ?string $hostInstrument, ?int $eventId = null): bool
+    {
+        if ($hostInstrument === null || $hostInstrument === '') {
+            return false;
+        }
+
+        $field = $hostInstrument . '_complete';
+
+        // Scoped to the one field and one record: this runs on the participant's path, before their
+        // first turn renders.
+        $data = \REDCap::getData([
+            'project_id'    => $this->getProjectId(),
+            'records'       => [$recordId],
+            'fields'        => [$field],
+            'return_format' => 'array',
+        ]);
+
+        if (!is_array($data) || !isset($data[$recordId])) {
+            return false;
+        }
+
+        foreach ($data[$recordId] as $event => $values) {
+            if ($eventId !== null && (int) $event !== $eventId) {
+                continue;
+            }
+
+            // Repeating instruments nest under `repeat_instances`; a non-repeating save does not.
+            if ((string) ($values[$field] ?? '') === '2') {
+                return true;
+            }
+
+            foreach ((array) ($values[$hostInstrument] ?? []) as $instanceValues) {
+                if ((string) ($instanceValues[$field] ?? '') === '2') {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     private function systemContextWithoutPilotScaffolding($recordId, ?string $hostInstrument): array
     {
+        /**
+         * Refused here, before any persona is assembled, so a closed session cannot produce a turn.
+         *
+         * The message reuses the wording the SPA's terminal state already renders for a finished
+         * session (`blockSession()`, commit f43695a) rather than inventing a second way of saying
+         * the same thing - and it names the recovery, because the participant's next move is to ask
+         * the study team, not to retry.
+         */
+        if ($this->sessionIsClosed($recordId, $hostInstrument)) {
+            throw new \Exception(
+                'Session already completed. Thank you. If you think this session should still be '
+                . 'open, please contact the study team.'
+            );
+        }
+
         $sessionKey = 'baseline';
 
         try {
@@ -2244,6 +2316,446 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * not stop every other project's scans - which is exactly what an uncaught throw here would do,
      * silently, since nobody reads a cron that appears to have run.
      */
+    /** The log type that records a closure, so a reopened session is never closed twice. */
+    public const SESSION_CLOSED_LOG = 'mica_session_closed';
+
+    /**
+     * Cron entry point: close sessions whose window has passed.
+     *
+     * Per-project, each isolated, for the reason micaScanWorkerCron gives: one project with a broken
+     * configuration must not stop every other project's sessions closing, silently, inside a cron
+     * nobody reads.
+     */
+    public function micaSessionCloserCron($cronInfo = []): string
+    {
+        $summary = [];
+
+        foreach ($this->getProjectsWithModuleEnabled() as $projectId) {
+            try {
+                $result = $this->closeExpiredSessions((int) $projectId);
+
+                // Reported even when nothing closed, because "0 closed, 3 skipped for no messages"
+                // and "nothing to look at" are different states and only one of them is fine.
+                if ($result['closed'] > 0 || $result['skipped'] !== []) {
+                    $summary[] = sprintf(
+                        'pid %d: %d closed, skipped %s',
+                        $projectId,
+                        $result['closed'],
+                        json_encode($result['skipped'])
+                    );
+                }
+            } catch (\Throwable $e) {
+                $summary[] = "pid $projectId: FAILED - " . $e->getMessage();
+                $this->emError('mica_session_closer cron failed for one project', [
+                    'project_id' => $projectId,
+                    'error'      => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $summary === [] ? 'nothing to do' : implode('; ', $summary);
+    }
+
+    /**
+     * One project's pass.
+     *
+     * Order of operations is the safety-critical part: **finalize and queue the scan before writing
+     * the form status, and if finalization fails do not write it at all.** A session marked Complete
+     * whose transcript was never queued is the "looks screened, was not" state this pipeline exists
+     * to prevent - and closing is the last moment an abandoned conversation can still be screened,
+     * because the participant is never coming back to press End Session.
+     *
+     * @return array{closed:int,skipped:array<string,int>}
+     */
+    public function closeExpiredSessions(int $projectId, ?int $now = null): array
+    {
+        $closed = 0;
+        $skipped = [];
+        $bump = function (string $reason) use (&$skipped): void {
+            $skipped[$reason] = ($skipped[$reason] ?? 0) + 1;
+        };
+
+        if (!$this->getProjectSetting('close-expired-sessions', $projectId)) {
+            return ['closed' => 0, 'skipped' => []];
+        }
+
+        $now ??= time();
+        $window = new SessionWindow(
+            $this->intSettingOrNull('ed-session-window-hours', $projectId),
+            $this->intSettingOrNull('booster-session-window-days', $projectId)
+        );
+        $hosts = SessionHostMap::fromSetting($this->getProjectSetting('session-host-map', $projectId));
+        $store = new RedcapTranscriptStore($this);
+
+        foreach ($this->openSessionsByRecord($projectId) as $record => $candidates) {
+            $picked = SessionWindow::attribute($candidates);
+            $session = $picked['session'];
+
+            if ($session === null) {
+                continue;
+            }
+
+            if ($picked['ambiguous']) {
+                // Not silent: the message log cannot say which session a conversation happened in,
+                // so this is the one place the answer is inferred. In the designed flow it cannot
+                // happen - the ED window is hours and the booster link comes months later.
+                $bump(SessionWindow::SKIP_AMBIGUOUS);
+                $this->emError(
+                    'session closer: a record has more than one open MICA session, so the session a '
+                    . 'conversation belongs to was inferred from the most recently issued link',
+                    ['project_id' => $projectId, 'record' => $record, 'candidates' => $candidates]
+                );
+            }
+
+            try {
+                $resolved = $hosts->resolve((string) $session['form_name']);
+            } catch (\Throwable $e) {
+                $bump('unmapped_host');
+                continue;
+            }
+
+            $sessionType = $resolved['session_type'];
+            $instance = (int) $session['instance'];
+
+            $latest = $store->latestTranscript((string) $projectId, (string) $record, $sessionType, $instance);
+            $state = $this->sessionMessageState($store, (string) $projectId, (string) $record, $latest);
+
+            $decision = $window->decide(
+                $sessionType,
+                $state['firstMessageAt'],
+                $this->sessionWasClosedBefore($projectId, (string) $record, $instance, $sessionType),
+                $now
+            );
+
+            if (!$decision['close']) {
+                $bump((string) $decision['reason']);
+                continue;
+            }
+
+            if (!$this->finalizeAndCloseSession(
+                $projectId,
+                (string) $record,
+                $instance,
+                (int) $session['event_id'],
+                (string) $session['form_name'],
+                $sessionType,
+                $resolved['setting'],
+                $state['needsFinalizing']
+            )) {
+                $bump('finalize_failed');
+                continue;
+            }
+
+            $closed++;
+        }
+
+        return ['closed' => $closed, 'skipped' => $skipped];
+    }
+
+    private function intSettingOrNull(string $key, int $projectId): ?int
+    {
+        $value = $this->getProjectSetting($key, $projectId);
+
+        return (is_numeric($value)) ? (int) $value : null;
+    }
+
+    /**
+     * Every issued session link that is not already marked Complete, grouped by record.
+     *
+     * From REDCap's own tables rather than module state: `getSurveyLink()` creates the participant
+     * and response rows at issuance, so a response row exists for every session that could be
+     * entered - including ones the participant never opened. Its timing columns are useless here
+     * (the SPA never submits the survey form, so `start_time` and `completion_time` stay NULL), but
+     * the row is what supplies the record, host instrument, event and instance that the message log
+     * does not carry.
+     *
+     * @return array<string,list<array<string,mixed>>>
+     */
+    private function openSessionsByRecord(int $projectId): array
+    {
+        $hostNames = SessionHostMap::fromSetting(
+            $this->getProjectSetting('session-host-map', $projectId)
+        )->instruments();
+
+        if ($hostNames === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($hostNames), '?'));
+        $dataTable = \Records::getDataTable($projectId);
+
+        $result = $this->query(
+            'SELECT r.response_id, r.record, r.instance, p.event_id, s.form_name '
+            . 'FROM redcap_surveys_response r '
+            . 'JOIN redcap_surveys_participants p ON p.participant_id = r.participant_id '
+            . 'JOIN redcap_surveys s ON s.survey_id = p.survey_id '
+            . 'WHERE s.project_id = ? AND s.form_name IN (' . $placeholders . ') '
+            // Not already Complete. The form-status field is the control surface: a CRC reopening a
+            // session sets it back to Incomplete, and this is what makes that session eligible again.
+            . 'AND NOT EXISTS ('
+            . '  SELECT 1 FROM ' . $dataTable . ' d WHERE d.project_id = s.project_id '
+            . '  AND d.record = r.record AND d.event_id = p.event_id '
+            // Not matched on instance: the hosts are not repeating instruments, so the form status
+            // is a single value per (record, event) regardless of how many survey responses exist.
+            . '  AND d.field_name = CONCAT(s.form_name, \'_complete\') AND d.value = \'2\''
+            . ') '
+            . 'ORDER BY r.record, r.response_id',
+            array_merge([$projectId], $hostNames)
+        );
+
+        $byRecord = [];
+        while ($row = $result->fetch_assoc()) {
+            $byRecord[(string) $row['record']][] = [
+                'response_id' => (int) $row['response_id'],
+                'record'      => (string) $row['record'],
+                'instance'    => (int) ($row['instance'] ?: 1),
+                'event_id'    => (int) $row['event_id'],
+                'form_name'   => (string) $row['form_name'],
+            ];
+        }
+
+        return $byRecord;
+    }
+
+    /**
+     * When this session's first message was sent, and whether anything still needs finalizing.
+     *
+     * Both, from one lookup, because they are the same question asked twice and answering them
+     * separately produced a real bug: the first version only looked for messages *after* the latest
+     * transcript's boundary. That is right for an abandoned session and wrong for the ordinary one -
+     * a participant who pressed End Session has no messages after the boundary, so the session
+     * reported "no messages", got no window, and would never have closed. That is the common case,
+     * not an edge case.
+     *
+     * So: pending messages if there are any (an abandoned session, still to be screened), otherwise
+     * the first message of the transcript that was already finalized (an ended session, already
+     * screened - it needs closing, not finalizing).
+     *
+     * @return array{firstMessageAt:?int,needsFinalizing:bool}
+     */
+    private function sessionMessageState(
+        RedcapTranscriptStore $store,
+        string $projectId,
+        string $record,
+        ?array $latestTranscript
+    ): array {
+        $boundary = (int) ($latestTranscript['max_message_log_id'] ?? 0);
+
+        foreach ($store->messageRows($projectId, $record, $boundary) as $row) {
+            $stamp = strtotime((string) ($row['timestamp'] ?? ''));
+            if ($stamp !== false && $stamp > 0) {
+                return ['firstMessageAt' => $stamp, 'needsFinalizing' => true];
+            }
+        }
+
+        if ($latestTranscript === null) {
+            return ['firstMessageAt' => null, 'needsFinalizing' => false];
+        }
+
+        // The stored transcript carries its own messages with timestamps, so the session's start is
+        // recoverable exactly rather than approximated by when it was finalized.
+        $params = $store->readTranscript($projectId, (int) $latestTranscript['log_id']);
+        $payload = $params === null
+            ? null
+            : json_decode(CanonicalJson::fromLogParameters($params), true);
+        $first = is_array($payload) ? ($payload['messages'][0]['timestamp'] ?? null) : null;
+        $stamp = $first === null ? false : strtotime((string) $first);
+
+        return [
+            'firstMessageAt'  => ($stamp !== false && $stamp > 0) ? $stamp : null,
+            'needsFinalizing' => false,
+        ];
+    }
+
+    /**
+     * Has this session been closed by the cron before?
+     *
+     * This is what makes a reopen stick. Without it the next pass would see a window that is past by
+     * definition and set the form status straight back to Complete, so the CRC's action would be
+     * undone within the hour and the feature would look implemented while not working.
+     */
+    private function sessionWasClosedBefore(
+        int $projectId,
+        string $record,
+        int $instance,
+        string $sessionType
+    ): bool {
+        // Filtered on log PARAMETERS, not on the `message` column - see RedcapTranscriptStore's
+        // latestTranscript() for why a `where message = ?` clause silently matches nothing.
+        $result = $this->queryLogs(
+            'select log_id where log_type = ? and project_id = ? and record = ? and instance = ? '
+            . 'and session_type = ? limit 1',
+            [self::SESSION_CLOSED_LOG, (string) $projectId, $record, (string) $instance, $sessionType]
+        );
+
+        return $result->fetch_assoc() !== null;
+    }
+
+    /**
+     * Finalize, queue the scan, then write the form status - in that order, and only all three.
+     *
+     * @return bool true when the session is closed; false leaves it open for the next pass
+     */
+    private function finalizeAndCloseSession(
+        int $projectId,
+        string $record,
+        int $instance,
+        int $eventId,
+        string $formName,
+        string $sessionType,
+        string $setting,
+        bool $needsFinalizing
+    ): bool {
+        $transcriptRef = '';
+
+        try {
+            // An ended session was already finalized and scanned when the participant pressed End
+            // Session; there is nothing new to screen and finalizing again would only create a
+            // second version of the same transcript. Closing it is the whole job.
+            if ($needsFinalizing) {
+                $result = $this->transcriptFinalizer()->finalize(
+                    (string) $projectId,
+                    $record,
+                    $record,
+                    $instance,
+                    $eventId,
+                    $sessionType,
+                    $setting
+                );
+
+                $transcriptRef = (string) ($result->toArray()['transcript_ref'] ?? '');
+
+                foreach ($result->warnings as $warning) {
+                    $this->emError('session closer: finalized with a warning', $warning);
+                }
+            }
+        } catch (\Throwable $e) {
+            // Left OPEN on purpose. Marking it Complete now would hide an unscreened conversation
+            // behind a status that reads as finished, and the participant would lose access to it in
+            // the same move. Better a session that stays open and a loud error.
+            $this->emError(
+                'session closer: NOT closing this session - its transcript could not be finalized, so '
+                . 'no scan is queued and marking it complete would hide an unscreened conversation',
+                [
+                    'project_id' => $projectId,
+                    'record'     => $record,
+                    'instance'   => $instance,
+                    'error'      => $e->getMessage(),
+                ]
+            );
+            $this->safeLog('mica_session_close_failed', [
+                'record'     => $record,
+                'project_id' => $projectId,
+                'instance'   => (string) $instance,
+                'reason'     => substr($e->getMessage(), 0, 1000),
+            ]);
+
+            return false;
+        }
+
+        $field = $formName . '_complete';
+
+        /**
+         * `$Proj`, not `REDCap::getEventNames()`.
+         *
+         * The static helper calls `checkProjectContext()` and throws "can only be used in a project
+         * context" - cron has no `$project_id` global, so the first live run died there after
+         * finalizing the transcript. The instance method on a Project constructed with an explicit
+         * id has no such dependency. (`eventInfo[$id]` is not an option either: it carries
+         * `arm_num` and `day_offset` but not the unique name - see 15-arm-materialization.md.)
+         */
+        $proj = $this->projectFor($projectId);
+        $eventName = (string) ($proj->getUniqueEventNames($eventId) ?: '');
+
+        if ($eventName === '') {
+            $this->emError('session closer: no unique event name for the host event, so the form '
+                . 'status cannot be written and the session stays open', [
+                    'project_id' => $projectId,
+                    'record'     => $record,
+                    'event_id'   => $eventId,
+                ]);
+
+            return false;
+        }
+
+        /**
+         * No `redcap_repeat_instrument` / `redcap_repeat_instance`, deliberately.
+         *
+         * The host surveys have **Repeat Survey** enabled, which is a survey setting - a participant
+         * may submit more than one response, tracked as response instances. They are not registered
+         * repeating *instruments*; `redcap_events_repeat` holds only `mica_safety_finding`. Passing
+         * the repeat keys is rejected outright: "redcap_repeat_instrument must be the unique form
+         * name of a Repeating Instrument", `item_count 0`, and the save silently does nothing if the
+         * `errors` key is not read.
+         *
+         * So the form status is one value per (record, event), and closing a session closes that
+         * event's session - which is what it should mean, since there is one MICA session per event.
+         * The session's own `$instance` still identifies the transcript, which is why it is carried
+         * everywhere else here.
+         */
+        $save = \REDCap::saveData([
+            'project_id'   => $projectId,
+            'dataFormat'   => 'json',
+            'data'         => json_encode([[
+                (string) $proj->table_pk => $record,
+                'redcap_event_name'      => $eventName,
+                $field                   => '2',
+            ]]),
+            'overwriteBehavior' => 'overwrite',
+        ]);
+
+        // saveData never throws; an unread `errors` key is how a save that did nothing looks exactly
+        // like one that worked (docs 14 D11/D16).
+        if (!empty($save['errors'])) {
+            $this->emError('session closer: the transcript was finalized and queued but the form '
+                . 'status could not be written, so the session is still open', [
+                    'project_id' => $projectId,
+                    'record'     => $record,
+                    'field'      => $field,
+                    'errors'     => $save['errors'],
+                ]);
+
+            return false;
+        }
+
+        $this->safeLog(self::SESSION_CLOSED_LOG, [
+            // As a PARAMETER, not just the message. `queryLogs` cannot filter on the message column
+            // - `where message = ?` matches nothing, silently - so without this the close-once guard
+            // finds no prior closure and re-closes a session a CRC has just reopened. Which is the
+            // one behaviour this whole record exists to provide (RedcapTranscriptStore:141 does the
+            // same for the same reason).
+            'log_type'     => self::SESSION_CLOSED_LOG,
+            'record'       => $record,
+            'project_id'   => $projectId,
+            'instance'     => (string) $instance,
+            'session_type' => $sessionType,
+            'event_id'     => (string) $eventId,
+            'form_name'    => $formName,
+            'transcript'   => $transcriptRef,
+            'finalized'    => $needsFinalizing ? '1' : '0',
+        ]);
+
+        return true;
+    }
+
+    /** @var array<int,\Project> one Project per project per pass; constructing it reads the schema. */
+    private array $projectCache = [];
+
+    /** A project-scoped `$Proj` that does not depend on a request having set one up. */
+    private function projectFor(int $projectId): \Project
+    {
+        return $this->projectCache[$projectId] ??= new \Project($projectId);
+    }
+
+    /** A logging failure must never become the caller's problem. */
+    private function safeLog(string $message, array $params): void
+    {
+        try {
+            $this->log($message, $params);
+        } catch (\Throwable $ignored) {
+        }
+    }
+
     public function micaScanWorkerCron($cronInfo = []): string
     {
         $summary = [];

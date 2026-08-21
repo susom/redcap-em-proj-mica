@@ -89,6 +89,43 @@ change if MICA ever does.
 **981 PHP tests** (10 new, including a regression guard that asserts the *old*
 behaviour so a bypass upstream would fail it), **43/43 participant E2E**, lint clean.
 
+### Session windows — an hourly cron that closes a session when its time is up
+
+New: `close-expired-sessions` (off by default), `ed-session-window-hours` (24),
+`booster-session-window-days` (14), and the `mica_session_closer` cron. Closes the
+first of the three enforcement gates that
+[`18 §10 A6`](docs/phase-3-handoff/18-sow-status-review.md) listed as unowned after
+the R01 session engine went out of scope.
+
+**The clock starts at the participant's first message**, per session type. A session
+that was opened and never used therefore has no window and is never closed by the
+cron — REDCap's own link time limit is what bounds those, and the closer counts and
+reports every session it skipped so "nothing closed" and "nothing needed closing"
+are never the same silence.
+
+**Closing means the host instrument's form status becomes Complete**, and the module
+refuses session entry on that field. It is the control surface, not REDCap's
+enforcement: writing `<form>_complete` does not set
+`redcap_surveys_response.completion_time`, so REDCap would still serve the survey.
+A CRC reopens a session by setting the form status back to Incomplete on the record
+page — and the cron closes each session **once** and never re-closes it, so that
+action is not undone on the next pass.
+
+**Order of operations is the safety-critical part.** For a session the participant
+abandoned without pressing End Session, closing is the last moment its conversation
+can still be screened — so the cron finalizes the transcript and queues the scan
+*first*, and if that fails it leaves the session open and logs loudly rather than
+marking Complete. A session that reads as finished but was never screened is the one
+state this pipeline exists to prevent.
+
+Three defects the live run found that no unit test would have:
+`REDCap::getEventNames()` throws outside a project context, so cron needs `$Proj`;
+the host surveys have *Repeat Survey* enabled but are **not** repeating instruments,
+so passing `redcap_repeat_instrument` made `saveData` reject the write with
+`item_count 0`; and `queryLogs` cannot filter on the message column, so the
+close-once guard needs `log_type` as an explicit parameter — without it a reopened
+session was closed again on the next pass.
+
 ### `safetyscan-prompt-addendum` — study guidance appended to the analysis prompt
 
 New project setting carrying extra instructions for the post-session safety

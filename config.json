@@ -175,6 +175,24 @@
             "type": "textarea"
         },
         {
+            "key": "close-expired-sessions",
+            "name": "<b>Close sessions when their window ends</b><br><i>When on, an hourly cron closes a session once its window has passed — it finalizes the transcript, queues the safety scan, and then sets the host instrument's form status to <b>Complete</b>. A participant cannot return to a closed session.<br><br>Reopening is a staff action, by design: set that form's status back to <b>Incomplete</b> on the record page and the participant can use it again. The cron closes each session <b>once</b> and never re-closes it, so a reopen is not undone on the next pass.<br><br>Off means nothing closes automatically and a participant can return to any session whose link still works.</i>",
+            "required": false,
+            "type": "checkbox"
+        },
+        {
+            "key": "ed-session-window-hours",
+            "name": "<b>ED session window (hours)</b><br><i>How long a Day-1 ED session stays open, measured from the participant's <b>first message</b> — not from randomization and not from when the link was sent. Default 24. Should normally match the ED host survey's link time limit.<br><br>A session that was opened and never used has no first message, so it has no window and is never closed by the cron; REDCap's link time limit is what bounds those.</i>",
+            "required": false,
+            "type": "number"
+        },
+        {
+            "key": "booster-session-window-days",
+            "name": "<b>Booster session window (days)</b><br><i>How long a Month-3 booster session stays open, from the participant's first message. Default 14. Should normally match the booster host survey's link time limit.</i>",
+            "required": false,
+            "type": "number"
+        },
+        {
             "key": "safetyscan-prompt-addendum",
             "name": "<b>SafetyScan analysis prompt — additional study guidance</b><br><i>Extra instructions for the post-session safety analysis, e.g. a concern this study wants called out, or local escalation wording. <b>Optional; blank is the normal state.</b><br><br>This is <b>appended to</b> the hash-pinned prompt the research team validated (v1.1: 120-case suite, 100% critical detection, 100% quote traceability) — it never replaces it. The validated prompt is always sent in full, and the two things it guarantees are restated <i>after</i> your text and take precedence over it: the output must satisfy the pinned schema, and every quote must be copied verbatim from the transcript. So guidance here cannot remove those, and a scan cannot be turned into an unvalidated one by this field alone.<br><br>What it <i>can</i> do is pull the model's attention: instructions that conflict with the validated prompt, or that ask for a different output shape, may cost you findings the validated prompt would have caught, or fail into <code>manual_review_required</code>. Write additions, not corrections — and keep it short.<br><br>Every scan run records the SHA-256 of the composed prompt and of this addendum, so a finding always says exactly what produced it.</i>",
             "required": false,
@@ -524,6 +542,13 @@
             "method": "micaDigestCron",
             "cron_frequency": "3600",
             "cron_max_run_time": "300"
+        },
+        {
+            "cron_name": "mica_session_closer",
+            "cron_description": "Closes sessions whose window has passed: finalizes the transcript, queues the safety scan, then sets the host instrument's form status to Complete so the participant cannot return. Hourly, because the shortest window is measured in hours. Closes each session ONCE and never re-closes it - a CRC who reopens a session by setting its form status back to Incomplete must not have that undone on the next pass. Does nothing unless 'Close sessions when their window ends' is on.",
+            "method": "micaSessionCloserCron",
+            "cron_frequency": "3600",
+            "cron_max_run_time": "1800"
         }
     ]
 }
