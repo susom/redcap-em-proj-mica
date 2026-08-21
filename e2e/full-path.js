@@ -205,12 +205,72 @@ const send = async (p, text, waitMs = 25000) => {
       r => res('success: ' + JSON.stringify(r)), e => res('error: ' + JSON.stringify(e)));
   })).catch(e => 'threw: ' + e.message);
   console.log(`  INFO  completeSession returned -> ${String(csRaw).slice(0, 220)}`);
+  // Now the same thing through the UI, which is where the dead-end was: End Session used to sign the
+  // participant out to `pages/chatbot.php` - the PILOT's standalone login, which matches on
+  // participant_name/participant_email. An R01 project has neither field, so a participant who had
+  // just finished was shown a login form they could not possibly pass.
   const before = p.url();
-  await p.locator('#chatbot_ui_container button').first().click({ force: true }).catch(() => {});
+  await p.locator('#chatbot_ui_container button:has-text("End Session")').first()
+    .click({ force: true }).catch(() => {});
+  await p.waitForTimeout(600);
+  // The confirmation sheet, then the confirm itself.
+  await p.locator('#chatbot_ui_container button:has-text("End session")').last()
+    .click({ force: true }).catch(() => {});
   await p.waitForTimeout(8000);
+
+  const after = await p.evaluate(() => {
+    const el = document.getElementById('chatbot_ui_container');
+    const txt = el ? el.innerText : '';
+    return {
+      text: txt,
+      url: window.location.href,
+      // A login form of any kind here is the bug.
+      loginFields: document.querySelectorAll(
+        '#chatbot_ui_container input[type=password], #chatbot_ui_container input[type=email]',
+      ).length,
+      composers: el
+        ? el.querySelectorAll('textarea, input:not([type=hidden]), [contenteditable]').length
+        : 0,
+      endSessionStill: /End Session/.test(txt),
+      notice: el ? el.querySelectorAll('.mica-notice').length : 0,
+    };
+  });
+
+  check('E1 a finished session says so, in words', /session is complete/i.test(after.text),
+    after.text.replace(/\n/g, ' | ').slice(0, 110));
+  check('E2 it is the terminal notice, not a chat message', after.notice >= 1);
+  check('E3 no login form is shown to somebody who just finished', after.loginFields === 0,
+    `${after.loginFields} credential field(s)`);
+  check('E4 it did not navigate away to the pilot login page',
+    !/chatbot\.php/.test(after.url) && after.url.startsWith(before.split('#')[0]),
+    after.url.slice(0, 80));
+  check('E5 the composer is gone - there is nothing left to say', after.composers === 0);
+  check('E6 End Session is gone with it', !after.endSessionStill);
+
+  // A device handed to the next participant must not carry the last one's identity or conversation.
+  const cached = await p.evaluate(async () => {
+    try {
+      const db = await new Promise((res, rej) => {
+        const r = indexedDB.open('user_info');
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+      });
+      if (!db.objectStoreNames.contains('current_user')) return 0;
+      return await new Promise((res) => {
+        const q = db.transaction('current_user').objectStore('current_user').count();
+        q.onsuccess = () => res(q.result);
+        q.onerror = () => res(-1);
+      });
+    } catch (e) {
+      return -2;
+    }
+  });
+  check('E7 the local session was cleared', cached === 0, `current_user rows: ${cached}`);
+
   console.log(`  INFO  url before: ${before.slice(0, 60)}`);
-  console.log(`  INFO  url after : ${p.url().slice(0, 90)}`);
-  console.log(`  INFO  page errors: ${JSON.stringify(p._errs.slice(0, 3))}`);
+  console.log(`  INFO  url after : ${after.url.slice(0, 90)}`);
+  check('E8 no MICA page errors ending the session', p._errs.length === 0,
+    JSON.stringify(p._errs.slice(0, 3)));
   await p.screenshot({ path: `${SHOTS}/E-endsession.png`, fullPage: true });
 
   // ---------- F. MOBILE ----------

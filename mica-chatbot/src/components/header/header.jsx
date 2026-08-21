@@ -7,7 +7,7 @@ import useAuth from '../../Hooks/useAuth.jsx';
 import ConfirmSheet from '../confirm/confirmSheet.jsx';
 
 export default function Header() {
-    const { clearMessages, chatContext, sessionState, reportSessionError, clearSessionError, pending } = useContext(ChatContext);
+    const { clearMessages, chatContext, sessionState, blockSession, reportSessionError, clearSessionError, pending } = useContext(ChatContext);
     const { logout } = useAuth();
     const [confirmEnd, setConfirmEnd] = useState(false);
     const [ending, setEnding] = useState(false);
@@ -20,6 +20,20 @@ export default function Header() {
 
         const back = window.mica_bootstrap?.login_url || '/';
         window.location.href = back;
+    };
+
+    /**
+     * Forget this participant on this device, without navigating anywhere.
+     *
+     * The same clearing handleSignOut does, minus the redirect. Split out because the redirect was
+     * the only thing wrong with reusing it: a finished session has to leave nothing behind on a
+     * device that gets handed to the next participant, and it must be able to do that while staying
+     * on the page to show them a terminal notice.
+     */
+    const clearLocalSession = async () => {
+        sessionStorage.setItem('mica_disable_bootstrap', '1');
+        await user_info.current_user.clear();
+        await clearMessages();
     };
 
     const endSession = async () => {
@@ -39,13 +53,46 @@ export default function Header() {
                             session_start_time: users[0].session_start_time
                         },
                         async (res) => {
-                            if (res?.success && res?.survey_link) {
-                                // Redirect to post-session survey link
-                                window.location.href = res.survey_link;
-                            } else {
-                                console.warn('Session ended with no survey link — signing out.');
-                                handleSignOut();
+                            if (!res?.success) {
+                                // Falls through to the error handler's contract rather than being
+                                // treated as a finished session.
+                                reportSessionError(
+                                    'Your session could not be finalized. Please contact the study team.',
+                                );
+                                setEnding(false);
+                                setConfirmEnd(false);
+                                return;
                             }
+
+                            // Cleared before either exit. On the redirect path this used to be
+                            // skipped entirely, so a shared device carried the previous
+                            // participant's cached identity and conversation into the next session.
+                            await clearLocalSession();
+
+                            if (res.survey_link) {
+                                window.location.href = res.survey_link;
+                                return;
+                            }
+
+                            /**
+                             * No survey to send them to, so this is the end - say so and stop.
+                             *
+                             * It used to sign out, which redirected to `login_url` -
+                             * `pages/chatbot.php`, the pilot's standalone login. That page matches on
+                             * `participant_name` / `participant_email`, fields an R01 project does not
+                             * have, so it could only ever answer "Invalid Credentials". A participant
+                             * who had just finished was shown a login form they could not pass.
+                             *
+                             * The same shape as docs 14 D16: dumped somewhere with no explanation.
+                             * blockSession() is the terminal state that already exists for
+                             * "Session already completed" - it renders the notice, drops the
+                             * composer and the intro, and hides this button.
+                             */
+                            blockSession(
+                                'Your session is complete. Thank you — you can close this window.',
+                            );
+                            setEnding(false);
+                            setConfirmEnd(false);
                         },
                         async (err) => {
                             // Do NOT sign out here. Signing out on a finalization failure made a
