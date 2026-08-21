@@ -99,6 +99,97 @@ describe('Queue — an empty list must say which kind of empty', () => {
   })
 })
 
+describe('Queue — one card per chat, not one row per finding', () => {
+  const findingRow = (over) => ({
+    job_id: 312,
+    record: '1',
+    event_id: 1008,
+    instance: 1,
+    session_type: 'baseline',
+    job_status: 'ready_for_review',
+    review_status: 'pending',
+    created: 1_700_000_000,
+    ...over,
+  })
+
+  const threeFindings = [
+    findingRow({ finding_id: 'f-1', finding_concern_type: 'self_harm', finding_urgency: 'critical' }),
+    findingRow({ finding_id: 'f-2', finding_concern_type: 'prompt_injection', finding_urgency: 'high' }),
+    findingRow({ finding_id: 'f-3', finding_concern_type: 'protocol_or_quality', finding_urgency: 'high' }),
+  ]
+
+  /**
+   * Every assertion here is scoped to the list. "Baseline", "Self-harm" and "Critical" all exist as
+   * filter <option>s too, so a document-wide query would pass or fail for reasons that have nothing
+   * to do with the cards — the same trap the unscreened test below documents.
+   */
+  const renderQueue = (rows, onOpen = () => {}) => {
+    const { container } = render(
+      <Queue
+        state={{ loading: false, error: null, queue: rows, summary: null }}
+        filters={{}}
+        onFilters={() => {}}
+        onOpen={onOpen}
+        onRefresh={() => {}}
+      />,
+    )
+    return within(container.querySelector('.mica-queue'))
+  }
+
+  it('states the session identity once, not once per finding', () => {
+    // The reported defect: "Record 1 Baseline (Day 1, ED)" three times for one conversation.
+    const list = renderQueue(threeFindings)
+
+    expect(list.getAllByText(/Baseline/)).toHaveLength(1)
+    expect(list.getByText(/3 findings/)).toBeInTheDocument()
+    expect(list.getByText(/3 awaiting review/)).toBeInTheDocument()
+  })
+
+  it('still shows every finding, without making anyone open something to see it', () => {
+    // A safety queue must not hide a critical finding behind a disclosure control.
+    const list = renderQueue(threeFindings)
+
+    expect(list.getByText('Self-harm')).toBeInTheDocument()
+    expect(list.getByText('Prompt injection')).toBeInTheDocument()
+    expect(list.getByText('Protocol or quality')).toBeInTheDocument()
+  })
+
+  it('badges the card with the worst finding in it', () => {
+    const list = renderQueue(threeFindings)
+    const card = list.getByRole('button', { name: /Record 1/ })
+
+    expect(within(card).getByText('Critical')).toBeInTheDocument()
+  })
+
+  it('opens the session from the card header and from a finding', async () => {
+    const onOpen = vi.fn()
+    const list = renderQueue(threeFindings, onOpen)
+
+    await userEvent.click(list.getByRole('button', { name: /Record 1/ }))
+    expect(onOpen).toHaveBeenCalledTimes(1)
+
+    await userEvent.click(list.getByRole('button', { name: /Prompt injection/ }))
+    expect(onOpen).toHaveBeenCalledTimes(2)
+    expect(onOpen.mock.calls[1][0].finding_id).toBe('f-2')
+  })
+
+  it('keeps separate sessions of one record separate', () => {
+    const list = renderQueue([
+      ...threeFindings,
+      findingRow({ event_id: 1009, session_type: 'booster', finding_id: 'f-b', finding_urgency: 'moderate' }),
+    ])
+
+    expect(list.getAllByText(/Baseline/)).toHaveLength(1)
+    expect(list.getAllByText(/Booster/)).toHaveLength(1)
+  })
+
+  it('says a clean screen in words rather than showing an empty card', () => {
+    const list = renderQueue([findingRow({ record: '3', finding_id: null, finding_urgency: null })])
+
+    expect(list.getByText(/no supported concern found/i)).toBeInTheDocument()
+  })
+})
+
 describe('Queue — an unscreened session does not look like an urgency', () => {
   it('says "Not screened" in words rather than showing a severity', () => {
     const rows = [

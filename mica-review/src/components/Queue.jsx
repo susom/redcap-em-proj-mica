@@ -1,5 +1,7 @@
+import { useMemo } from 'react'
 import { UrgencyBadge, ReviewChip } from './Badges.jsx'
 import { Empty, Notice, Skeleton } from './Notice.jsx'
+import { countSessions, groupBySession } from '../queue.js'
 import {
   CONCERN,
   JOB_STATUS,
@@ -8,19 +10,25 @@ import {
   REVIEW_STATUS,
   ago,
   band,
-  isSettled,
   label,
 } from '../labels.js'
 
-/** The counts strip. Ordered by what a reviewer acts on first. */
-function Summary({ summary }) {
+/**
+ * The counts strip. Ordered by what a reviewer acts on first.
+ *
+ * `Total` used to show the server's row count, which after grouping is findings plus zero-finding
+ * sessions added together — a number that invites being read as either. The last two tiles now name
+ * the two things separately, counted from the grouped rows on screen, so each tile means one thing.
+ */
+function Summary({ summary, counts }) {
   const stats = [
     { key: 'unscreened', label: 'Not screened', value: summary.unscreened, cls: 'mica-stat--alarm' },
     { key: 'critical', label: 'Critical', value: summary.critical, cls: 'mica-stat--critical' },
     { key: 'high', label: 'High', value: summary.high },
     { key: 'awaiting_review', label: 'Awaiting review', value: summary.awaiting_review },
     { key: 'confirmed', label: 'Confirmed', value: summary.confirmed },
-    { key: 'total', label: 'Total', value: summary.total },
+    { key: 'findings', label: 'Findings', value: counts.findings },
+    { key: 'sessions', label: 'Sessions', value: counts.sessions },
   ]
 
   return (
@@ -129,58 +137,133 @@ function Filters({ filters, onChange, disabled }) {
   )
 }
 
-function Row({ row, onOpen }) {
-  const level = band(row)
-  const settled = isSettled(row.review_status)
-  const unscreened = level === 'unscreened'
+/**
+ * What this session amounts to, in one sentence a reviewer can triage on.
+ *
+ * Never a bare count. "3 findings" does not say whether any of it is work, and the two states a
+ * count cannot express — screened-and-clean, and not-screened-at-all — are the two a reviewer must
+ * never confuse (see Notice.jsx).
+ */
+function sessionLine(group) {
+  if (group.band === 'unscreened') return 'This session was not screened'
 
-  // A row's headline is the concern, or — when there is no finding — what the job says happened.
-  // Never blank: a row with no words on it is a row a reviewer skips.
-  const headline = unscreened
-    ? 'This session was not screened'
-    : row.finding_concern_type
-      ? label(CONCERN, row.finding_concern_type)
-      : label(JOB_STATUS, row.job_status)
+  const { findings, awaiting, settled } = group
+
+  if (findings.length === 0) {
+    return group.head.job_status === 'ready_for_review'
+      ? 'Screened — no supported concern found'
+      : label(JOB_STATUS, group.head.job_status)
+  }
+
+  const total = `${findings.length} finding${findings.length === 1 ? '' : 's'}`
+
+  if (awaiting === 0) return `${total} · all reviewed`
+  if (settled === 0) return `${total} · ${awaiting} awaiting review`
+  return `${total} · ${awaiting} awaiting review, ${settled} reviewed`
+}
+
+/** One finding inside a session card. A sibling button, never nested inside the header button. */
+function FindingLine({ row, onOpen }) {
+  const level = band(row)
 
   return (
-    <button
-      type="button"
-      className={`mica-row mica-row--${level}${settled ? ' mica-row--settled' : ''}`}
-      onClick={() => onOpen(row)}
-    >
-      <UrgencyBadge band={level} />
-
-      <span className="mica-row-main">
-        <strong className="mica-row-summary">{headline}</strong>
+    <button type="button" className="mica-finding" onClick={() => onOpen(row)}>
+      <span className={`mica-finding-mark mica-finding-mark--${level}`} aria-hidden="true" />
+      <span className="mica-finding-name">
+        {row.finding_concern_type ? label(CONCERN, row.finding_concern_type) : 'Finding'}
       </span>
-
-      <span className="mica-row-meta">
-        <span>
-          Record <code className="mica-mono">{row.record}</code>
-        </span>
-        <span>{label(SESSION_TYPE, row.session_type)}</span>
-        {row.instance > 1 ? <span>Session {row.instance}</span> : null}
-        {row.finding_id ? <ReviewChip status={row.review_status} /> : null}
-        {row.review_corrected_urgency ? (
-          <span>Corrected to {label(URGENCY, row.review_corrected_urgency)}</span>
+      <span className="mica-finding-tags">
+        {/*
+          Only when there is an urgency. A scan_failure has none by design — it is an unscreened
+          session, not a rated one — and rendering the tag anyway produced an empty box holding an
+          em dash, which reads as a value that failed to load rather than one that does not apply.
+        */}
+        {row.finding_urgency ? (
+          <span className={`mica-tag mica-tag--${level}`}>{label(URGENCY, row.finding_urgency)}</span>
         ) : null}
-      </span>
-
-      <span className="mica-row-aside">
-        {ago(row.created)}
-        {row.review_reviewer ? (
-          <>
-            <br />
-            by {row.review_reviewer}
-          </>
+        <ReviewChip status={row.review_status} />
+        {row.review_corrected_urgency ? (
+          <span className="mica-finding-note">
+            corrected to {label(URGENCY, row.review_corrected_urgency)}
+          </span>
         ) : null}
       </span>
     </button>
   )
 }
 
+/**
+ * One chat session, with everything the scanner said about it.
+ *
+ * Findings are always visible rather than behind a disclosure. A queue whose job is to surface
+ * safety findings must not make a reviewer open something to discover a critical one — the count in
+ * the header is a summary of what is already on screen, not a substitute for it.
+ */
+function SessionCard({ group, onOpen }) {
+  const { head, findings, band: level } = group
+  const allSettled = findings.length > 0 && group.awaiting === 0
+
+  return (
+    <div
+      className={`mica-card mica-card--${level}${allSettled ? ' mica-card--settled' : ''}`}
+    >
+      <button type="button" className="mica-card-head" onClick={() => onOpen(head)}>
+        <UrgencyBadge band={level} />
+
+        {/*
+          The separator is followed by a non-breaking space, so the dot can never end a wrapped
+          line — "Record 1 ·" then a break, which is what a phone-width card actually did — while
+          the label itself still wraps at its own spaces. A nowrap span was tried first and cut the
+          label off at 320px instead.
+        */}
+        <span className="mica-card-id">
+          <strong>
+            Record <code className="mica-mono">{head.record}</code>
+          </strong>
+          <span className="mica-card-part">
+            <span className="mica-card-sep" aria-hidden="true">
+              {'· '}
+            </span>
+            {label(SESSION_TYPE, head.session_type)}
+          </span>
+          {head.instance > 1 ? (
+            <span className="mica-card-part">
+              <span className="mica-card-sep" aria-hidden="true">
+                ·{' '}
+              </span>
+              Session {head.instance}
+            </span>
+          ) : null}
+        </span>
+
+        <span className="mica-card-line">{sessionLine(group)}</span>
+
+        <span className="mica-card-aside">
+          {ago(head.created)}
+          {head.review_reviewer ? (
+            <>
+              <br />
+              by {head.review_reviewer}
+            </>
+          ) : null}
+        </span>
+      </button>
+
+      {findings.length > 0 ? (
+        <div className="mica-findings">
+          {findings.map((row) => (
+            <FindingLine key={row.finding_id} row={row} onOpen={onOpen} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export function Queue({ state, filters, onFilters, onOpen, onRefresh }) {
   const { loading, error, queue, summary } = state
+  const groups = useMemo(() => groupBySession(queue), [queue])
+  const counts = useMemo(() => countSessions(groups), [groups])
 
   return (
     <>
@@ -195,7 +278,7 @@ export function Queue({ state, filters, onFilters, onOpen, onRefresh }) {
         </Notice>
       ) : null}
 
-      {summary ? <Summary summary={summary} /> : null}
+      {summary ? <Summary summary={summary} counts={counts} /> : null}
 
       <Filters filters={filters} onChange={onFilters} disabled={loading} />
 
@@ -220,18 +303,15 @@ export function Queue({ state, filters, onFilters, onOpen, onRefresh }) {
         )
       ) : null}
 
-      {queue.length > 0 ? (
+      {groups.length > 0 ? (
         <>
           <div className="mica-sr-only" aria-live="polite">
-            {queue.length} session{queue.length === 1 ? '' : 's'} listed, most urgent first.
+            {counts.sessions} session{counts.sessions === 1 ? '' : 's'} listed, most urgent first,
+            carrying {counts.findings} finding{counts.findings === 1 ? '' : 's'}.
           </div>
           <div className="mica-queue">
-            {queue.map((row) => (
-              <Row
-                key={`${row.job_id}:${row.finding_id || 'none'}`}
-                row={row}
-                onOpen={onOpen}
-              />
+            {groups.map((group) => (
+              <SessionCard key={group.key} group={group} onOpen={onOpen} />
             ))}
           </div>
         </>

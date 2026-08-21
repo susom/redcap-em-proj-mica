@@ -54,6 +54,22 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/*
+ * The surfaces we did not draw. Scoped to the dashboard root on purpose: this SPA is mounted inside
+ * a REDCap page, and restyling selection or form accents globally would reach REDCap's own UI.
+ */
+.mica-review-root ::selection {
+  background: #cfe0f1;
+  color: var(--mica-ink);
+}
+
+.mica-review-root input,
+.mica-review-root select,
+.mica-review-root textarea {
+  caret-color: var(--mica-focus);
+  accent-color: var(--mica-focus);
+}
+
 .mica-review-root *,
 .mica-review-root *::before,
 .mica-review-root *::after {
@@ -222,10 +238,212 @@
 }
 
 /*
- * A queue row is a button, not a table row: it is the primary action on this screen and it has to be
+ * A session card: one chat, with every finding the scanner reported for it.
+ *
+ * The card is a plain container and the header is the button, because the findings inside are
+ * buttons too and a button cannot contain buttons. Two clickable depths, one card.
+ *
+ * The findings are rules-separated lines inside the card, deliberately not little cards of their
+ * own: they are the contents of this session, not six more things to triage.
+ */
+.mica-card {
+  background: var(--mica-surface);
+  border: 1px solid var(--mica-border);
+  border-left-width: 4px;
+  border-radius: var(--mica-radius);
+  overflow: hidden;
+  transition: border-color 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mica-card:hover { border-color: var(--mica-border-strong); }
+.mica-card:focus-within { border-color: var(--mica-focus); }
+
+.mica-card--unscreened { border-left-color: var(--mica-unscreened); background: var(--mica-unscreened-tint); }
+.mica-card--critical { border-left-color: var(--mica-critical); background: var(--mica-critical-tint); }
+.mica-card--high { border-left-color: var(--mica-high); }
+.mica-card--moderate { border-left-color: var(--mica-moderate); }
+.mica-card--quality { border-left-color: var(--mica-quality); }
+.mica-card--none { border-left-color: var(--mica-border-strong); }
+
+/*
+ * Fully-reviewed work recedes but stays legible — kept so a reviewer sees their own recent work.
+ *
+ * The background alone. The left edge keeps the urgency colour: painting it green said "confirmed"
+ * in the same spot as a badge saying "Moderate", which is two different claims about one session.
+ * The header line already says "all reviewed" in words.
+ */
+.mica-card--settled {
+  background: var(--mica-bg);
+}
+
+/*
+ * The header. A button, not a table row: it is the primary action on this screen and it has to be
  * reachable by keyboard and comfortably tappable on a phone. Tables were tried and are worse here —
  * a reviewer on call needs one legible block per session, not eight columns scrolled sideways.
  */
+.mica-card-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.2rem 0.75rem;
+  width: 100%;
+  text-align: left;
+  align-items: baseline;
+  background: none;
+  border: 0;
+  padding: 0.6875rem 0.75rem;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.mica-card-id {
+  grid-column: 2;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  overflow-wrap: anywhere;
+}
+
+.mica-card-sep { color: var(--mica-ink-faint); }
+
+.mica-card-line {
+  grid-column: 2;
+  font-size: 0.8125rem;
+  color: var(--mica-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.mica-card-aside {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  text-align: right;
+  font-size: 0.8125rem;
+  color: var(--mica-ink-soft);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- findings in a card */
+
+.mica-findings {
+  border-top: 1px solid var(--mica-border);
+  display: flex;
+  flex-direction: column;
+}
+
+.mica-finding {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.5rem 0.625rem;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--mica-border);
+  padding: 0.5rem 0.75rem 0.5rem 0.6875rem;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mica-finding:first-child { border-top: 0; }
+.mica-finding:hover { background: rgb(28 36 48 / 4%); }
+
+/*
+ * A 3px dot, not a second left border. The card already carries one; repeating the device per line
+ * would make three findings look like three cards again, which is the thing being fixed.
+ */
+.mica-finding-mark {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mica-border-strong);
+}
+
+.mica-finding-mark--unscreened { background: var(--mica-unscreened); }
+.mica-finding-mark--critical { background: var(--mica-critical); }
+.mica-finding-mark--high { background: var(--mica-high); }
+.mica-finding-mark--moderate { background: var(--mica-moderate); }
+.mica-finding-mark--quality { background: var(--mica-quality); }
+
+.mica-finding-name {
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.mica-finding-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.375rem;
+}
+
+.mica-finding-note {
+  font-size: 0.75rem;
+  color: var(--mica-ink-soft);
+}
+
+/* A quieter sibling of .mica-badge, for urgency repeated at finding level. */
+.mica-tag {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.mica-tag--unscreened { color: var(--mica-unscreened); background: var(--mica-unscreened-tint); }
+.mica-tag--critical { color: var(--mica-critical); background: var(--mica-critical-tint); }
+.mica-tag--high { color: var(--mica-high); background: var(--mica-high-tint); }
+.mica-tag--moderate { color: var(--mica-moderate); background: var(--mica-moderate-tint); }
+.mica-tag--quality { color: var(--mica-quality); background: var(--mica-quality-tint); }
+.mica-tag--none { color: var(--mica-ink-soft); }
+
+@media (max-width: 32rem) {
+  /* The timestamp stops competing with the identity for the same line on a phone. */
+  .mica-card-head {
+    grid-template-columns: auto 1fr;
+  }
+
+  /*
+   * No separator at phone width. The parts either sit on one line, where the flex gap separates
+   * them, or wrap onto their own — and a dot that begins a wrapped line reads as a list bullet.
+   */
+  .mica-card-sep {
+    display: none;
+  }
+
+  .mica-card-aside {
+    grid-column: 2;
+    grid-row: auto;
+    text-align: left;
+  }
+
+  .mica-finding {
+    grid-template-columns: auto 1fr;
+  }
+
+  .mica-finding-tags {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mica-card,
+  .mica-finding {
+    transition: none;
+  }
+}
+
 .mica-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
