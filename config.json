@@ -121,6 +121,12 @@
             "type": "textarea"
         },
         {
+            "key": "chatbot_system_context_booster",
+            "name": "<b>Booster session context</b><br><i>Raw text to tune the chatbot for a <b>booster</b> session (R01). Used when the chat host maps to <code>booster</code> in the session host map. The pilot's <code>session_2</code>…<code>session_7</code> settings below are its 14-day cadence and are not used on an R01 project — they trigger a catch-up summary built from <code>baseline_arm_1</code> events, which an R01 project does not have.</i>",
+            "required": false,
+            "type": "textarea"
+        },
+        {
             "key": "chatbot_system_context_session_2",
             "name": "Raw text to inject into and tune the chatbot's 2nd session system context",
             "required": true,

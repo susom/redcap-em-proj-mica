@@ -187,9 +187,30 @@ const send = async (p, text, waitMs = 25000) => {
   check('C7 MICA ajax calls all HTTP 200', p._mica.length > 0 && p._mica.every(s => s === 200), JSON.stringify(p._mica));
   await p.screenshot({ path: `${SHOTS}/C2-turn2.png`, fullPage: true });
 
-  // Persona observation (known gap on PID 257)
-  const persona = await p.evaluate(() => JSON.stringify(window.mica_jsmo_module.data));
-  console.log(`  INFO  initial_system_context on the client: ${persona}`);
+  /**
+   * The persona actually reaching the model.
+   *
+   * This was an INFO line reading "known gap on PID 257" - and the gap was a bug, not a limitation:
+   * getSystemContextForRecord() bailed on calculateSessionInfo() returning null, before reading any
+   * of the chatbot_system_context_* settings. The model was called with NO system prompt, so it
+   * introduced itself as Claude while the persona sat configured and ignored.
+   */
+  const persona = await p.evaluate(() => window.mica_jsmo_module.data);
+  const personaText = JSON.stringify(persona || []);
+  console.log(`  INFO  initial_system_context on the client: ${personaText.slice(0, 150)}`);
+
+  check('C8  the client received a system context', Array.isArray(persona) && persona.length > 0,
+    `${Array.isArray(persona) ? persona.length : 0} entr(ies)`);
+  check('C9  and it carries the configured persona', /You are MICA/i.test(personaText),
+    personaText.slice(0, 100));
+
+  // The symptom itself. Asking the model who it is is the only check that covers the whole chain -
+  // setting, bootstrap, client seeding, payload, and the provider actually honouring a system role.
+  const whoami = await send(p, 'Who are you? Answer in one short sentence.');
+  const answer = (whoami.split('Who are you?').pop() || '');
+  check('C10 the model answers as MICA, not as Claude',
+    /\bMICA\b/i.test(answer) && !/\bclaude\b/i.test(answer),
+    answer.replace(/\n/g, ' ').trim().slice(0, 120));
 
   console.log('\n=== D. RELOAD / RESTORE (D6 observation) ===');
   await p.goto(ED, { waitUntil: 'domcontentloaded' });

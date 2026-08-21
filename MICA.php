@@ -517,7 +517,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         // 1) Build bootstrap (same fields your app expects)
         $ctx = null;
         try {
-            $ctx = $this->getSystemContextForRecord($record);
+            $ctx = $this->getSystemContextForRecord($record, (string) $instrument);
         } catch (\Exception $e) {
             $error = $e->getMessage();
             $this->emDebug("Unable to build system context for record", $record, $error);
@@ -1490,8 +1490,32 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $action->save();
     }
 
-    public function getSystemContextForRecord($recordId): ?array {
-        $calc = $this->calculateSessionInfo($recordId);
+    public function getSystemContextForRecord($recordId, ?string $hostInstrument = null): ?array {
+        /**
+         * The pilot's session resolution gates the SYSTEM PROMPT, which is not obvious from here.
+         *
+         * `calculateSessionInfo()` returns null without a `baseline_arm_1` event, and this method used
+         * to return null with it - before reading a single one of the
+         * `chatbot_system_context_*` settings. `redcap_survey_page()` then normalises null to `[]`,
+         * the SPA seeds an empty context, and the model is called with **no system prompt at all**.
+         *
+         * The visible symptom is the chatbot introducing itself as Claude while
+         * `chatbot_system_context_general` sits configured and ignored. The client already warns
+         * "no initial system context was provided for this session" in the console; nothing on the
+         * server said anything.
+         *
+         * So on a project without the pilot scaffolding, build the context anyway. Everything
+         * `initSystemContexts()` needs is a record, a session key and a look-back count - none of it
+         * pilot-specific. What is lost is only the pilot's gating (des_mica, month3_fu_complete,
+         * session_info_complete), and those fields do not exist on such a project to gate on.
+         */
+        $pilot = $this->hasPilotSessionScaffolding();
+        $calc = $pilot ? $this->calculateSessionInfo($recordId) : null;
+
+        if (!$pilot) {
+            return $this->systemContextWithoutPilotScaffolding($recordId, $hostInstrument);
+        }
+
         if (!$calc) return null;
 
         $currentSession = $calc['currentSession'];
@@ -1553,6 +1577,46 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     }
 
     
+    /**
+     * The system context for a project that was never a pilot project.
+     *
+     * The session key comes from the chat host via SessionHostMap - the same mapping that decides
+     * baseline-vs-booster for a SafetyScan - rather than from the pilot's day-count arithmetic.
+     *
+     * Deliberately NOT a `session_N` key. `initSystemContexts()` treats those as the pilot's 14-day
+     * cadence and appends a catch-up summary built from `baseline_arm_1` / `session_N_arm_1` events,
+     * which do not exist here: asking for one would fail while trying to add context. `baseline` and
+     * `booster` both fall outside that regex, so the general context and the session context are all
+     * that is assembled.
+     */
+    private function systemContextWithoutPilotScaffolding($recordId, ?string $hostInstrument): array
+    {
+        $sessionKey = 'baseline';
+
+        try {
+            if ($hostInstrument !== null && $hostInstrument !== '') {
+                $hosts = SessionHostMap::fromSetting($this->getProjectSetting('session-host-map'));
+                $sessionKey = $hosts->resolve($hostInstrument)['session_type'];
+            }
+        } catch (\Throwable $e) {
+            // An unmappable host is not a reason to send the model no persona at all. The general
+            // context is the part that matters and it does not depend on the session type.
+            $this->emDebug(
+                'getSystemContextForRecord: host instrument did not map to a session type, so the '
+                . 'baseline session context is used. The general context is unaffected.',
+                ['instrument' => $hostInstrument, 'error' => $e->getMessage()]
+            );
+        }
+
+        $backN = $this->getProjectSetting('number_session_callback') ?? 1;
+
+        return [
+            'system_context'     => $this->initSystemContexts($recordId, $sessionKey, $backN),
+            'currentSession'     => $sessionKey,
+            'session_start_time' => time(),
+        ];
+    }
+
     public function initSystemContexts($record_id, $session_key = 'baseline', $backN= 1) {
 
         $setting_key = "chatbot_system_context_" . $session_key;
