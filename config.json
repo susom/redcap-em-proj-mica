@@ -73,13 +73,13 @@
         {
             "key": "chatbot_end_session_url_override",
             "name": "Optional URL Override for Redirect URL when 'End Session' is clicked",
-            "required": true,
+            "required": false,
             "type": "text"
         },
         {
             "key": "chatbot_intro_text",
             "name": "Raw text to show in the UI on session start",
-            "required": true,
+            "required": false,
             "type": "textarea"
         },
         {
@@ -99,7 +99,7 @@
         {
             "key": "chatbot_end_session_text",
             "name": "Raw text to show in the UI to remind participant to 'end session'",
-            "required": true,
+            "required": false,
             "type": "textarea"
         },
         {
@@ -110,14 +110,14 @@
         },
         {
             "key": "chatbot_system_context_general",
-            "name": "Raw text to inject into and set the chatbot's overall system context, persona, guardrails",
+            "name": "Raw text to inject into and set the chatbot's overall system context, persona, guardrails <b>Required:</b> without it the model is given no persona and answers as whatever underlying model is configured.",
             "required": true,
             "type": "textarea"
         },
         {
             "key": "chatbot_system_context_baseline",
             "name": "Raw text to inject into and tune the chatbot's baseline session system context",
-            "required": true,
+            "required": false,
             "type": "textarea"
         },
         {
@@ -129,37 +129,37 @@
         {
             "key": "chatbot_system_context_session_2",
             "name": "Raw text to inject into and tune the chatbot's 2nd session system context",
-            "required": true,
+            "required": false,
             "type": "textarea"
         },
         {
             "key": "chatbot_system_context_session_3",
             "name": "Raw text to inject into and tune the chatbot's 3rd session system context",
-            "required": true,
+            "required": false,
             "type": "textarea"
         },
         {
             "key": "chatbot_system_context_session_4",
             "name": "Raw text to inject into and tune the chatbot's 4th session system context",
-            "required": true,
+            "required": false,
             "type": "textarea"
         },
         {
             "key": "chatbot_system_context_session_5",
             "name": "Raw text to inject into and tune the chatbot's 5th session system context",
-            "required": true,
+            "required": false,
             "type": "textarea"
         },
         {
             "key": "chatbot_system_context_session_6",
             "name": "Raw text to inject into and tune the chatbot's 6th session system context",
-            "required": true,
+            "required": false,
             "type": "textarea"
         },
         {
             "key": "chatbot_system_context_session_7",
             "name": "Raw text to inject into and tune the chatbot's 7th session system context",
-            "required": true,
+            "required": false,
             "type": "textarea"
         },
         {
@@ -184,7 +184,7 @@
             "key": "safetyscan-max-attempts",
             "name": "<b>SafetyScan attempts before manual review</b><br><i>Default 3. Transient failures retry with backoff; once attempts are exhausted the job becomes a visible manual-review task - never a clean screen.</i>",
             "required": false,
-            "type": "text"
+            "type": "number"
         },
         {
             "key": "scan-mock-mode",
@@ -486,19 +486,19 @@
         {
             "key": "twilio-sid",
             "name": "<b>Twilio SID</b>",
-            "required": true,
+            "required": false,
             "type": "text"
         },
         {
             "key": "twilio-auth-token",
             "name": "<b>Twilio Auth token</b>",
-            "required": true,
+            "required": false,
             "type": "text"
         },
         {
             "key": "twilio-from-number",
             "name": "<b>Twilio From Number </b><br><i>e.g +16124823490</i>",
-            "required": true,
+            "required": false,
             "type": "text"
         }
     ],

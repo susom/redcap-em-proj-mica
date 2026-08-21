@@ -363,13 +363,20 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
         foreach ($settings as $key => $setting) {
             $value = $this->getProjectSetting($setting);
-            if ($value !== null) { // Ensure the value exists
-                if (is_numeric($value)) {
-                    $params[$key] = strpos($value, '.') !== false ? (float) $value : (int) $value; // Keep floats as float
-                } else {
-                    $params[$key] = $value; // Preserve non-numeric strings
-                }
+
+            // `!== null` was not enough. A REDCap number field that has been saved BLANK comes back
+            // as '', which is neither null nor numeric - so it fell through to the else branch below
+            // and was forwarded verbatim, sending the provider `temperature: ""`. Dormant on a
+            // project whose rows were never created, and armed by the first save of the config form.
+            if ($value === null || (is_string($value) && trim($value) === '')) {
+                continue;
             }
+
+            // Cast before strpos(): a numeric setting can come back as an int, and strpos() on an
+            // int is a TypeError in PHP 8 rather than the silent coercion it used to be.
+            $params[$key] = is_numeric($value)
+                ? (str_contains((string) $value, '.') ? (float) $value : (int) $value)
+                : $value;
         }
     }
 

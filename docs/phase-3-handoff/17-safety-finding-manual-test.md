@@ -16,6 +16,19 @@ cp docs/phase-3-handoff/scripts/preflight-safetyscan.php ../../temp/mica/
 docker exec redcap_2023_1_web php /var/www/html/temp/mica/preflight-safetyscan.php 257
 ```
 
+There is a companion for the settings themselves:
+
+```bash
+docker exec redcap_2023_1_web php /var/www/html/temp/mica/verify-settings.php 257
+```
+
+That one asks a different question — not "is the pipeline wired" but "does every setting do what its
+label says". It resolves values through the real code paths rather than reading them, because a
+setting can be configured, correct, and never consulted: `chatbot_system_context_general` was set for
+weeks while the chatbot introduced itself as Claude, because `getSystemContextForRecord()` returned
+before reading it. Lines marked `INERT` are configured and valid but do nothing on this project —
+clutter, not defects.
+
 It checks the whole chain — session → transcript → job → scan → finding → review — and names the
 broken link. That matters because **a break anywhere shows up at the far end as "no findings", which
 is indistinguishable from "nothing to find"**. That ambiguity is the thing this entire handoff exists
