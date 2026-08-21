@@ -325,14 +325,24 @@ class RedcapReviewQueryStore implements ReviewQueryStoreInterface
 
     public function auditEvents(string $projectId, int $limit): array
     {
-        // The audit table has no project column of its own (it records actions, not data), so the
-        // scope is the target: findings and sessions belong to a record, and a record belongs to a
-        // project. Filtering by project would need a join per target kind, so this returns the
-        // module-wide trail and the endpoint's role check is what gates it - PI and auditor only.
+        /**
+         * Scoped to this project.
+         *
+         * This used to return the module-wide trail, reasoning that "filtering by project would need
+         * a join per target kind, so the endpoint's role check is what gates it". That was a cost
+         * argument wearing a safety argument's clothes: the role check gates WHO may read a trail,
+         * not WHICH project's. On a shared REDCap a PI on one study could read another study's audit
+         * rows - record ids, usernames, concern types, review statuses. `mica_audit_event` carries a
+         * `project_id` now, so there is nothing to join.
+         *
+         * Rows written before that column existed have no project and are therefore excluded. That
+         * direction is deliberate: an audit trail missing its own history is a visible gap somebody
+         * asks about, and one showing another study's rows is a disclosure nobody notices.
+         */
         $result = $this->module->query(
             'SELECT id, actor, actor_role, event_type, target_kind, target_id, details, created FROM '
-            . self::AUDIT . ' ORDER BY id DESC LIMIT ' . max(1, min(500, $limit)),
-            []
+            . self::AUDIT . ' WHERE project_id = ? ORDER BY id DESC LIMIT ' . max(1, min(500, $limit)),
+            [(int) $projectId]
         );
 
         $events = [];

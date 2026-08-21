@@ -43,7 +43,7 @@ final class DispositionServiceTest extends TestCase
         return new D(
             $this->store,
             $roles,
-            new AuditLogger($this->audit, $roles),
+            new AuditLogger($this->audit, $roles, '257'),
             static fn(): int => self::NOW
         );
     }

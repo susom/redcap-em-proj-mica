@@ -81,14 +81,30 @@ class AuditLogger
 
     private AuditStoreInterface $store;
     private RoleService $roles;
+    private string $projectId;
     /** @var callable(string): void */
     private $logger;
 
-    /** @param callable(string): void|null $logger */
-    public function __construct(AuditStoreInterface $store, RoleService $roles, ?callable $logger = null)
-    {
+    /**
+     * @param string                    $projectId stamped on every row so the trail can be read per
+     *                                             project. A required argument rather than an
+     *                                             optional trailing one on purpose: an unattributed
+     *                                             audit row is invisible to the scoped read that
+     *                                             replaced the module-wide one, so a caller that
+     *                                             forgot it would silently log into a void. Making
+     *                                             it positional means every call site had to be
+     *                                             revisited.
+     * @param callable(string): void|null $logger
+     */
+    public function __construct(
+        AuditStoreInterface $store,
+        RoleService $roles,
+        string $projectId,
+        ?callable $logger = null
+    ) {
         $this->store = $store;
         $this->roles = $roles;
+        $this->projectId = $projectId;
         $this->logger = $logger ?? static function (string $m): void {
         };
     }
@@ -137,6 +153,7 @@ class AuditLogger
         array $details = []
     ): int {
         $this->store->insertAuditEvent([
+            'project_id'  => (int) $this->projectId,
             // Never null: an audit row with no actor is not an audit row. A cron gets an explicit
             // sentinel rather than an empty string, so "nobody was logged in" and "we forgot to
             // pass the actor" are distinguishable.

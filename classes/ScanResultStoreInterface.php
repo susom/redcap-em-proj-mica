@@ -51,4 +51,15 @@ interface ScanResultStoreInterface
 
     /** Existing finding_id values on this project, so a UUID collision is caught before writing. */
     public function existingFindingIds(string $projectId, string $record): array;
+
+    /**
+     * Has this job already released findings?
+     *
+     * Asked of the data rather than of the job's status, because the status is exactly what an
+     * operator changes when they re-queue a finished job by hand. The cron never re-runs a settled
+     * job - it only claims `queued` - so this can only be reached deliberately, and somebody
+     * recovering from a failure plausibly does it. Without the check they silently double their
+     * queue: every finding released twice, with no dedupe anywhere in the write path.
+     */
+    public function findingsReleasedForJob(string $projectId, string $record, int $jobId): bool;
 }

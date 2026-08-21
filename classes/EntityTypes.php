@@ -50,7 +50,7 @@ namespace Stanford\MICA;
 class EntityTypes
 {
     /** Bumped whenever a type or index below changes; gates the migration. */
-    public const SCHEMA_VERSION = '4';
+    public const SCHEMA_VERSION = '5';
 
     /**
      * Secondary indexes and UNIQUE constraints, which redcap_entity does not create at all
@@ -91,6 +91,14 @@ class EntityTypes
                 'columns' => ['target_kind', 'target_id'],
                 'unique'  => false,
                 'why'     => 'Audit trail for one finding / one session.',
+            ],
+            'idx_audit_project' => [
+                'table'   => 'redcap_entity_mica_audit_event',
+                'columns' => ['project_id', 'id'],
+                'unique'  => false,
+                'why'     => 'The dashboard reads the trail for ONE project, newest first. Without '
+                           . 'this the scope filter is a full scan of the busiest append-only table '
+                           . 'the module owns.',
             ],
             'idx_actor' => [
                 'table'   => 'redcap_entity_mica_audit_event',
@@ -584,6 +592,23 @@ class EntityTypes
             'label_plural' => 'MICA audit events',
             'icon'         => 'application_view_list',
             'properties'   => [
+                /**
+                 * Added so the trail can be read per project.
+                 *
+                 * `auditEvents()` had no way to scope, so it returned the module-wide trail and the
+                 * endpoint's role check was doing the gating - but that check gates WHO may read a
+                 * trail, not WHICH project's. A PI on one study could read another study's audit
+                 * rows: record ids, usernames, concern types, review statuses. Not a hypothetical on
+                 * a shared REDCap.
+                 *
+                 * `integer`, not `project`, for the SUPER_USER reason in the class docblock: audit
+                 * rows are written from cron.
+                 */
+                'project_id' => [
+                    'name'     => 'Project',
+                    'type'     => 'integer',
+                    'required' => false,
+                ],
                 // `text`, deliberately, where 02-data-model.md §1.1 says `user`. The `user` type
                 // validates through RedCapDB::usernameExists(), and the scan worker's audit events
                 // are written from cron with no logged-in user at all - so a `user` column would

@@ -986,6 +986,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $audit = new AuditLogger(
             new RedcapAuditStore($this),
             $roles,
+            (string) $projectId,
             fn(string $m) => $this->emError("audit: $m")
         );
 
@@ -1017,6 +1018,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         $audit ??= new AuditLogger(
             new RedcapAuditStore($this),
             $roles,
+            (string) $projectId,
             fn(string $m) => $this->emError("audit: $m")
         );
 

@@ -628,4 +628,86 @@ final class ScanRunnerTest extends TestCase
             static fn(string $m): bool => str_contains($m, '1 of 2 finding(s) held back')
         ));
     }
+
+    // ---------------------------------------------------------------- duplicate release
+
+    /**
+     * A settled job re-run by hand must not release a second set of findings.
+     *
+     * Nothing in the write path dedupes - FindingWriter appends at nextFindingInstance() - so before
+     * this guard a re-queued job doubled the queue: every finding twice, under a different
+     * finding_scan_run, and an RA dispositioning the same disclosure twice.
+     */
+    public function testAJobThatAlreadyReleasedFindingsDoesNotReleaseThemAgain(): void
+    {
+        $logId = $this->storeTranscript();
+        $this->results->releasedJobs = [7];
+        $caller = new StubSafetyScanCaller(
+            StubSafetyScanCaller::ok($this->scanOutput('findings_present', 'critical', [$this->finding()]))
+        );
+
+        $outcome = $this->runner($caller)->run($this->job($logId));
+
+        $this->assertSame(0, $outcome->findingsWritten, 'a second set was released');
+        $this->assertSame([], $this->results->findingWrites, 'nothing should reach the instrument');
+    }
+
+    public function testItStaysOkSoNoScanFailurePlaceholderIsWritten(): void
+    {
+        // The scan succeeded; it is the RELEASE that was refused. Calling it a failure would write a
+        // placeholder saying the session was never screened, which is false - and would move the job
+        // to manual_review_required when it already has findings waiting.
+        $logId = $this->storeTranscript();
+        $this->results->releasedJobs = [7];
+        $caller = new StubSafetyScanCaller(
+            StubSafetyScanCaller::ok($this->scanOutput('findings_present', 'critical', [$this->finding()]))
+        );
+
+        $outcome = $this->runner($caller)->run($this->job($logId));
+
+        $this->assertSame('ok', $outcome->runStatus);
+        $this->assertFalse($outcome->terminal);
+    }
+
+    public function testItSaysWhyRatherThanLookingLikeACleanScreen(): void
+    {
+        // `ok` with zero findings is the exact shape of a clean screen, so the reason has to be
+        // readable from both the job row and the run row.
+        $logId = $this->storeTranscript();
+        $this->results->releasedJobs = [7];
+        $caller = new StubSafetyScanCaller(
+            StubSafetyScanCaller::ok($this->scanOutput('findings_present', 'high', [$this->finding()]))
+        );
+
+        $outcome = $this->runner($caller)->run($this->job($logId));
+
+        $this->assertStringContainsString('already released', (string) $outcome->error);
+        $this->assertStringContainsString('first release', (string) $outcome->error);
+
+        $payload = json_decode($this->results->runs[0]['model_output_json'], true);
+        $this->assertTrue($payload['duplicate_release_prevented']);
+        // The model's answer is still preserved verbatim, so the second opinion is not lost.
+        $this->assertSame('findings_present', $payload['model_output']['scan_result']);
+
+        $this->assertNotEmpty(array_filter(
+            $this->logs,
+            static fn(string $m): bool => str_contains($m, 'already released findings')
+        ));
+    }
+
+    public function testAFirstRunIsUnaffected(): void
+    {
+        // The guard must not touch the normal path, which is every run the cron actually makes.
+        $logId = $this->storeTranscript();
+        $this->results->releasedJobs = [];
+        $caller = new StubSafetyScanCaller(
+            StubSafetyScanCaller::ok($this->scanOutput('findings_present', 'critical', [$this->finding()]))
+        );
+
+        $outcome = $this->runner($caller)->run($this->job($logId));
+
+        $this->assertSame(1, $outcome->findingsWritten);
+        $payload = json_decode($this->results->runs[0]['model_output_json'], true);
+        $this->assertArrayNotHasKey('duplicate_release_prevented', $payload);
+    }
 }

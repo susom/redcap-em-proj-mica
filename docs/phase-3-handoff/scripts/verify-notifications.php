@@ -286,7 +286,7 @@ $module->setProjectSetting('notify-care-team-emails', 'care-team@example.org, no
 $results = new RedcapScanResultStore($module);
 $reviewStore = new RedcapFindingReviewStore($module);
 $roles = RoleService::fromModule($module, $PID);
-$audit = new AuditLogger(new RedcapAuditStore($module), $roles);
+$audit = new AuditLogger(new RedcapAuditStore($module), $roles, (string) $PID);
 $artifacts = new ArtifactRegistry();
 $directory = new RedcapRecipientDirectory($module, $roles, $PID);
 $notifStore = new RedcapNotificationStore($module, new RedcapReviewQueryStore($module));

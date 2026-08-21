@@ -227,6 +227,14 @@ final class EntityTypesTest extends TestCase
             $this->assertNotEmpty($spec['why'], "index $name has no stated reason to exist");
 
             foreach ($spec['columns'] as $column) {
+                // The framework adds these three to every entity table itself
+                // (EntityDB::buildEntityDBTable), so they are real columns that no type declares. An
+                // index on `(project_id, id)` - "this project, newest first" - is the natural shape
+                // for an append-only trail and has to be allowed to name one.
+                if (in_array($column, ['id', 'created', 'updated'], true)) {
+                    continue;
+                }
+
                 $this->assertArrayHasKey(
                     $column,
                     $types[$type]['properties'],

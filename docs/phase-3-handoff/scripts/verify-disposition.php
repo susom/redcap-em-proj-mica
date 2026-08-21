@@ -114,7 +114,7 @@ $module->setProjectSetting('role-ra-reviewer', [(string) $verifyRoleId], $PID);
 $results = new RedcapScanResultStore($module);
 $reviewStore = new RedcapFindingReviewStore($module);
 $roles = RoleService::fromModule($module, $PID);
-$audit = new AuditLogger(new RedcapAuditStore($module), $roles);
+$audit = new AuditLogger(new RedcapAuditStore($module), $roles, (string) $PID);
 $service = new DispositionService($reviewStore, $roles, $audit);
 
 echo "Disposition path against live REDCap (pid $PID, record $RECORD, event $EVENT)\n\n";

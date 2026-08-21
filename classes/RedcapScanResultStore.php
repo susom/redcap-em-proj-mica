@@ -155,6 +155,33 @@ class RedcapScanResultStore implements ScanResultStoreInterface
         }
     }
 
+    public function findingsReleasedForJob(string $projectId, string $record, int $jobId): bool
+    {
+        // Two queries rather than joining `d.value` (varchar) to `r.id` (int): the coercion works and
+        // then defeats both indexes, on a table that is the biggest one in any REDCap project.
+        $runs = [];
+        $result = $this->module->query(
+            'SELECT id FROM redcap_entity_mica_scan_run WHERE job_id = ?',
+            [$jobId]
+        );
+        while ($row = $result->fetch_assoc()) {
+            $runs[] = (string) $row['id'];
+        }
+
+        if ($runs === []) {
+            return false;
+        }
+
+        $found = $this->module->query(
+            'SELECT 1 FROM ' . \Records::getDataTable((int) $projectId)
+            . ' WHERE project_id = ? AND record = ? AND field_name = ? AND value IN ('
+            . implode(',', array_fill(0, count($runs), '?')) . ') LIMIT 1',
+            array_merge([$projectId, $record, 'finding_scan_run'], $runs)
+        );
+
+        return (bool) $found->fetch_assoc();
+    }
+
     public function existingFindingIds(string $projectId, string $record): array
     {
         $result = $this->module->query(

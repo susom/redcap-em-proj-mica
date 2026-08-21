@@ -81,7 +81,7 @@ final class NotificationServiceTest extends TestCase
             $this->store,
             $this->directory,
             $this->findings,
-            new AuditLogger($this->auditStore, $roles),
+            new AuditLogger($this->auditStore, $roles, self::PID),
             self::PID,
             'https://redcap.example.org/review',
             fn(): int => $this->now
@@ -909,7 +909,7 @@ final class NotificationServiceTest extends TestCase
             $this->store,
             $this->directory,
             $this->findings,
-            new AuditLogger($this->auditStore, new RoleService([])),
+            new AuditLogger($this->auditStore, new RoleService([]), self::PID),
             '999',
             '',
             static fn(): int => self::NOW

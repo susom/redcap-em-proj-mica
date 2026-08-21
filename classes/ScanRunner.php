@@ -235,9 +235,60 @@ class ScanRunner
             );
         }
 
+        /**
+         * Has this job already released findings? Asked before anything is written.
+         *
+         * The cron only ever claims `queued`, so a settled job is re-run only when somebody resets it
+         * by hand - which an operator recovering from a failure plausibly does. Nothing in the write
+         * path dedupes: FindingWriter appends at `nextFindingInstance()`, so a second successful run
+         * releases a second complete set. The queue silently doubles, every finding appears twice with
+         * a different `finding_scan_run`, and an RA dispositions the same disclosure twice.
+         *
+         * Observed while re-testing job 275 on PID 257: nine instances where there should have been
+         * five, four of them duplicates of the other four.
+         */
+        $alreadyReleased = $this->results->findingsReleasedForJob($projectId, $record, (int) $job['id']);
+
         // Every attempt leaves a row, and this one is written before findings so the authoritative
         // copy of the output exists no matter what the write-back does.
-        $runId = $this->insertRun($job, $attempt, 'ok', $result, $output, null, $split);
+        $runId = $this->insertRun($job, $attempt, 'ok', $result, $output, null, $split, $alreadyReleased);
+
+        if ($alreadyReleased) {
+            $this->log(sprintf(
+                'job %s already released findings, so this run wrote none. The model answered and its '
+                . 'output is on run %d; the findings on the record are the ones released the first '
+                . 'time.',
+                $job['id'],
+                $runId
+            ));
+
+            /**
+             * `ok` with nothing written, deliberately.
+             *
+             * The scan itself succeeded - it is the release that was refused - so classifying it as a
+             * failure would write a `scan_failure` placeholder saying the session was never screened,
+             * which is false. `ok` returns the job to `ready_for_review`, which is where it belongs:
+             * there ARE findings to review, from the first release. `findingsWritten: 0` also keeps
+             * notifyReviewersIfSettled() quiet, so nobody is emailed twice about one session.
+             *
+             * It is not confusable with a clean screen: the run row carries the model's findings and
+             * `duplicate_release_prevented`, and `error` below lands in the job's `last_error`.
+             */
+            return new ScanOutcome(
+                runStatus: 'ok',
+                scanRunId: $runId,
+                scanResult: $output['scan_result'] ?? null,
+                overallUrgency: $output['overall_urgency'] ?? null,
+                findings: $output['findings'] ?? [],
+                error: sprintf(
+                    'This job had already released findings, so run %d wrote none - the findings on '
+                    . 'the record are from the first release. Re-running a settled job does not '
+                    . 'replace them.',
+                    $runId
+                ),
+                findingsWritten: 0
+            );
+        }
 
         try {
             $written = $this->findings->write($projectId, $record, $eventId, $runId, $findings);
@@ -360,7 +411,8 @@ class ScanRunner
         ?array $result,
         ?array $output,
         ?string $error,
-        ?array $split = null
+        ?array $split = null,
+        bool $alreadyReleased = false
     ): int {
         // Hashes of what was actually used, from the registry rather than from the manifest, so the
         // row describes reality (ArtifactRegistry::getHash).
@@ -380,7 +432,7 @@ class ScanRunner
             // Verbatim, and present even on a failure when there was any output at all: it is the
             // authoritative record, and a schema_invalid or citation_mismatch row without the
             // output it is about cannot be reviewed.
-            'model_output_json'    => $this->runPayload($result, $output, $error, $split),
+            'model_output_json'    => $this->runPayload($result, $output, $error, $split, $alreadyReleased),
         ];
 
         return $this->results->insertRun($data);
@@ -394,7 +446,8 @@ class ScanRunner
         ?array $result,
         ?array $output,
         ?string $error,
-        ?array $split = null
+        ?array $split = null,
+        bool $alreadyReleased = false
     ): string {
         $payload = [
             'model_output'    => $output,
@@ -421,6 +474,12 @@ class ScanRunner
          * Only written when something was actually filtered, so a row from an unconfigured project
          * is unchanged and diffing two runs stays meaningful.
          */
+        // So a reader can tell "this run released nothing because the job already had" from "this run
+        // found nothing", which are the same shape otherwise.
+        if ($alreadyReleased) {
+            $payload['duplicate_release_prevented'] = true;
+        }
+
         if ($split !== null && ($split['filtered'] ?? []) !== []) {
             $payload['thresholds'] = $this->thresholds->toArray();
             $payload['filtered'] = $split['filtered'];

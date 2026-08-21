@@ -29,6 +29,7 @@ final class AuditLoggerTest extends TestCase
                 [RoleService::RA => ['660'], RoleService::PI => ['662']],
                 ['ra_alice' => '660', 'pi_bob' => '662', 'auditor_carol' => '663']
             ),
+            '257',
             function (string $m): void {
                 $this->logs[] = $m;
             }
@@ -207,5 +208,19 @@ final class AuditLoggerTest extends TestCase
         ];
 
         $this->assertSame($types, array_unique($types));
+    }
+
+    public function testEveryRowCarriesItsProjectSoTheTrailCanBeReadPerProject(): void
+    {
+        /**
+         * The audit read used to be module-wide, gated only by the endpoint's role check - which gates
+         * WHO may read a trail, not WHICH project's. A PI on one study could read another study's
+         * rows. The scoped read excludes anything without a project, so a row written without one is
+         * invisible rather than merely unattributed: that is why the constructor argument is required
+         * and positional rather than optional and trailing.
+         */
+        $this->logger()->record('ra_alice', AuditLogger::QUEUE_VIEW, 'project', '257', ['result_count' => 3]);
+
+        $this->assertSame(257, $this->store->last()['project_id']);
     }
 }

@@ -50,7 +50,7 @@ final class ReviewEndpointsTest extends TestCase
             [RoleService::RA => ['660'], RoleService::PI => ['662'], RoleService::AUDITOR => ['663']],
             ['ra_alice' => '660', 'pi_bob' => '662', 'auditor_carol' => '663']
         );
-        $audit = new AuditLogger($this->audit, $roles);
+        $audit = new AuditLogger($this->audit, $roles, '257');
 
         return new ReviewEndpoints(
             $this->store,
@@ -325,7 +325,7 @@ final class ReviewEndpointsTest extends TestCase
             [RoleService::RA => ['663'], RoleService::AUDITOR => ['663']],
             ['ra_alice' => '660', 'pi_bob' => '662', 'auditor_carol' => '663']
         );
-        $audit = new AuditLogger($this->audit, $roles);
+        $audit = new AuditLogger($this->audit, $roles, '257');
         $endpoints = new ReviewEndpoints(
             $this->store,
             new DispositionService($this->findings, $roles, $audit),
@@ -369,7 +369,7 @@ final class ReviewEndpointsTest extends TestCase
         // A generic error here would read as a permissions problem, which is the wrong thing to
         // debug. Needs a super user, since these are the sysadmin's actions.
         $roles = new RoleService([], [], true);
-        $audit = new AuditLogger($this->audit, $roles);
+        $audit = new AuditLogger($this->audit, $roles, '257');
         $endpoints = new ReviewEndpoints(
             $this->store,
             new DispositionService($this->findings, $roles, $audit),
@@ -397,7 +397,7 @@ final class ReviewEndpointsTest extends TestCase
             [RoleService::RA => ['660'], RoleService::PI => ['662']],
             ['ra_alice' => '660', 'pi_bob' => '662']
         );
-        $audit = new AuditLogger($this->audit, $roles);
+        $audit = new AuditLogger($this->audit, $roles, '257');
         $artifacts = new ArtifactRegistry();
 
         $this->notifications = new NotificationService(
@@ -521,7 +521,7 @@ final class ReviewEndpointsTest extends TestCase
     public function testLaunchReadinessReturnsEveryGateNotJustTheFailingOnes(): void
     {
         $roles = new RoleService([], [], true);
-        $audit = new AuditLogger($this->audit, $roles);
+        $audit = new AuditLogger($this->audit, $roles, '257');
         $endpoints = new ReviewEndpoints(
             $this->store,
             new DispositionService($this->findings, $roles, $audit),

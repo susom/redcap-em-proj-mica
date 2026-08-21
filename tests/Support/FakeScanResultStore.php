@@ -61,6 +61,14 @@ final class FakeScanResultStore implements ScanResultStoreInterface
         }
     }
 
+    /** @var list<int> job ids a test declares as already released */
+    public array $releasedJobs = [];
+
+    public function findingsReleasedForJob(string $projectId, string $record, int $jobId): bool
+    {
+        return in_array($jobId, $this->releasedJobs, true);
+    }
+
     public function existingFindingIds(string $projectId, string $record): array
     {
         return $this->existingIds;
