@@ -167,12 +167,12 @@ function FindingLine({ row, onOpen }) {
   const level = band(row)
 
   return (
-    <button type="button" className="mica-finding" onClick={() => onOpen(row)}>
-      <span className={`mica-finding-mark mica-finding-mark--${level}`} aria-hidden="true" />
-      <span className="mica-finding-name">
+    <button type="button" className="mica-card-finding" onClick={() => onOpen(row)}>
+      <span className={`mica-card-finding-mark mica-card-finding-mark--${level}`} aria-hidden="true" />
+      <span className="mica-card-finding-name">
         {row.finding_concern_type ? label(CONCERN, row.finding_concern_type) : 'Finding'}
       </span>
-      <span className="mica-finding-tags">
+      <span className="mica-card-finding-tags">
         {/*
           Only when there is an urgency. A scan_failure has none by design — it is an unscreened
           session, not a rated one — and rendering the tag anyway produced an empty box holding an
@@ -183,7 +183,7 @@ function FindingLine({ row, onOpen }) {
         ) : null}
         <ReviewChip status={row.review_status} />
         {row.review_corrected_urgency ? (
-          <span className="mica-finding-note">
+          <span className="mica-card-finding-note">
             corrected to {label(URGENCY, row.review_corrected_urgency)}
           </span>
         ) : null}
@@ -250,7 +250,7 @@ function SessionCard({ group, onOpen }) {
       </button>
 
       {findings.length > 0 ? (
-        <div className="mica-findings">
+        <div className="mica-card-findings">
           {findings.map((row) => (
             <FindingLine key={row.finding_id} row={row} onOpen={onOpen} />
           ))}

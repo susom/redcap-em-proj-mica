@@ -326,13 +326,13 @@
 
 /* ---------------------------------------------------------------- findings in a card */
 
-.mica-findings {
+.mica-card-findings {
   border-top: 1px solid var(--mica-border);
   display: flex;
   flex-direction: column;
 }
 
-.mica-finding {
+.mica-card-finding {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
@@ -349,33 +349,33 @@
   transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.mica-finding:first-child { border-top: 0; }
-.mica-finding:hover { background: rgb(28 36 48 / 4%); }
+.mica-card-finding:first-child { border-top: 0; }
+.mica-card-finding:hover { background: rgb(28 36 48 / 4%); }
 
 /*
  * A 3px dot, not a second left border. The card already carries one; repeating the device per line
  * would make three findings look like three cards again, which is the thing being fixed.
  */
-.mica-finding-mark {
+.mica-card-finding-mark {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--mica-border-strong);
 }
 
-.mica-finding-mark--unscreened { background: var(--mica-unscreened); }
-.mica-finding-mark--critical { background: var(--mica-critical); }
-.mica-finding-mark--high { background: var(--mica-high); }
-.mica-finding-mark--moderate { background: var(--mica-moderate); }
-.mica-finding-mark--quality { background: var(--mica-quality); }
+.mica-card-finding-mark--unscreened { background: var(--mica-unscreened); }
+.mica-card-finding-mark--critical { background: var(--mica-critical); }
+.mica-card-finding-mark--high { background: var(--mica-high); }
+.mica-card-finding-mark--moderate { background: var(--mica-moderate); }
+.mica-card-finding-mark--quality { background: var(--mica-quality); }
 
-.mica-finding-name {
+.mica-card-finding-name {
   min-width: 0;
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 
-.mica-finding-tags {
+.mica-card-finding-tags {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -383,7 +383,7 @@
   gap: 0.375rem;
 }
 
-.mica-finding-note {
+.mica-card-finding-note {
   font-size: 0.75rem;
   color: var(--mica-ink-soft);
 }
@@ -427,11 +427,11 @@
     text-align: left;
   }
 
-  .mica-finding {
+  .mica-card-finding {
     grid-template-columns: auto 1fr;
   }
 
-  .mica-finding-tags {
+  .mica-card-finding-tags {
     grid-column: 2;
     justify-content: flex-start;
   }
@@ -439,7 +439,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .mica-card,
-  .mica-finding {
+  .mica-card-finding {
     transition: none;
   }
 }
