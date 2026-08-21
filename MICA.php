@@ -1980,13 +1980,17 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 $surveys['survey_link'] = $override;
             }
 
-            return array_merge($surveys, $this->finalizeSessionTranscript(
-            $participant_id,
-            $payload,
-            $hostInstrument,
-            $hostEventId,
-            $hostInstance
-        ));
+            $surveys = array_merge($surveys, $this->finalizeSessionTranscript(
+                $participant_id,
+                $payload,
+                $hostInstrument,
+                $hostEventId,
+                $hostInstance
+            ));
+
+            $this->markSessionCompleteOnFinish($participant_id, $hostInstrument, $hostEventId);
+
+            return $surveys;
         }
 
         $session      = $calc['currentSession'];
@@ -2053,7 +2057,79 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             $hostInstance
         ));
 
+        $this->markSessionCompleteOnFinish($participant_id, $hostInstrument, $hostEventId);
+
         return $surveys;
+    }
+
+    /**
+     * A participant who ends their session cannot walk back into it.
+     *
+     * Closes the re-entry gap in `18 §10 A6` gate 3: Repeat Survey is enabled on both host surveys
+     * and nothing server-side stopped a finished participant reopening their link and continuing to
+     * talk, appending a second conversation to a session that had already been finalized and
+     * scanned. The SPA showed a terminal notice; the server agreed to carry on.
+     *
+     * Same field and same meaning as the closer's: the host instrument's form status becomes
+     * Complete, `sessionIsClosed()` refuses entry on it, and a CRC reopens by setting it back to
+     * Incomplete. One control, whether the session ended because the participant finished it or
+     * because its window ran out.
+     *
+     * **Never throws, and never fails the participant's completion.** Their transcript is already
+     * finalized and their scan already queued by this point; a status write that failed would be a
+     * study-team problem, and turning it into "your session could not be saved" would be a lie that
+     * costs them their ending.
+     */
+    private function markSessionCompleteOnFinish(
+        $participantId,
+        ?string $hostInstrument,
+        ?int $hostEventId
+    ): void {
+        if ($hostInstrument === null || $hostInstrument === '' || !$this->isChatHostInstrument($hostInstrument)) {
+            return;
+        }
+
+        try {
+            $eventId = (int) ($hostEventId ?: 0);
+            $eventName = $eventId > 0
+                ? (string) ($this->projectFor((int) PROJECT_ID)->getUniqueEventNames($eventId) ?: '')
+                : '';
+
+            if ($eventName === '') {
+                $this->emError('completeSession: no event name for the chat host, so the session was '
+                    . 'not marked complete and the participant could re-enter it', [
+                        'participant_id' => $participantId,
+                        'instrument'     => $hostInstrument,
+                        'event_id'       => $eventId,
+                    ]);
+                return;
+            }
+
+            // No repeat keys: the hosts are not repeating instruments - see finalizeAndCloseSession().
+            $save = \REDCap::saveData([
+                'project_id'        => (int) PROJECT_ID,
+                'dataFormat'        => 'json',
+                'overwriteBehavior' => 'overwrite',
+                'data'              => json_encode([[
+                    $this->getPrimaryField()          => $participantId,
+                    'redcap_event_name'               => $eventName,
+                    $hostInstrument . '_complete'      => '2',
+                ]]),
+            ]);
+
+            if (!empty($save['errors'])) {
+                $this->emError('completeSession: the session was finalized but its form status could '
+                    . 'not be written, so the participant can still re-enter it', [
+                        'participant_id' => $participantId,
+                        'errors'         => $save['errors'],
+                    ]);
+            }
+        } catch (\Throwable $e) {
+            $this->emError('completeSession: marking the session complete failed', [
+                'participant_id' => $participantId,
+                'error'          => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -2332,7 +2408,16 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
         foreach ($this->getProjectsWithModuleEnabled() as $projectId) {
             try {
+                // Before closing anything: give every host link an expiry, because that is what
+                // bounds a session this closer will never touch (one opened and never used has no
+                // first message, so it has no window). Cheap and idempotent.
+                $expiries = $this->ensureLinkExpirations((int) $projectId);
+
                 $result = $this->closeExpiredSessions((int) $projectId);
+
+                if ($expiries > 0) {
+                    $result['skipped']['link_expiry_written'] = $expiries;
+                }
 
                 // Reported even when nothing closed, because "0 closed, 3 skipped for no messages"
                 // and "nothing to look at" are different states and only one of them is fine.
@@ -2450,6 +2535,97 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         }
 
         return ['closed' => $closed, 'skipped' => $skipped];
+    }
+
+    /**
+     * Give every MICA host link an expiry, so REDCap's own gate 2 actually fires.
+     *
+     * `survey_time_limit_*` is configured on both host surveys (24 h ED, 14 d booster) and does
+     * **nothing** on its own: `checkSurveyTimeLimit()` returns "allowed" whenever
+     * `redcap_surveys_participants.link_expiration` is empty, and a link minted by
+     * `REDCap::getSurveyLink()` leaves it NULL. Measured, not assumed - 08-auth-discovery.md §3.3.
+     * So a link with a time limit set and no `link_expiration` never expires at all, which is the
+     * state PID 257 was in.
+     *
+     * This is the mechanism that bounds a session the closer will never touch: opened and never
+     * used, so no first message, so no window. Between the two, every session is bounded.
+     *
+     * **The anchor, stated because it is a compromise.** REDCap derives an expiry from an
+     * invitation's `time_sent`, and nothing here was invited - there is no issuance timestamp
+     * anywhere on the participant or response row to work from. So a row seen without an expiry gets
+     * `now + the survey's own time limit`: for a link issued moments ago that is exactly right, and
+     * for one minted before this existed it means the clock starts the first time the cron sees it.
+     * Generous once, bounded thereafter, and written only when the column is empty so it is never
+     * moved later. `link_expiration_override` is set, which is what REDCap's own admin action does
+     * and what stops `getLinkExpirationTimes()` recomputing over it.
+     *
+     * @return int how many rows were given an expiry
+     */
+    private function ensureLinkExpirations(int $projectId): int
+    {
+        $hostNames = SessionHostMap::fromSetting(
+            $this->getProjectSetting('session-host-map', $projectId)
+        )->instruments();
+
+        if ($hostNames === []) {
+            return 0;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($hostNames), '?'));
+
+        $result = $this->query(
+            'SELECT p.participant_id, s.survey_id, s.form_name, '
+            . 's.survey_time_limit_days, s.survey_time_limit_hours, s.survey_time_limit_minutes '
+            . 'FROM redcap_surveys_participants p '
+            . 'JOIN redcap_surveys s ON s.survey_id = p.survey_id '
+            . 'WHERE s.project_id = ? AND s.form_name IN (' . $placeholders . ') '
+            // IS NULL only: the column is DATETIME, so comparing it to '' is rejected outright
+            // under strict mode ("Incorrect DATETIME value") and takes the whole query with it.
+            . 'AND p.link_expiration IS NULL',
+            array_merge([$projectId], $hostNames)
+        );
+
+        $rows = [];
+        while ($row = $result->fetch_assoc()) {
+            $rows[] = $row;
+        }
+
+        $written = 0;
+
+        foreach ($rows as $row) {
+            $seconds = 86400 * (int) ($row['survey_time_limit_days'] ?? 0)
+                + 3600 * (int) ($row['survey_time_limit_hours'] ?? 0)
+                + 60 * (int) ($row['survey_time_limit_minutes'] ?? 0);
+
+            if ($seconds <= 0) {
+                // No time limit on the survey means the study has not asked for expiry on this host.
+                // Inventing one here would silently lock participants out of a survey nobody limited.
+                continue;
+            }
+
+            $update = $this->query(
+                'UPDATE redcap_surveys_participants SET link_expiration = ?, '
+                . 'link_expiration_override = 1 WHERE participant_id = ? '
+                // Re-checked in the UPDATE itself: two cron passes overlapping must not move an
+                // expiry that the first one set.
+                . 'AND link_expiration IS NULL',
+                [date('Y-m-d H:i:s', time() + $seconds), (int) $row['participant_id']]
+            );
+
+            if ($update) {
+                $written++;
+            }
+        }
+
+        if ($written > 0) {
+            $this->emDebug(sprintf(
+                'session closer: wrote link_expiration for %d MICA host link(s) that had none, so '
+                . 'the configured survey time limit can now fire',
+                $written
+            ));
+        }
+
+        return $written;
     }
 
     private function intSettingOrNull(string $key, int $projectId): ?int

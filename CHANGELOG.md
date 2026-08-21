@@ -118,13 +118,36 @@ can still be screened — so the cron finalizes the transcript and queues the sc
 marking Complete. A session that reads as finished but was never screened is the one
 state this pipeline exists to prevent.
 
-Three defects the live run found that no unit test would have:
+**Ending a session closes it too.** `completeSession` now writes the same form
+status, closing the re-entry gap in `18 §10 A6` gate 3: Repeat Survey is on for both
+hosts, and nothing server-side stopped a finished participant reopening their link
+and appending a second conversation to a session already finalized and scanned. It
+never throws — their transcript is already safe by that point, and turning a status
+write into "your session could not be saved" would be a lie that costs them their
+ending.
+
+**Every host link now gets an expiry.** `survey_time_limit_*` was configured on both
+hosts and did nothing, because `checkSurveyTimeLimit()` allows access whenever
+`link_expiration` is empty and `getSurveyLink()` leaves it NULL. The cron fills it
+in, once, with `link_expiration_override = 1`. That is what bounds a session the
+closer will never touch — opened and never used, so no first message, so no window.
+Between the two mechanisms every session is bounded. The anchor is a stated
+compromise: nothing records when a module-minted link was issued, so a row first
+seen without an expiry gets `now + the survey's own limit`.
+
+Four defects the live run found that no unit test would have:
 `REDCap::getEventNames()` throws outside a project context, so cron needs `$Proj`;
 the host surveys have *Repeat Survey* enabled but are **not** repeating instruments,
 so passing `redcap_repeat_instrument` made `saveData` reject the write with
 `item_count 0`; and `queryLogs` cannot filter on the message column, so the
 close-once guard needs `log_type` as an explicit parameter — without it a reopened
-session was closed again on the next pass.
+session was closed again on the next pass; and `link_expiration` is a `DATETIME`, so
+comparing it to `''` is rejected under strict mode and took the whole query with it.
+
+The participant E2E is now **45 checks**: mobile moved ahead of End Session (it was
+typing into a session that correctly no longer has a composer), and `E9`/`E10` pin
+that a finished session cannot be re-entered from the same link and says so in
+words.
 
 ### `safetyscan-prompt-addendum` — study guidance appended to the analysis prompt
 

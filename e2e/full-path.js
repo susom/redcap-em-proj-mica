@@ -220,6 +220,40 @@ const send = async (p, text, waitMs = 25000) => {
   console.log(`  INFO  container text after reload: ${JSON.stringify(afterReload.slice(0, 120))}`);
   await p.screenshot({ path: `${SHOTS}/D-reload.png`, fullPage: true });
 
+  // Mobile runs BEFORE End Session, deliberately. Ending a session now marks the host
+  // instrument complete and the server refuses re-entry, so a mobile pass afterwards was
+  // typing into a session that correctly no longer has a composer.
+  // ---------- F. MOBILE ----------
+  console.log('\n=== F. MOBILE (iPhone 13) ===');
+  {
+    const { p: m } = await newCtx(browser, true);
+    await m.goto(ED, { waitUntil: 'domcontentloaded' });
+    await login(m);
+    await m.waitForTimeout(2500);
+    check('F1 container present on mobile', (await m.locator('#chatbot_ui_container').count()) > 0);
+    const overflow = await m.evaluate(() => ({
+      docW: document.documentElement.scrollWidth, winW: window.innerWidth,
+      composerVisible: (() => { const i = document.querySelector('#chatbot_ui_container textarea, #chatbot_ui_container input:not([type=hidden]), #chatbot_ui_container [contenteditable]');
+        if (!i) return false; const r = i.getBoundingClientRect();
+        return r.top >= 0 && r.bottom <= window.innerHeight + 1; })(),
+    }));
+    check('F2 no horizontal overflow', overflow.docW <= overflow.winW + 1, `doc=${overflow.docW} win=${overflow.winW}`);
+    check('F3 composer within viewport', overflow.composerVisible);
+    const mt = await send(m, 'Say OK.');
+    check('F4 mobile turn works', /Say OK/.test(mt) && !/network difficulties/i.test(mt));
+    check('F5 no MICA page errors on mobile', m._errs.length === 0, JSON.stringify(m._errs.slice(0, 2)));
+    // The banner is chrome on a page whose point is the conversation. Measured rather than eyeballed,
+    // because it grew back to five lines the moment a second gate started failing.
+    const bannerShare = await m.evaluate(() => {
+      const el = document.querySelector('.mica-launch');
+      return el ? Math.round((el.getBoundingClientRect().height / window.innerHeight) * 100) : 0;
+    });
+    check('F6 the banner leaves the conversation most of the screen', bannerShare <= 20,
+      `${bannerShare}% of viewport height`);
+
+    await m.screenshot({ path: `${SHOTS}/F-mobile.png`, fullPage: true });
+  }
+
   console.log('\n=== E. END SESSION ===');
   const csRaw = await p.evaluate(async () => new Promise(res => {
     window.mica_jsmo_module.completeSession({ participant_id: 'MICATEST01' },
@@ -292,38 +326,23 @@ const send = async (p, text, waitMs = 25000) => {
   console.log(`  INFO  url after : ${after.url.slice(0, 90)}`);
   check('E8 no MICA page errors ending the session', p._errs.length === 0,
     JSON.stringify(p._errs.slice(0, 3)));
+
+  // E9: the re-entry gate. Repeat Survey is on for both hosts, so before the host instrument was
+  // marked complete a finished participant could reopen their link and keep talking - appending a
+  // second conversation to a session already finalized and scanned.
+  await p.goto(ED, { waitUntil: 'domcontentloaded' });
+  await p.waitForTimeout(3000);
+  const reentry = await p.evaluate(() => ({
+    composers: document.querySelectorAll('#chatbot_ui_container textarea, #chatbot_ui_container input:not([type=hidden]), #chatbot_ui_container [contenteditable]').length,
+    text: (document.querySelector('#chatbot_ui_container')?.innerText || ''),
+  }));
+  check('E9 a finished session cannot be re-entered from the same link', reentry.composers === 0,
+    `composers=${reentry.composers}`);
+  check('E10 and it says so in words', /already completed|contact the study team/i.test(reentry.text),
+    JSON.stringify(reentry.text.slice(0, 120)));
+  await p.screenshot({ path: `${SHOTS}/E-reentry.png`, fullPage: true });
   await p.screenshot({ path: `${SHOTS}/E-endsession.png`, fullPage: true });
 
-  // ---------- F. MOBILE ----------
-  console.log('\n=== F. MOBILE (iPhone 13) ===');
-  {
-    const { p: m } = await newCtx(browser, true);
-    await m.goto(ED, { waitUntil: 'domcontentloaded' });
-    await login(m);
-    await m.waitForTimeout(2500);
-    check('F1 container present on mobile', (await m.locator('#chatbot_ui_container').count()) > 0);
-    const overflow = await m.evaluate(() => ({
-      docW: document.documentElement.scrollWidth, winW: window.innerWidth,
-      composerVisible: (() => { const i = document.querySelector('#chatbot_ui_container textarea, #chatbot_ui_container input:not([type=hidden]), #chatbot_ui_container [contenteditable]');
-        if (!i) return false; const r = i.getBoundingClientRect();
-        return r.top >= 0 && r.bottom <= window.innerHeight + 1; })(),
-    }));
-    check('F2 no horizontal overflow', overflow.docW <= overflow.winW + 1, `doc=${overflow.docW} win=${overflow.winW}`);
-    check('F3 composer within viewport', overflow.composerVisible);
-    const mt = await send(m, 'Say OK.');
-    check('F4 mobile turn works', /Say OK/.test(mt) && !/network difficulties/i.test(mt));
-    check('F5 no MICA page errors on mobile', m._errs.length === 0, JSON.stringify(m._errs.slice(0, 2)));
-    // The banner is chrome on a page whose point is the conversation. Measured rather than eyeballed,
-    // because it grew back to five lines the moment a second gate started failing.
-    const bannerShare = await m.evaluate(() => {
-      const el = document.querySelector('.mica-launch');
-      return el ? Math.round((el.getBoundingClientRect().height / window.innerHeight) * 100) : 0;
-    });
-    check('F6 the banner leaves the conversation most of the screen', bannerShare <= 20,
-      `${bannerShare}% of viewport height`);
-
-    await m.screenshot({ path: `${SHOTS}/F-mobile.png`, fullPage: true });
-  }
 
   console.log(`\n===== ${pass} passed, ${fail} failed =====`);
   await browser.close();
