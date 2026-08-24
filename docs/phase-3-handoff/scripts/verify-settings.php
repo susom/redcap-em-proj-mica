@@ -303,11 +303,12 @@ foreach (['gpt-temperature' => [0, 2], 'gpt-top-p' => [0, 1], 'gpt-frequency-pen
 $effort = $str('reasoning-effort');
 $counselor = $str('llm-model');
 if ($effort !== '') {
-    in_array($counselor, ['o1', 'o3-mini', 'gpt-5'], true)
+    in_array($counselor, ['o1', 'o3-mini', 'gpt-5',
+             'gpt-5-6-sol', 'gpt-5-6-luna', 'gpt-5-6-terra'], true)
         ? ok_('reasoning-effort', "$effort (applies to $counselor)")
         : inert_('reasoning-effort', sprintf(
             '"%s" is set, but SecureChatAI unsets reasoning_effort for every model except '
-            . 'o1/o3-mini/gpt-5, and this project uses "%s".',
+            . 'o1/o3-mini/gpt-5 and the gpt-5-6-* line, and this project uses "%s".',
             $effort,
             $counselor ?: '(none)'
         ));

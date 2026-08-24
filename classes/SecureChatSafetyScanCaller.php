@@ -34,7 +34,8 @@ class SecureChatSafetyScanCaller implements SafetyScanCallerInterface
 {
     /** Mirrors SecureChatAI.php:399. Duplicated knowingly - see schemaWouldBeSent(). */
     private const OPENAI_SCHEMA_MODELS = [
-        'gpt-4-1', 'gpt-4-1-nano', 'gpt-5', 'gpt-5-4', 'gpt-5-4-nano', 'o1', 'o3', 'o3-mini', 'o4-mini',
+        'gpt-4-1', 'gpt-4-1-nano', 'gpt-5', 'gpt-5-4', 'gpt-5-4-nano', 'gpt-5-6-sol', 'gpt-5-6-luna', 'gpt-5-6-terra',
+        'o1', 'o3', 'o3-mini', 'o4-mini',
     ];
 
     private MICA $module;

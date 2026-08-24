@@ -55,6 +55,81 @@ against `platform.php = 8.2` rather than the developer's PHP.
 `php-ml` and `twilio/sdk` were dropped: 2,598 files and 17.5 MB with zero
 references anywhere in the codebase. `vendor/` is 235 files / 1.3 MB.
 
+### GPT-5.6 selectable — and it is reasoning-class, not a chat model
+
+New aliases `gpt-5-6-sol`, `gpt-5-6-luna`, `gpt-5-6-terra` in MICA's `llm-model`
+dropdown and in both of REDCap Chatbot's. Defaults untouched.
+
+**Two things were wrong on the first pass, both found by checking rather than
+reasoning.**
+
+*The names.* I extrapolated `gpt-5-6` + `gpt-5-6-nano` from the 5.4 base/nano
+pair. The AI Hub service spec's `deployment-id` enum has no such entries — the
+variants are sol/luna/terra. The alias is also the URL path segment, so an
+invented name is a 404. `SchemaModelMirrorTest::testTheInventedGpt56NamesAreAbsent`
+pins this.
+
+*The parameter class.* I then routed the trio like `gpt-5-4` — ordinary chat
+model, `max_tokens`, sampling params — and flagged that the spec could not
+confirm it because one request schema covers every deployment. It was wrong, and
+a configured counselor produced nothing but `I apologize, but I'm experiencing
+network difficulties`: an HTTP 400 that `callAI()` rewrites into a canned
+apology, with the response body deliberately omitted for PHI safety, so the log
+said only `HTTP error: 400 (length=254 bytes)`. Replaying the same request
+outside the module with a non-PHI prompt got the real answer. Verified against
+AI Hub 2026-08-24, resolved model `gpt-5.6-sol-2026-07-09`:
+
+| Parameter | Result |
+|---|---|
+| `max_tokens` | **400** — `Use 'max_completion_tokens' instead` |
+| `temperature` ≠ 1 | **400** — `Only the default (1) value is supported` |
+| `top_p` ≠ 1 | **400** — `not supported with this model` |
+| `frequency_penalty` ≠ 0 | **400** — `not supported with this model` |
+| `max_completion_tokens`, `reasoning_effort`, `presence_penalty: 0`, `stop: null` | accepted |
+| `response_format` json_schema with `strict: true` | accepted, returns conforming JSON |
+| `tools` | accepted |
+
+So the trio joins `o1`/`o3-mini`/`o3`/`o4-mini`/`gpt-5` in the strict branch:
+seven lists in `SecureChatAI.php` (reasoning-param allowlist `:393`, strict set
+`:405`, agent-mode token param `:936`, compaction `:1805`, Claude-compat endpoint
+`:2635`, plus `getModelContextSpec()` and `computeDynamicMaxTokens()` with
+`param => max_completion_tokens`). They stay in both `$schemaModels` lists
+(`:399`, `:893`) because structured output is confirmed working — which is what
+keeps SafetyScan on real `json_schema` rather than the prompt-injected fallback,
+and why `SecureChatSafetyScanCaller::OPENAI_SCHEMA_MODELS` still lists them.
+
+Post-fix payload is exactly `{model, messages, max_completion_tokens,
+reasoning_effort}`. Verified three ways: the filter logic replayed in isolation,
+that payload sent live (HTTP 200), and the participant E2E — **45/45 including
+C2 "real reply received (not the provider apology)"**, with the log confirming
+every turn served by `gpt-5.6-sol-2026-07-09` and zero errors.
+
+**Pre-existing bug fixed in passing.** Bare `gpt-5` sat in the strict branch
+(which sets `max_completion_tokens`) while its `computeDynamicMaxTokens()` entry
+said `param => max_tokens`, so `callLLMOnce()` re-added `max_tokens` and Azure
+rejected the request for carrying both. `gpt-5` could never have worked. The
+o-series entries were already correct; only `gpt-5` was wrong.
+
+**Settings labels corrected.** `GPT Temperature`, `Top P`, `Frequency/Presence
+Penalty` and `Reasoning Effort` now say which model classes they actually affect
+— for a 5.6 counselor the four sampling settings are inert, and the reasoning
+verifier (`verify-settings.php`) no longer reports `reasoning-effort` as inert
+for them.
+
+**Cost reporting.** Six alias rules (dotted and dashed per variant) above the
+`/^gpt-5/` catch-all, which would otherwise have billed 5.6 at 5.2 rates
+silently. All three share one `gpt-5.6` key whose rate is **provisional,
+borrowed from 5.4** — AI Hub publishes TPM thresholds, not dollars. Three
+distinct models sharing a placeholder, not a verified tier; split it when rates
+publish.
+
+**api-version.** The spec accepts only `2024-10-21` or `2025-04-01-preview`. The
+new rows use the latter. Every pre-existing Azure row is registered with
+`2024-06-01` or `2024-12-01-preview` — outside that enum — and was left alone
+rather than silently rewritten.
+
+**1018 PHP tests**, 82 review-UI tests, 45/45 participant E2E, phpcs + eslint clean.
+
 ### SecureChatAI conformance — SOW "update API calls, request/response handling"
 
 The three items `13 §7` listed as *must change for correctness* / *leaves value on

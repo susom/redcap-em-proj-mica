@@ -401,6 +401,18 @@
                     "name": "GPT-5.4 nano"
                 },
                 {
+                    "value": "gpt-5-6-sol",
+                    "name": "GPT-5.6 Sol (reasoning-class - ignores temperature/top-p)"
+                },
+                {
+                    "value": "gpt-5-6-luna",
+                    "name": "GPT-5.6 Luna (reasoning-class - ignores temperature/top-p)"
+                },
+                {
+                    "value": "gpt-5-6-terra",
+                    "name": "GPT-5.6 Terra (reasoning-class - ignores temperature/top-p)"
+                },
+                {
                     "value": "o3",
                     "name": "o3 (reasoning)"
                 },
@@ -433,42 +445,42 @@
         },
         {
             "key": "gpt-temperature",
-            "name": "GPT Temperature",
+            "name": "GPT Temperature<br><i>Ignored by reasoning-class models (o1, o3-mini, gpt-5, gpt-5-6-*): SecureChatAI drops it, and Azure rejects any value but the default anyway.</i>",
             "required": false,
             "type": "number",
             "default": 0.7
         },
         {
             "key": "gpt-top-p",
-            "name": "GPT Top P",
+            "name": "GPT Top P<br><i>Ignored by reasoning-class models - see GPT Temperature.</i>",
             "required": false,
             "type": "number",
             "default": 0.9
         },
         {
             "key": "gpt-frequency-penalty",
-            "name": "GPT Frequency Penalty",
+            "name": "GPT Frequency Penalty<br><i>Ignored by reasoning-class models - see GPT Temperature.</i>",
             "required": false,
             "type": "number",
             "default": 0.5
         },
         {
             "key": "gpt-presence-penalty",
-            "name": "GPT Presence Penalty",
+            "name": "GPT Presence Penalty<br><i>Ignored by reasoning-class models - see GPT Temperature.</i>",
             "required": false,
             "type": "number",
             "default": 0
         },
         {
             "key": "gpt-max-tokens",
-            "name": "GPT Max Tokens",
+            "name": "GPT Max Tokens<br><i>Reasoning-class models receive this as <code>max_completion_tokens</code>; sending <code>max_tokens</code> to them is a hard 400.</i>",
             "required": false,
             "type": "number",
             "default": 800
         },
         {
             "key": "reasoning-effort",
-            "name": "<b>Reasoning Effort</b>  <br>(only applicable to o1, o3-mini reasoning models)",
+            "name": "<b>Reasoning Effort</b>  <br><i>Applies only to reasoning-class models: o1, o3-mini, gpt-5 and the <code>gpt-5-6-*</code> line. Silently ignored for every other alias.</i>",
             "required": false,
             "type": "dropdown",
             "choices": [
