@@ -17,10 +17,13 @@
             overflow: hidden;
         }
     </style>
-  <script type="module" crossorigin src="/assets/index-CKDLvWNf.js"></script>
+  <script type="module" crossorigin src="/assets/index-CC2csyFH.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/index-8Dt-HGJF.css">
 </head>
 <body>
-<div id="chatbot_ui_container"></div>
+<!-- data-bootstrap is what main.jsx selects on; REDCap supplies a real one. Empty here so
+     `npm run dev` still mounts - the app treats a bootstrap without participant_id as a
+     blocked session, which is the correct standalone-dev state. -->
+<div id="chatbot_ui_container" data-bootstrap="{}"></div>
 </body>
 </html>

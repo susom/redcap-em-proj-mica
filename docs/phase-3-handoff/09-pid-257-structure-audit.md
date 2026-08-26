@@ -98,7 +98,7 @@ proposed here**.
 
 | Referenced token | Exists? | Referenced by | Consequence |
 |---|---|---|---|
-| `[baseline_arm_1]` (**39 references**) | ❌ no such event — this project's events are `day_1_ed`, `month_3`, `month_6`, `month_12`, `weeks_112` (arm-suffixed) | `audit.audit3_b`, `sunday.bd_1..bd_11` and 35 more, `admin.calc_*` | All cross-event piping resolves to nothing |
+| `[baseline_arm_1]` (**39 references**, now 35 — see below) | ❌ no such event — this project's events are `day_1_ed`, `month_3`, `month_6`, `month_12`, `weeks_112` (arm-suffixed) | `audit.audit3_b`, `sunday.bd_1..bd_11` and 35 more, `admin.calc_*` | All cross-event piping resolves to nothing |
 | `[binge]` | ❌ | `screen_eligibility.calc_eligible`, `desc_ineligible`, `desc_ineligible_hazard` | **Eligibility calculation is broken** |
 | `[consentvar1]` | ❌ | `screen_eligibility.calc_eligible` | Same |
 | `[calcrnd]` *(auth)* | ❌ | `check_code.calc_code_check`, `sms_code_check.desc_sms_code_check` | **Passcode verification can never succeed** |
@@ -107,6 +107,15 @@ proposed here**.
 | `[dummy_email]` | ❌ | `admin.calc_esms_valid`, `desc_smry`, `desc_valid_dummy_email` | Email-readiness validation inert |
 | `[time_diff]` | ❌ | `admin.first_monday_1200/1500/1700` | Timezone-offset scheduling inert |
 | `[calc_dquant_threshold]`, `[calc_gset_threshold]` | ❌ | `sunday.gset` | Weekly check-in thresholds inert |
+
+**Partially actioned (2026-08-25).** These findings surfaced to a user as REDCap's
+"syntactical errors in the Branching Logic and/or Calculations" banner on the `admin` form.
+[`19-admin-form-logic-errors.md`](19-admin-form-logic-errors.md) triages the 16 flagged
+fields and **fixed the 4** whose only defect was the stale `[baseline_arm_1]` prefix
+(`admin.calc_month_3/6/12`, `admin.first_monday`) — project-wide `[baseline_arm_1]`
+references are now 35. The `[consent_date]` / `[group]` / `[dummy_email]` / `[time_diff]`
+rows below, and the other 35 `[baseline_arm_1]` references, are **still open** and remain
+researcher-owned as stated above.
 
 **Not defects — intentional cruft.** Some fields are already self-labelled for removal and
 should not be counted as findings: `admin.calc_week_6` and `calc_week_12` are prefixed

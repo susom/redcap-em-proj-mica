@@ -10,6 +10,13 @@
 // Composer selectors are deliberately element-agnostic (textarea | input | contenteditable):
 // the SPA's message box changed from <input> to <textarea> during a UI pass, and a stale
 // selector reads as a backend regression when nothing is broken.
+//
+// Every container selector carries `[data-bootstrap]` for a related reason: `#chatbot_ui_container`
+// is NOT unique on the page. The REDCap Chatbot module is enabled system-wide on this instance and
+// emits an identically-id'd empty div from redcap_every_page_top, ahead of MICA's in the document.
+// A bare `#chatbot_ui_container` therefore resolves to Cappy's container - which is present even
+// before login, so "A1b chat NOT reachable before login" would fail while nothing at all was wrong.
+// Only MICA's container has data-bootstrap. See docs/phase-3-handoff/21-chatbot-mount-collision.md.
 const { chromium, devices } = require('playwright');
 const fs = require('fs');
 const ED = process.argv[2], CONTROL = process.argv[3];
@@ -49,12 +56,12 @@ const login = async (p, cred = 'Testerson') => {
 };
 
 const send = async (p, text, waitMs = 25000) => {
-  const box = p.locator('#chatbot_ui_container textarea, #chatbot_ui_container input:not([type=hidden]), #chatbot_ui_container [contenteditable]').first();
+  const box = p.locator('#chatbot_ui_container[data-bootstrap] textarea, #chatbot_ui_container[data-bootstrap] input:not([type=hidden]), #chatbot_ui_container[data-bootstrap] [contenteditable]').first();
   await box.fill(text);
-  const btns = p.locator('#chatbot_ui_container button');
+  const btns = p.locator('#chatbot_ui_container[data-bootstrap] button');
   await btns.nth((await btns.count()) - 1).click({ force: true });
   await p.waitForTimeout(waitMs);
-  return p.locator('#chatbot_ui_container').innerText();
+  return p.locator('#chatbot_ui_container[data-bootstrap]').innerText();
 };
 
 (async () => {
@@ -66,12 +73,12 @@ const send = async (p, text, waitMs = 25000) => {
     const { p } = await newCtx(browser);
     await p.goto(ED, { waitUntil: 'domcontentloaded' });
     check('A1 gate present on ED session link', (await p.locator('input[name="last_name"]').count()) > 0);
-    check('A1b chat NOT reachable before login', (await p.locator('#chatbot_ui_container').count()) === 0);
+    check('A1b chat NOT reachable before login', (await p.locator('#chatbot_ui_container[data-bootstrap]').count()) === 0);
     await p.screenshot({ path: `${SHOTS}/A1-login.png`, fullPage: true });
 
     await login(p, 'WrongName');
     const stillGated = (await p.locator('input[name="last_name"]').count()) > 0;
-    const noChat = (await p.locator('#chatbot_ui_container').count()) === 0;
+    const noChat = (await p.locator('#chatbot_ui_container[data-bootstrap]').count()) === 0;
     check('A2 wrong credential rejected', stillGated && noChat,
           `gate=${stillGated} chat=${!noChat}`);
     await p.screenshot({ path: `${SHOTS}/A2-wrong.png`, fullPage: true });
@@ -96,11 +103,11 @@ const send = async (p, text, waitMs = 25000) => {
   const { p } = await newCtx(browser);
   await p.goto(ED, { waitUntil: 'domcontentloaded' });
   await login(p);
-  check('B1 login accepted, container present', (await p.locator('#chatbot_ui_container').count()) > 0);
+  check('B1 login accepted, container present', (await p.locator('#chatbot_ui_container[data-bootstrap]').count()) > 0);
 
   await p.waitForTimeout(2500);
   const ui = await p.evaluate(() => {
-    const el = document.getElementById('chatbot_ui_container');
+    const el = document.querySelector('#chatbot_ui_container[data-bootstrap]');
     const txt = el ? el.innerText : '';
     return {
       html: el ? el.innerHTML.length : 0,
@@ -178,7 +185,7 @@ const send = async (p, text, waitMs = 25000) => {
   check('C3 second turn works', /What did I just ask/i.test(t2));
   check('C4 model retained turn-1 context', /2\s*\+\s*2|two plus two|added|sum|math/i.test(t2.split('What did I just ask')[1] || ''));
   const md = await p.evaluate(() => {
-    const el = document.getElementById('chatbot_ui_container');
+    const el = document.querySelector('#chatbot_ui_container[data-bootstrap]');
     return { lists: el.querySelectorAll('ul,ol').length, strong: el.querySelectorAll('strong,em,code,h1,h2,h3').length };
   });
   check('C5 markdown pipeline active', md.lists + md.strong >= 0, `lists=${md.lists} inline=${md.strong}`);
@@ -215,7 +222,7 @@ const send = async (p, text, waitMs = 25000) => {
   console.log('\n=== D. RELOAD / RESTORE (D6 observation) ===');
   await p.goto(ED, { waitUntil: 'domcontentloaded' });
   await p.waitForTimeout(3500);
-  const afterReload = await p.locator('#chatbot_ui_container').innerText().catch(() => '');
+  const afterReload = await p.locator('#chatbot_ui_container[data-bootstrap]').innerText().catch(() => '');
   console.log(`  INFO  transcript visible after reload: ${/2\+2/.test(afterReload)}`);
   console.log(`  INFO  container text after reload: ${JSON.stringify(afterReload.slice(0, 120))}`);
   await p.screenshot({ path: `${SHOTS}/D-reload.png`, fullPage: true });
@@ -230,10 +237,10 @@ const send = async (p, text, waitMs = 25000) => {
     await m.goto(ED, { waitUntil: 'domcontentloaded' });
     await login(m);
     await m.waitForTimeout(2500);
-    check('F1 container present on mobile', (await m.locator('#chatbot_ui_container').count()) > 0);
+    check('F1 container present on mobile', (await m.locator('#chatbot_ui_container[data-bootstrap]').count()) > 0);
     const overflow = await m.evaluate(() => ({
       docW: document.documentElement.scrollWidth, winW: window.innerWidth,
-      composerVisible: (() => { const i = document.querySelector('#chatbot_ui_container textarea, #chatbot_ui_container input:not([type=hidden]), #chatbot_ui_container [contenteditable]');
+      composerVisible: (() => { const i = document.querySelector('#chatbot_ui_container[data-bootstrap] textarea, #chatbot_ui_container[data-bootstrap] input:not([type=hidden]), #chatbot_ui_container[data-bootstrap] [contenteditable]');
         if (!i) return false; const r = i.getBoundingClientRect();
         return r.top >= 0 && r.bottom <= window.innerHeight + 1; })(),
     }));
@@ -265,23 +272,23 @@ const send = async (p, text, waitMs = 25000) => {
   // participant_name/participant_email. An R01 project has neither field, so a participant who had
   // just finished was shown a login form they could not possibly pass.
   const before = p.url();
-  await p.locator('#chatbot_ui_container button:has-text("End Session")').first()
+  await p.locator('#chatbot_ui_container[data-bootstrap] button:has-text("End Session")').first()
     .click({ force: true }).catch(() => {});
   await p.waitForTimeout(600);
   // The confirmation sheet, then the confirm itself.
-  await p.locator('#chatbot_ui_container button:has-text("End session")').last()
+  await p.locator('#chatbot_ui_container[data-bootstrap] button:has-text("End session")').last()
     .click({ force: true }).catch(() => {});
   await p.waitForTimeout(8000);
 
   const after = await p.evaluate(() => {
-    const el = document.getElementById('chatbot_ui_container');
+    const el = document.querySelector('#chatbot_ui_container[data-bootstrap]');
     const txt = el ? el.innerText : '';
     return {
       text: txt,
       url: window.location.href,
       // A login form of any kind here is the bug.
       loginFields: document.querySelectorAll(
-        '#chatbot_ui_container input[type=password], #chatbot_ui_container input[type=email]',
+        '#chatbot_ui_container[data-bootstrap] input[type=password], #chatbot_ui_container[data-bootstrap] input[type=email]',
       ).length,
       composers: el
         ? el.querySelectorAll('textarea, input:not([type=hidden]), [contenteditable]').length
@@ -333,8 +340,8 @@ const send = async (p, text, waitMs = 25000) => {
   await p.goto(ED, { waitUntil: 'domcontentloaded' });
   await p.waitForTimeout(3000);
   const reentry = await p.evaluate(() => ({
-    composers: document.querySelectorAll('#chatbot_ui_container textarea, #chatbot_ui_container input:not([type=hidden]), #chatbot_ui_container [contenteditable]').length,
-    text: (document.querySelector('#chatbot_ui_container')?.innerText || ''),
+    composers: document.querySelectorAll('#chatbot_ui_container[data-bootstrap] textarea, #chatbot_ui_container[data-bootstrap] input:not([type=hidden]), #chatbot_ui_container[data-bootstrap] [contenteditable]').length,
+    text: (document.querySelector('#chatbot_ui_container[data-bootstrap]')?.innerText || ''),
   }));
   check('E9 a finished session cannot be re-entered from the same link', reentry.composers === 0,
     `composers=${reentry.composers}`);

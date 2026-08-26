@@ -19,7 +19,10 @@
     </style>
 </head>
 <body>
-<div id="chatbot_ui_container"></div>
+<!-- data-bootstrap is what main.jsx selects on; REDCap supplies a real one. Empty here so
+     `npm run dev` still mounts - the app treats a bootstrap without participant_id as a
+     blocked session, which is the correct standalone-dev state. -->
+<div id="chatbot_ui_container" data-bootstrap="{}"></div>
 <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>

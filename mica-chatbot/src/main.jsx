@@ -18,7 +18,11 @@ import { MantineProvider } from '@mantine/core';
 import {AppRouter} from "./components/appRouter/appRouter.jsx";
 // Strict mode will double invoke lifecycle methods for dev purposes :
 
-ReactDOM.createRoot(document.getElementById('chatbot_ui_container')).render(
+// Selected by attribute, not by id: `#chatbot_ui_container` is not unique on a REDCap survey page.
+// The REDCap Chatbot module emits an identically-id'd empty div earlier in the document, so
+// getElementById() mounted this app inside Cappy's container, on top of Cappy's own React root.
+// Only MICA's container carries data-bootstrap. Keep in step with MICA.php's inline bootstrap.
+ReactDOM.createRoot(document.querySelector('#chatbot_ui_container[data-bootstrap]')).render(
   <React.StrictMode>
       <ChatContextProvider>
           <MantineProvider>

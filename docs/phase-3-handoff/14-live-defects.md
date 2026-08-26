@@ -491,6 +491,74 @@ Cappy's convention is the target: metadata only — role + content **length**
 
 ---
 
+### D23 — The provider rejects the SafetyScan schema: **no post-session scan can ever succeed** on `gpt-5-6-sol`
+
+**Severity:** blocking (safety-critical — the scan is the mechanism that surfaces self-harm
+disclosures for review, and it fails 100% of the time)
+**Status:** open. Found 2026-08-25 by capturing the outgoing body; see `20-llm-request-capture.md`.
+
+The pinned output schema uses `uniqueItems`, and Azure OpenAI structured outputs does not allow it.
+Every SafetyScan call returns HTTP 400 before the model sees anything:
+
+```json
+{"error":{"message":"Invalid schema for response_format 'response': In context=('properties','findings','items','properties','recommended_actions'), 'uniqueItems' is not permitted.","type":"invalid_request_error","param":"response_format"}}
+```
+
+`uniqueItems: true` appears twice in `handoff/MICA_safetyscan_postsession_model_output_schema.json`
+(lines 102 and 118 — `recommended_actions` and `recommended_notification_targets`) and four more
+times in `handoff/MICA_safetyscan_notification_policy_schema.json`. The provider reports the first one
+it reaches, so removing only line 102 will move the error, not clear it.
+
+#### Where it lands, traced through the code
+
+The fail-safe design holds — the failure is visible as a task, it is never mistaken for a clean
+screen — but it costs nine rejected provider calls per session and names the wrong cause:
+
+| Step | Where | Result |
+|---|---|---|
+| 3 identical requests, all 400 | `SecureChatAI.php:435` (`$retries = 2`) | `callAI()` does not throw; it returns `['error' => true, 'type' => 'NETWORK_ERROR', 'message' => 'Error after 2 retries: HTTP error: 400 (response body omitted; length=…)']` |
+| the caller reads that error | `SecureChatSafetyScanCaller.php:115-125` → `classifyErrorText()` | no `timeout`/`content_filter`/`refusal` needle matches, so it falls through to **`service_error`** |
+| the state machine classifies it | `ScanJobStateMachine.php:59` — `service_error` ∈ `TRANSIENT` | job **requeued** with 60s, then 240s backoff |
+| attempts run out | `safetyscan-max-attempts`, unset on PID 257 → default **3** | job → **`manual_review_required`**, which is a visible task and correctly not a negative screen |
+
+So one completed session burns **3 job attempts × 3 `callAI` tries = 9 rejected requests** over about
+five minutes before a human is asked to read the transcript by hand. Every session, forever, on every
+project pointed at this alias.
+
+#### Why nothing had noticed
+
+The `service_error` classification is the problem: it says *transient*, and this is the opposite of
+transient. Retrying a schema the provider will never accept is a guaranteed-loss loop, and the rows
+left behind invite exactly the wrong diagnosis — "the AI Hub is flaky," not "our schema is invalid."
+
+The 400's message is the only place the real cause is ever stated, and it is discarded at that one
+point on purpose: `executeAPICall` omits the response body from the exception because it can echo PHI.
+So the `scan_run` row records `service_error` plus `HTTP error: 400 (response body omitted;
+length=…)` — enough to know the provider refused, never enough to learn it was `uniqueItems`. No log
+level would have helped.
+
+It surfaced as three byte-identical 8777-byte captures one second apart (`20260825-17040{0,1,2}`),
+after a real session was completed through the SPA. Replaying one captured curl returned the 400
+above — deterministic, not transient.
+
+The existing verifier does not catch it: `scripts/verify-safetyscan.php` passes because it drives the
+mock path (`scan-mock-mode`), which never builds a `response_format`. Any coverage that would have
+caught this has to reach the provider with the real schema.
+
+#### Fixing it is not a one-line edit
+
+The schema is hash-pinned. `ArtifactRegistry` verifies the bytes against `handoff/manifest.json` on
+every read and throws `ArtifactIntegrityException` on a mismatch, and the hash is recorded per run as
+`output_schema_sha256` in `redcap_entity_mica_scan_run`. So a fix is: strip `uniqueItems`, re-pin the
+manifest hash, and accept that runs before and after the change carry different schema hashes — which
+is the pinning mechanism working as designed, not a problem to hide. Uniqueness would then be enforced
+where it can be, in `ScanRunner`'s post-hoc validation (`:248`) rather than by the provider.
+
+Worth deciding at the same time whether `notification_policy_schema`'s four occurrences are ever sent
+to a provider or are validation-only; if the former, they fail the same way.
+
+---
+
 ## B. Functional defects
 
 ### D6 — Restoring a session does not restore the model's context

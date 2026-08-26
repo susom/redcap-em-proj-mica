@@ -648,7 +648,19 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         (function(){
         window.mica_jsmo_module = window.mica_jsmo_module || %s;
 
-        var root = document.getElementById('chatbot_ui_container');
+        // `#chatbot_ui_container` is NOT unique on the page, so getElementById() was the bug.
+        //
+        // The REDCap Chatbot module (`redcap_chatbot`, enabled system-wide on this instance) emits
+        // its own `<div id="chatbot_ui_container"></div>` from redcap_every_page_top, roughly 90KB
+        // earlier in the document than ours. getElementById() returns the FIRST match, so this read
+        // `.dataset.bootstrap` off Cappy's empty div, got undefined, and set mica_bootstrap = {} -
+        // whereupon useAuth() saw no participant_id and blocked the session with "This chat could
+        // not be opened because the session did not load." on a link that was perfectly valid.
+        //
+        // The attribute is the discriminator: only MICA's container carries data-bootstrap. It also
+        // steps around the second, in-app duplicate of this id in views/PostSession/postsession.jsx.
+        // mica-chatbot/src/main.jsx must use the same selector, for the same reason.
+        var root = document.querySelector('#chatbot_ui_container[data-bootstrap]');
         var b = {};
         try { b = JSON.parse(root.dataset.bootstrap || '{}'); } catch(e){ b = {}; }
         window.mica_bootstrap = b;
@@ -675,7 +687,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         function tryMount(){
             blockSubmit();
             if (window.renderMicaApp && typeof window.renderMicaApp === 'function') {
-            window.renderMicaApp('#chatbot_ui_container');
+            window.renderMicaApp('#chatbot_ui_container[data-bootstrap]');
             unmask();  // reveal after app mounts
             return true;
             }

@@ -320,7 +320,7 @@ renumbers on any Online Designer reorder or data-dictionary save.
 | Item | Blocker |
 |---|---|
 | **Twilio project configuration** (SID / token / from-number, `twilio_delivery_preference_field_map` → `baseline1.choice_fup_delivery`) | Needs the study's approved Twilio credentials. `twilio_enabled = 0` on PID 257; not blocked at system level (`twilio_enabled_global = 1`). |
-| **ASI on `mica_booster_session`** for the Month-3 window | Depends on the window definition (`booster-window-*`) landing in Stage 2, and on `admin.calc_month_3`, which currently references the non-existent event `[baseline_arm_1]` (`09 §5`). |
+| **ASI on `mica_booster_session`** for the Month-3 window | Depends on the window definition (`booster-window-*`) landing in Stage 2. The `admin.calc_month_3` blocker is **cleared** as of 2026-08-25 — its stale `[baseline_arm_1]` prefix was dropped and the field now computes (`19 §6`); it needs a `randomization_date` value on the record to produce a date. |
 
 ### 6.2 Module-side work still outstanding
 *(Items 1–3 below remain; the module changes that WERE made are in §9.)*
