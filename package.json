@@ -16,7 +16,8 @@
   "scripts": {
     "e2e:install": "npm install && npx playwright install chromium",
     "e2e:review": "node e2e/review-dashboard.js",
-    "e2e:participant": "node e2e/full-path.js"
+    "e2e:participant": "node e2e/full-path.js",
+    "e2e:config": "node e2e/module-config.js"
   },
   "devDependencies": {
     "playwright": "^1.62.1"

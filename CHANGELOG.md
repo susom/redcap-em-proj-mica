@@ -224,6 +224,99 @@ typing into a session that correctly no longer has a composer), and `E9`/`E10` p
 that a finished session cannot be re-entered from the same link and says so in
 words.
 
+### The validated SafetyScan prompt is now visible in the module's settings
+
+`safetyscan-prompt-addendum` asked an administrator to write text that is appended to
+a prompt they had never been shown. The instructions in force were a file in
+`handoff/`, readable by whoever had a shell on the server and by nobody else, while
+the setting's own label described them in prose and told the reader not to contradict
+them — which is not something you can do blind. The prompt now renders **read-only,
+in the configuration dialog, directly above the field that appends to it**, collapsed
+by default, with the artifact's full SHA-256 beside it.
+
+It is rendered from `ArtifactRegistry`, not from `config.json`. Pasting 4.4 KB of a
+hash-pinned artifact into a `descriptive` setting's `name` would have created a second
+copy with no pin on it, free to drift from `handoff/manifest.json` the moment either
+side was edited and displayed with equal confidence either way — the exact failure the
+registry exists to prevent. `config.json` therefore contains only an **anchor**: a
+`descriptive` setting that reserves the position, whose label
+`redcap_module_configuration_settings()` replaces with the verified artifact at render
+time. So the dialog cannot show a prompt other than the one a scan would send, and if
+the hook ever stops running the fallback text says so in place of the prompt rather
+than showing stale text. `PinnedPromptViewTest` pins the anchor's key, its type and
+its position from both ends.
+
+Two things it refuses to do. A hash mismatch renders a red warning and **no prompt
+text**: bytes that failed their pin are not the validated prompt, and showing them as
+if they were is worse than showing nothing — the same read is failing inside
+`ScanRunner` at that moment, so the notice says scans are down rather than implying a
+display glitch. And nothing escapes: `manager/ajax/get-settings.php` is a JSON
+endpoint whose output *is* the whole settings dialog, so an uncaught throwable there
+would leave an administrator with no editable configuration at all. Every failure is
+caught and rendered as content.
+
+The addendum's own label lost the paragraph the panel now covers and points up at it
+instead. The escaping is not decorative even though today's artifact contains no
+HTML-special character: `get-settings.php` explicitly declines to escape the config
+("It breaks HTML in module setting names") and `globals.js` interpolates the label
+directly, so the next re-pinned prompt containing a `<` would otherwise break the
+dialog's markup. `ENT_SUBSTITUTE` is there for a quieter version of the same thing —
+without it, invalid UTF-8 makes `htmlspecialchars()` return `''`, and the endpoint's
+`JSON_PARTIAL_OUTPUT_ON_ERROR` would hand the dialog a blank panel and no error.
+
+New E2E: `e2e/module-config.js`, 43 checks — 20 × desktop and mobile plus a save
+round-trip — signed in as a **design-rights** user rather than an admin, because
+`hasProjectSettingSavePermission()` short-circuits to `true` for a super user and so an
+admin run cannot tell you whether an ordinary study designer can open the dialog at
+all. It exists because `descriptive` is a client-side-only setting type: whether a
+`<details>` nested inside a `<label>` still toggles is not answerable from PHP. Its
+width check is *differential* — REDCap's own settings modal is 866px in a 390px
+viewport and clips every setting equally, with the panel, without it, and with the
+whole table hidden, so an absolute assertion there fails for a reason the module cannot
+cause.
+
+The save path is checked in both directions, because adding a key to the section is
+exactly the change that could break saving for its neighbours. `C21`–`C23` type an
+addendum, save, confirm it round-trips and that the panel still renders afterwards, and
+restore the original value. The other direction is a residue check in
+`verify-settings.php` §10: a display-only setting must never own a stored row, since
+REDCap's save path reads `$_POST[$key]` for every declared key and a permanently-empty
+invisible row is the same shape as the three orphaned twilio rows this project already
+had to clean up. That check was written, planted with a row, and found to report
+all-clear — `getModuleDirectoryName()` returns `proj_mica_v9.9.9` while
+`directory_prefix` holds `proj_mica`, so the join matched nothing and the check passed
+for every input. It now uses `$module->PREFIX` and fails on a planted row.
+
+### The SafetyScan request body is now inspectable without a live scan
+
+`safetyscan-payload-sample.php` prints the exact body a scan sends — the composed system
+prompt, the canonical transcript, and the wrapped `response_format` — at all three
+levels: what MICA hands to `callAI()`, what SecureChatAI's parameter filter leaves, and
+the bytes on the wire. Snapshot and commentary in
+[`23-safetyscan-payload.md`](docs/phase-3-handoff/23-safetyscan-payload.md).
+
+The two existing options were both bad. Arming `capture-llm-payload.php` on a live scan
+writes PHI to disk, and its `shape` mode covers the counselor path only and deliberately
+prints no prompt text. Hand-writing a sample starts drifting the moment the prompt is
+re-pinned or SecureChatAI's filter changes. So every value is derived from live code —
+four private methods reached by reflection, including `ScanRunner::resolvePrompt()` so
+the addendum delimiters are never retyped — and the transcript is **synthetic and
+validated against the pinned input schema**, because the request body *is* the
+transcript. One step is replicated rather than called and says so in both the script and
+the doc: `GenericModelRequest::sendRequest()` wraps `json_schema` into `response_format`
+inside the method that performs the HTTP request, so it cannot be invoked without calling
+the provider.
+
+Three things it makes visible that reading the code does not. PID 257 runs
+**`gpt-5-6-sol`, not Gemini** — that alias *is* in SecureChatAI's `json_schema`
+allowlist, so `response_format` is genuinely sent and the append-the-schema-to-the-prompt
+fallback does not fire on this project today. No sampling parameters reach the call at
+all: a reasoning alias makes `filterDefaultParamsForModel()` discard the merged
+parameters and rebuild from four keys, so there is no `temperature`, `top_p`, penalty or
+`stop` in the body. And `reasoning_effort` comes from SecureChatAI's own system setting,
+not MICA's project-level `reasoning-effort`, because the SafetyScan caller passes only
+`messages` and `json_schema` — the project setting belongs to the counselor path.
+
 ### `safetyscan-prompt-addendum` — study guidance appended to the analysis prompt
 
 New project setting carrying extra instructions for the post-session safety

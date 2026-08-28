@@ -632,6 +632,62 @@ $contradictions === []
         . 'without filling in a field the label told them to skip.'
     );
 
+/**
+ * A `descriptive` setting is a label with no input, so it must never own a stored value.
+ *
+ * This is a residue check, not a correctness one. `safetyscan-prompt-pinned-view` exists only to
+ * reserve the position the pinned-prompt panel renders into (see PinnedPromptView), and REDCap's save
+ * path reads `$_POST[$key]` for every declared key - so whether a value-less setting is skipped or
+ * written as an empty row is the framework's business, not something the module states. A row here
+ * would be permanent, invisible in the dialog, and the same shape as the three orphaned twilio rows
+ * this project already had to clean up: configuration nobody can see and nobody reads.
+ */
+$descriptive = [];
+foreach (['project-settings', 'system-settings'] as $section) {
+    foreach ($cfg[$section] ?? [] as $s) {
+        if (($s['type'] ?? '') === 'descriptive') {
+            $descriptive[] = (string) $s['key'];
+        }
+    }
+}
+
+if ($descriptive === []) {
+    note_('descriptive settings', 'none declared');
+} else {
+    $stored = [];
+    foreach ($descriptive as $key) {
+        /*
+         * getProjectSetting() cannot tell "absent" from "stored empty", and stored-empty is exactly
+         * the residue being looked for - so this reads the settings table itself.
+         *
+         * `$module->PREFIX`, NOT getModuleDirectoryName(): the latter returns the versioned
+         * directory (`proj_mica_v9.9.9`) while `directory_prefix` holds `proj_mica`, so joining on it
+         * matches nothing and the check passes for every input. Found by planting a row and watching
+         * the check report all-clear - the same reason the twilio check above names the prefix
+         * literally.
+         */
+        $rows = $module->query(
+            'SELECT COUNT(*) AS n FROM redcap_external_module_settings s
+               JOIN redcap_external_modules m ON m.external_module_id = s.external_module_id
+              WHERE m.directory_prefix = ? AND s.`key` = ?',
+            [$module->PREFIX, $key]
+        );
+        if ((int) ($rows->fetch_assoc()['n'] ?? 0) > 0) {
+            $stored[] = $key;
+        }
+    }
+
+    $stored === []
+        ? ok_('descriptive settings', implode(', ', $descriptive) . ' - label only, no stored value')
+        : bad_(
+            'descriptive settings',
+            'a display-only setting owns a stored value: ' . implode(', ', $stored),
+            'Delete the row. A descriptive setting renders no input, so the value can only have '
+            . 'arrived from an older config.json where the key had a real type - it is now '
+            . 'unreachable from the dialog and read by nothing.'
+        );
+}
+
 $requiredKeys = [];
 foreach ($cfg['project-settings'] ?? [] as $s) {
     if (($s['required'] ?? false) === true) {

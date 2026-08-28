@@ -14,6 +14,9 @@ require_once "classes/SessionPseudoId.php";
 // Required explicitly rather than left to the composer autoloader below: the integrity gate on the
 // hash-pinned handoff artifacts must not become unreachable just because vendor/ is absent.
 require_once "classes/ArtifactRegistry.php";
+// Reads that registry to render the validated SafetyScan prompt into the configuration dialog.
+// Required beside it for the same reason: the settings page must render with vendor/ absent.
+require_once "classes/PinnedPromptView.php";
 // Same reason, plus one of its own: redcap_module_system_enable() runs while the module is being
 // enabled, and an unloadable class there is reported as a bare fatal with no cause attached.
 require_once "classes/EntitySchemaManager.php";
@@ -263,6 +266,33 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         }
 
         return $link;
+    }
+
+    /**
+     * Render the validated SafetyScan prompt into the configuration dialog, read-only.
+     *
+     * Not a hook and not declared in `config.json`: the framework calls this by `method_exists()`
+     * from `ExternalModules/manager/ajax/get-settings.php`, once per dialog open, after it has
+     * assembled the section and before it JSON-encodes it. So this is the one place a setting's label
+     * can be built from something other than a literal - which is what surfacing a hash-pinned
+     * artifact requires. See PinnedPromptView for why the text is not simply pasted into
+     * `config.json`.
+     *
+     * `$project_id` is null on the control-center path, and the section handed over there is
+     * `system-settings`, which does not contain the anchor key - so PinnedPromptView returns the
+     * array untouched and no branch on the project is needed. Nothing else here is project-scoped:
+     * the prompt is the same artifact on every project.
+     *
+     * The delegate catches its own failures and renders them as content, on purpose. This method's
+     * return value *is* the module's entire settings dialog; an exception escaping it would truncate
+     * the endpoint's JSON and leave an administrator with no editable configuration at all.
+     *
+     * @param array<int,array<string,mixed>> $settings
+     * @return array<int,array<string,mixed>>
+     */
+    public function redcap_module_configuration_settings($project_id, $settings)
+    {
+        return (new PinnedPromptView(new ArtifactRegistry()))->apply(is_array($settings) ? $settings : []);
     }
 
     /**

@@ -193,8 +193,14 @@
             "type": "number"
         },
         {
+            "key": "safetyscan-prompt-pinned-view",
+            "name": "<b>SafetyScan analysis prompt — the validated instructions in force</b><br><i>The hash-pinned prompt could not be loaded. If this text is what you see, the module is serving <code>config.json</code>'s fallback rather than the artifact: <code>redcap_module_configuration_settings()</code> did not run.</i>",
+            "required": false,
+            "type": "descriptive"
+        },
+        {
             "key": "safetyscan-prompt-addendum",
-            "name": "<b>SafetyScan analysis prompt — additional study guidance</b><br><i>Extra instructions for the post-session safety analysis, e.g. a concern this study wants called out, or local escalation wording. <b>Optional; blank is the normal state.</b><br><br>This is <b>appended to</b> the hash-pinned prompt the research team validated (v1.1: 120-case suite, 100% critical detection, 100% quote traceability) — it never replaces it. The validated prompt is always sent in full, and the two things it guarantees are restated <i>after</i> your text and take precedence over it: the output must satisfy the pinned schema, and every quote must be copied verbatim from the transcript. So guidance here cannot remove those, and a scan cannot be turned into an unvalidated one by this field alone.<br><br>What it <i>can</i> do is pull the model's attention: instructions that conflict with the validated prompt, or that ask for a different output shape, may cost you findings the validated prompt would have caught, or fail into <code>manual_review_required</code>. Write additions, not corrections — and keep it short.<br><br>Every scan run records the SHA-256 of the composed prompt and of this addendum, so a finding always says exactly what produced it.</i>",
+            "name": "<b>SafetyScan analysis prompt — additional study guidance</b><br><i>Extra instructions for the post-session safety analysis, e.g. a concern this study wants called out, or local escalation wording. <b>Optional; blank is the normal state.</b> <b>Read the validated prompt above before writing anything here</b> — this text is appended to it, so it is the thing your words have to sit alongside.<br><br>What you write cannot remove either of the validated prompt's two guarantees — output matching the pinned schema, and every quote copied verbatim from the transcript; they are restated after your text and take precedence over it. What it <i>can</i> do is pull the model's attention: instructions that conflict with the validated prompt, or that ask for a different output shape, may cost you findings the validated prompt would have caught, or fail into <code>manual_review_required</code>. Write additions, not corrections — and keep it short.<br><br>Every scan run records the SHA-256 of the composed prompt and of this addendum, so a finding always says exactly what produced it.</i>",
             "required": false,
             "type": "textarea"
         },
