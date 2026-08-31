@@ -42,7 +42,8 @@
         "control-center": []
     },
     "no-auth-pages": [
-        "pages/chatbot"
+        "pages/chatbot",
+        "pages/sessionHandoff"
     ],
     "no-auth-ajax-actions": [
         "callAI",
@@ -191,6 +192,24 @@
             "name": "<b>Booster session window (days)</b><br><i>How long a Month-3 booster session stays open, from the participant's first message. Default 14. Should normally match the booster host survey's link time limit.</i>",
             "required": false,
             "type": "number"
+        },
+        {
+            "key": "ed-session-url-field",
+            "name": "<b>Field that receives the ED Day-1 session link</b><br><i>Blank uses <code>ed_session_url</code>. <b>The field's existence is the on/off switch</b> — if the project has no such field, nothing is written and nothing is logged.<br><br>At randomization the module resolves which arm's event hosts the Day-1 session, mints that record's link, and writes it here. It is written to the <b>earliest event that field's form is designated to</b> — arm 1 Day 1 on the R01 structure — because that is the event every record passes through before randomization, so a survey's <i>Redirect to a URL</i> can pipe a bare <code>[ed_session_url]</code> with no event prefix and no knowledge of the arm.<br><br>A <b>Standard Care</b> record resolves to no session and <b>never</b> receives a URL. That is not a failure; a link there would be a control participant receiving the intervention. Mark the field <code>@READONLY</code> — a hand-edited value is what a redirect would follow.</i>",
+            "required": false,
+            "type": "text"
+        },
+        {
+            "key": "session-handoff-text",
+            "name": "<b>Wording shown while a participant waits for their session</b><br><i>Blank uses a built-in sentence. Shown on the handoff page a participant reaches if they finish the screening surveys <b>before</b> the allocation exists — so it should be the study's approved wording for \"someone will be with you shortly\".<br><br>Only this waiting message is configurable. The message a participant sees when they have <b>no</b> session is fixed on purpose: it is the generic completion sentence, because saying anything more specific would tell a Standard Care participant which arm they are in.</i>",
+            "required": false,
+            "type": "textarea"
+        },
+        {
+            "key": "stamp-randomization-date-field",
+            "name": "<b>Stamp the randomization date into this field</b><br><i><b>Blank means off, which is the default.</b> Name a field here and the module writes today's date into it when it stores the session link — but <b>only when that field is empty</b>, so a date a human recorded is never overwritten.<br><br>This exists because automating randomization takes the CRC off the form that used to carry <code>randomization_date</code> by hand, and that date is the anchor for <b>every reminder ladder (alerts 02–14)</b>. Left blank with randomization automated, those alerts have no anchor. Stamping a trial-critical date is a study decision, which is why it is off until someone names the field.</i>",
+            "required": false,
+            "type": "text"
         },
         {
             "key": "safetyscan-prompt-pinned-view",

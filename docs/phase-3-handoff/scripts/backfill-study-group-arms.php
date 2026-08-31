@@ -76,8 +76,25 @@ foreach ($data as $record => $events) {
         $status = $mica->ensureRecordInAssignedArm($pid, $record);
     }
 
+    /*
+     * The ED session link, for the same reason this script exists at all: the hook that writes it
+     * fires only on UI saves and survey submits, so a record randomized by import sits in the right
+     * arm with an empty `ed_session_url` - and a survey redirect piping that field would then send
+     * the participant nowhere. Reported as a second column rather than folded into $status, because
+     * "already in its arm" and "link already written" are different facts and a run that fixes only
+     * one of them should say so.
+     *
+     * Runs even when the arm status is `already-present`: ensureEdSessionLink() is keyed on the
+     * field being empty, not on materialization having just happened, so it self-heals records that
+     * predate the feature.
+     */
+    $linkStatus = $dryRun ? '(dry-run)' : $mica->ensureEdSessionLink($pid, $record);
+    if (!$dryRun) {
+        $tallies['link:' . $linkStatus][] = $record;
+    }
+
     $tallies[$status][] = $record;
-    printf("  %-18s %s (study_group=%s)\n", $status, $record, $group);
+    printf("  %-18s %-14s %s (study_group=%s)\n", $status, $linkStatus, $record, $group);
 }
 
 echo "\n--- summary ---\n";
@@ -86,7 +103,15 @@ foreach ($tallies as $status => $records) {
 }
 if (empty($tallies)) echo "  no records in this project\n";
 
-$bad = array_merge($tallies['bad-arm'] ?? [], $tallies['save-failed'] ?? [], $tallies['no-field'] ?? []);
+$bad = array_merge(
+    $tallies['bad-arm'] ?? [], $tallies['save-failed'] ?? [], $tallies['no-field'] ?? [],
+    // A randomized record whose link could not be minted is a stuck handoff, so it counts.
+    // `link:not-randomized` and `link:no-session-in-arm` deliberately do not - the first cannot
+    // happen here (this loop skips unrandomized records) and the second is Standard Care, which is
+    // correct and permanent. `link:no-field` means the project never opted in.
+    $tallies['link:mint-failed'] ?? [], $tallies['link:save-failed'] ?? [],
+    $tallies['link:bad-group'] ?? [], $tallies['link:no-host'] ?? []
+);
 if ($bad) {
     echo "\n  needs attention: " . implode(', ', $bad) . "\n";
     exit(1);

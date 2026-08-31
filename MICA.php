@@ -17,6 +17,8 @@ require_once "classes/ArtifactRegistry.php";
 // Reads that registry to render the validated SafetyScan prompt into the configuration dialog.
 // Required beside it for the same reason: the settings page must render with vendor/ absent.
 require_once "classes/PinnedPromptView.php";
+// Resolves which arm's event hosts a record's Day-1 session, for the link written at randomization.
+require_once "classes/EdSessionLink.php";
 // Same reason, plus one of its own: redcap_module_system_enable() runs while the module is being
 // enabled, and an unloadable class there is reported as a bare fatal with no cause attached.
 require_once "classes/EntitySchemaManager.php";
@@ -764,15 +766,343 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
         $running = true;
         try {
+            // Materialize FIRST. `REDCap::getSurveyLink()` refuses to mint for a record with no data
+            // in an event of the target arm, so the link write below depends on this having run.
             $this->ensureRecordInAssignedArm($project_id, $record);
         } catch (\Throwable $t) {
             // Never let this break the CRC's data entry.
             $this->log('arm materialization threw', [
                 'record' => (string) $record, 'error' => $t->getMessage(),
             ]);
+        }
+
+        try {
+            $this->ensureEdSessionLink($project_id, $record);
+        } catch (\Throwable $t) {
+            // Separate try, same reason, and deliberately not chained to the one above: a link that
+            // cannot be minted must not make the arm materialization look like it failed, and an
+            // arm that failed to materialize should still let this run and report its own outcome.
+            $this->log('ED session link write threw', [
+                'record' => (string) $record, 'error' => $t->getMessage(),
+            ]);
         } finally {
             $running = false;
         }
+    }
+
+    /**
+     * Mint this record's Day-1 session link and store it where a CRC and a survey redirect can read it.
+     *
+     * ## Why it runs here
+     *
+     * REDCap's own randomization trigger fires at `Classes/DataEntry.php:6710` and this hook is
+     * called 25 lines later at `:6735`, inside the same `saveRecord()`. So when randomization is
+     * configured to trigger on the BL survey, the allocation is already written by the time this
+     * runs: the participant's own submit randomizes them, materializes their arm, and mints their
+     * link in one request. Nothing has to poll and nothing has to wait for a CRC.
+     *
+     * ## Why the URL is stored rather than computed where it is used
+     *
+     * The session instrument is designated to one event **per intervention arm**, so there is no
+     * static expression for "this record's session". REDCap's `[survey-url:mica_ed_session]`
+     * resolves against the *context* event (`Piping.php:1896`), which in the participant chain is
+     * the arm-1 event where the instrument does not exist, and naming an event explicitly hardcodes
+     * an arm. Resolving once per record and storing the result is what lets a survey's redirect be
+     * a bare `[ed_session_url]` with no arm knowledge at all. See EdSessionLink.
+     *
+     * ## What it refuses to do
+     *
+     * A Standard Care record resolves to `no-session-in-arm` and **no URL is written, ever**. That
+     * is the same rule that keeps arm materialization to the assigned arm only (see above): a link
+     * here would be a control participant receiving the intervention. It is not logged as a problem
+     * because it is the correct permanent state for that arm.
+     *
+     * Public for the same reason `ensureRecordInAssignedArm()` is: this hook only fires on UI saves
+     * and survey submits, so imports and API writes need the logic runnable on demand
+     * (docs/phase-3-handoff/scripts/backfill-study-group-arms.php).
+     *
+     * @return string one of: no-field, no-host, not-randomized, bad-group, no-session-in-arm,
+     *                mint-failed, no-write-event, already-set, written, refused-existing-value,
+     *                save-failed. The three non-resolving allocation states return the write outcome
+     *                for the handoff fallback instead, prefixed with the state that caused it.
+     */
+    public function ensureEdSessionLink($project_id, $record): string
+    {
+        $proj = new \Project($project_id);
+
+        /*
+         * The field's existence IS the on/off switch, deliberately - no separate checkbox.
+         * A study that has not added the field has not asked for this, and a study that has cannot
+         * forget to also tick something. Same shape as `study-group-field`: configurable, with the
+         * conventional name as the default.
+         */
+        $urlField = trim((string) ($this->getProjectSetting('ed-session-url-field', $project_id) ?: 'ed_session_url'));
+        if (!isset($proj->metadata[$urlField])) {
+            return 'no-field';
+        }
+
+        $host = EdSessionLink::hostInstrument(
+            SessionHostMap::fromSetting($this->getProjectSetting('session-host-map', $project_id))
+        );
+        if ($host === null) {
+            // A map with no baseline session at all. Worth saying, because the map is a setting and
+            // this is the one misconfiguration that silently disables the whole feature.
+            $this->log('ED session link skipped: no baseline session host is mapped', [
+                'record' => (string) $record,
+            ]);
+            return 'no-host';
+        }
+
+        $groupField = trim((string) ($this->getProjectSetting('study-group-field', $project_id) ?: 'study_group'));
+        $resolved = EdSessionLink::resolve(
+            $this->firstNonEmptyValue($project_id, $record, $groupField),
+            $host,
+            $proj->eventsForms ?? [],
+            $proj->eventInfo ?? []
+        );
+
+        $writeEventId = $this->firstEventHostingForm($proj, $proj->metadata[$urlField]['form_name']);
+        if (!$writeEventId) {
+            return 'no-write-event';
+        }
+
+        if ($resolved['status'] === EdSessionLink::BAD_GROUP) {
+            // The only outcome here that means "a human should look at this".
+            $this->log('ED session link skipped: allocation does not name a usable arm', [
+                'record' => (string) $record, 'field' => $groupField,
+            ]);
+        }
+
+        if ($resolved['status'] !== EdSessionLink::RESOLVED) {
+            /*
+             * There is no session for this record, so the field gets the handoff page instead of
+             * staying empty - and that is not tidiness, it is the difference between a message and a
+             * blank screen. The handoff survey's redirect pipes this field, and REDCap tests the
+             * redirect template *before* piping (`Surveys/index.php:1833`), so an empty value still
+             * reaches `redirect('')`. Measured in a browser: `302` with `Location:` empty and a body
+             * of zero bytes. A participant who finishes the chain sees nothing at all.
+             *
+             * `no-session-in-arm` is Standard Care - terminal and correct, so the completion state.
+             * `not-randomized` and `bad-group` are both "not yet", so the waiting state; when the
+             * allocation does arrive, the real link overwrites this.
+             */
+            $state = $resolved['status'] === EdSessionLink::NO_SESSION_IN_ARM ? 'done' : 'pending';
+
+            return $this->writeSessionUrl(
+                $project_id,
+                $record,
+                $proj,
+                $writeEventId,
+                $urlField,
+                $this->sessionHandoffUrl((int) $project_id, $state),
+                $resolved['status'] . ':' . $state
+            );
+        }
+
+        $url = (string) \REDCap::getSurveyLink($record, $host, $resolved['eventId'], 1, $project_id);
+        if (trim($url) === '') {
+            // Reached when the record still has no data in the target arm - i.e. materialization did
+            // not run or failed. Logged because a randomized record with no link is a stuck handoff.
+            $this->log('ED session link could not be minted', [
+                'record' => (string) $record, 'instrument' => $host,
+                'event_id' => (string) $resolved['eventId'], 'arm' => (string) $resolved['arm'],
+            ]);
+            return 'mint-failed';
+        }
+
+        return $this->writeSessionUrl(
+            $project_id,
+            $record,
+            $proj,
+            $writeEventId,
+            $urlField,
+            $url,
+            'arm ' . $resolved['arm'] . ' ' . $host . ' @ event ' . $resolved['eventId']
+        );
+    }
+
+    /**
+     * Write a value into the session-URL field, idempotently, and stamp the randomization date.
+     *
+     * Shared by the real link and the handoff fallback so that "never overwrite a real link" is one
+     * rule in one place rather than a convention two call sites keep. The rule:
+     *
+     *   - identical value already there  -> nothing (unless the date still needs stamping);
+     *   - field empty, or holding one of our own handoff URLs -> write;
+     *   - field holding anything else    -> **refuse**, and say so.
+     *
+     * The last case is the important one. A real session link must never be replaced by a fallback -
+     * that would take a randomized participant's session away from them - and a value a human put
+     * there is not ours to overwrite either. The field ships `@READONLY` for the same reason.
+     *
+     * @param \Project $proj
+     * @return string already-set, written, refused-existing-value or save-failed
+     */
+    private function writeSessionUrl(
+        $project_id,
+        $record,
+        $proj,
+        int $writeEventId,
+        string $urlField,
+        string $value,
+        string $describe
+    ): string {
+        $existing = trim((string) $this->valueAt($project_id, $record, $writeEventId, $urlField));
+
+        /*
+         * Emptiness is checked across EVERY event, not just the one being written to.
+         *
+         * `randomization_date` lives on `admin`, which on the R01 structure exists at the Day-1
+         * event of all three arms. A CRC who typed the date on the arm-2 form leaves the arm-1 event
+         * empty - and a per-event check would then stamp a *second*, different randomization date at
+         * arm 1. Two dates for one randomization, on the field that anchors alerts 02-14. Scanned
+         * the same way the allocation is, and for the same reason (see firstNonEmptyValue).
+         */
+        $stampField = trim((string) $this->getProjectSetting('stamp-randomization-date-field', $project_id));
+        $stampNeeded = $stampField !== ''
+            && isset($proj->metadata[$stampField])
+            && $this->firstNonEmptyValue($project_id, $record, $stampField) === null;
+
+        if ($existing === $value && !$stampNeeded) {
+            // getSurveyLink() returns a stable hash once the participant row exists, so the common
+            // case on every later save is this one: no churn in a value a redirect is piping.
+            return 'already-set';
+        }
+
+        $isOurFallback = $existing !== ''
+            && str_contains($existing, 'page=' . rawurlencode('pages/sessionHandoff'));
+
+        if ($existing !== '' && $existing !== $value && !$isOurFallback) {
+            $this->log('ED session link left alone: the field already holds something else', [
+                'record' => (string) $record, 'field' => $urlField,
+                'would_have_written' => $describe,
+            ]);
+            return 'refused-existing-value';
+        }
+
+        $row = [$proj->table_pk => $record, $urlField => $value];
+        if ($proj->longitudinal) {
+            $eventNames = \REDCap::getEventNames(true, false);
+            $row['redcap_event_name'] = $eventNames[$writeEventId] ?? '';
+        }
+        if ($stampNeeded) {
+            /*
+             * Automating randomization takes the CRC off the form that used to carry the
+             * randomization date by hand - and that date anchors every reminder ladder (alerts
+             * 02-14). Blank setting means off, because stamping a trial-critical date is a study
+             * decision, not a default. Only ever written when empty: a date already recorded by a
+             * human is never overwritten.
+             */
+            $row[$stampField] = date('Y-m-d');
+        }
+
+        $response = \REDCap::saveData([
+            'project_id'        => $project_id,
+            'dataFormat'        => 'json',
+            'data'              => json_encode([$row]),
+            'overwriteBehavior' => 'normal',
+            'returnFormat'      => 'json',
+        ]);
+
+        $errors = $this->describeSaveDataErrors($response);
+        if ($errors !== '') {
+            $this->log('ED session link write failed', [
+                'record' => (string) $record, 'field' => $urlField, 'errors' => $errors,
+            ]);
+            return 'save-failed';
+        }
+
+        // Trial-relevant: this is the artifact the participant is handed. The URL itself is never
+        // logged - it is a credential-bearing link into a PHI-carrying session.
+        $this->log('ED session link stored', [
+            'record' => (string) $record,
+            'target' => $describe,
+            'written_to' => $urlField . ' @ event ' . $writeEventId,
+            'randomization_date_stamped' => $stampNeeded ? $stampField : 'no',
+        ]);
+
+        return 'written';
+    }
+
+    /**
+     * The no-auth handoff page, for a record with no session to be sent to.
+     *
+     * The pid is written explicitly rather than left to `getUrl()` for the same reason
+     * `reviewDashboardUrl()` does it: this can run from the backfill script and from cron, where
+     * `PROJECT_ID` is either undefined or belongs to whichever project the loop was last in. A
+     * handoff URL carrying the wrong project is a participant sent into another study.
+     */
+    private function sessionHandoffUrl(int $projectId, string $state): string
+    {
+        $url = (string) $this->getUrl('pages/sessionHandoff.php', true, true);
+        // Drop the framework's pid, then collapse the empty segment that leaves behind - otherwise
+        // the URL carries a literal `&&`, which is harmless and reads like a bug to the next person.
+        $url = (string) preg_replace('/([?&])pid=[^&]*/', '$1', $url);
+        $url = rtrim((string) preg_replace(['/&{2,}/', '/\?&/'], ['&', '?'], $url), '?&');
+        $url .= (str_contains($url, '?') ? '&' : '?') . 'pid=' . $projectId;
+
+        return $url . '&state=' . rawurlencode($state);
+    }
+
+    /**
+     * First value of a field across a record's events, in event order. Null when it is empty everywhere.
+     *
+     * The allocation may be recorded at any event, which is why the existing materialization reads
+     * it the same way (see ensureRecordInAssignedArm).
+     */
+    private function firstNonEmptyValue($project_id, $record, string $field): ?string
+    {
+        $data = \REDCap::getData([
+            'project_id' => $project_id, 'records' => [$record],
+            'fields' => [$field], 'return_format' => 'array',
+        ]);
+
+        foreach (($data[$record] ?? []) as $values) {
+            if (isset($values[$field]) && $values[$field] !== '') {
+                return (string) $values[$field];
+            }
+        }
+
+        return null;
+    }
+
+    /** One field at one event, as a string. */
+    private function valueAt($project_id, $record, int $eventId, string $field): string
+    {
+        $data = \REDCap::getData([
+            'project_id' => $project_id, 'records' => [$record], 'events' => [$eventId],
+            'fields' => [$field], 'return_format' => 'array',
+        ]);
+
+        return (string) ($data[$record][$eventId][$field] ?? '');
+    }
+
+    /**
+     * Earliest event, project-wide, that a form is designated to - by (arm, day_offset).
+     *
+     * Derived rather than configured because the answer has to be the event every record passes
+     * through *before* randomization: on the R01 structure that is arm 1 Day 1, which is also where
+     * the participant chain runs and therefore where a survey redirect can pipe the value with no
+     * event prefix. Hardcoding the id is what broke the survey-login credential once already
+     * (docs/phase-3-handoff/22-minimum-test-path.md §Findings - written at 1008, read at 1004).
+     */
+    private function firstEventHostingForm($proj, string $formName): ?int
+    {
+        $best = null;
+        $bestKey = null;
+
+        foreach (($proj->eventInfo ?? []) as $eventId => $info) {
+            if (!in_array($formName, $proj->eventsForms[$eventId] ?? [], true)) {
+                continue;
+            }
+            $key = [(int) ($info['arm_num'] ?? 0), (int) ($info['day_offset'] ?? 0)];
+            if ($bestKey === null || $key < $bestKey) {
+                $bestKey = $key;
+                $best = (int) $eventId;
+            }
+        }
+
+        return $best;
     }
 
     /**

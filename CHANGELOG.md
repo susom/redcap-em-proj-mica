@@ -287,6 +287,64 @@ all-clear — `getModuleDirectoryName()` returns `proj_mica_v9.9.9` while
 `directory_prefix` holds `proj_mica`, so the join matched nothing and the check passed
 for every input. It now uses `$module->PREFIX` and fails on a planted row.
 
+### The ED Day-1 session link is minted at randomization and handed to the participant
+
+Two changes, one flow. When a record is randomized, the module resolves which arm's event hosts
+that record's Day-1 session, mints the survey link, and writes it to `ed_session_url` on the
+`admin` form. When the participant finishes the arm-1 screening chain, the handoff survey's
+*Redirect to a URL* pipes that field and drops them straight into their own session.
+
+**Why the URL has to be stored rather than expressed.** The session instrument is designated to
+one event *per intervention arm*, so there is no static expression for "this record's session".
+The obvious shortcut is REDCap's `[survey-url:mica_ed_session]`, and it is worse than useless
+here: piped from an arm-1 survey it returned an ordinary-looking URL and **created a new
+participant row at event 1004**, where the instrument is not designated. `getSurveyLink()`
+(`REDCap.php:1740-1745`) checks that the instrument is a survey project-wide and that the record
+exists in the **arm of the event it was given** — never that the instrument is designated to that
+event. Follow that through for a Standard Care record, which exists in arm 1 by definition, and
+the control participant is handed the intervention. So the arm is resolved per record, by
+`EdSessionLink`, which returns `no-session-in-arm` as an explicit outcome rather than letting "no
+event found" fall through — and `EdSessionLinkTest` asserts from both directions that a resolved
+event is always inside the assigned arm. Verified live: a Standard Care record gets no URL and
+**no participant row is even created**.
+
+**The ordering works out natively, which is the nice part.** REDCap's own auto-randomization
+trigger fires at `DataEntry.php:6710` and `redcap_save_record` at `:6735` — 25 lines apart, inside
+the same `saveRecord()`. So on the participant's own BL-survey submit, in one request: REDCap
+randomizes, the existing hook materializes the arm, and the link is minted. Nothing polls and
+nothing waits for a CRC. One trap, and the verifier fails loudly on it:
+`Randomization.php:3112` skips **trigger option 1** on survey pages, so a setup that randomizes
+perfectly for a CRC does nothing whatsoever for a participant, with no log line. It must be
+option 2.
+
+**An empty field was a blank screen, not a no-op.** REDCap's redirect is all-or-nothing: the guard
+at `Surveys/index.php:1833` tests the template *before* piping, so `[ed_session_url]` piping to
+`''` still reaches `redirect('')`. Measured in a browser: `302` with `Location:` empty and a body
+of **zero bytes** — a participant who had just finished screening saw nothing at all. So the field
+is now never empty for a record that can reach the end of the chain: `pages/sessionHandoff.php`
+(no-auth) carries a waiting message for "not randomized yet" and a plain completion message for
+"no session in this arm". Neither message names an arm, deliberately — telling a Standard Care
+participant they have no session tells them which arm they are in, and `session-handoff.js` greps
+for that rather than trusting it.
+
+Two settings, both with the field-existence-is-the-switch shape this project already uses:
+`ed-session-url-field` (blank = `ed_session_url`; no such field means the feature is off and
+silent) and `stamp-randomization-date-field` (blank = off). The second exists because automating
+randomization takes the CRC off the form that carried `randomization_date` by hand, and that date
+anchors **alerts 02-14**; it is only ever written when empty, so a human's value is never
+overwritten.
+
+The write refuses rather than clobbers. `writeSessionUrl()` will overwrite its own handoff
+fallback with a real link, but never anything else — a real session link must not be replaced by a
+fallback, and a value a human put there is not the module's to take. The field ships `@READONLY`
+for the same reason: a survey redirect follows whatever is in it.
+
+`verify-ed-session-link.php` checks all six links separately so a broken chain names its own
+cause, including a database check for session links sitting at events that do not host the
+session. `backfill-study-group-arms.php` gained the link write, because the hook fires only on UI
+saves and survey submits — an imported randomization would otherwise sit in the right arm with an
+empty field.
+
 ### The SafetyScan request body is now inspectable without a live scan
 
 `safetyscan-payload-sample.php` prints the exact body a scan sends — the composed system

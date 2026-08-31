@@ -24,6 +24,15 @@ Supporting [`../19-admin-form-logic-errors.md`](../19-admin-form-logic-errors.md
 | `apply-admin-calc-event-prefix.php` | Idempotent, supports `--dry-run`. Drops the stale `[baseline_arm_1]` event prefix from the four `admin` `@CALCDATE` fields whose only defect is that prefix (`calc_month_3/6/12`, `first_monday`). Asserts its own preconditions before writing — that `randomization_date` exists, that `baseline_arm_1` really is absent, and that the form is on **one event per arm** (otherwise a bare reference would be ambiguous and it aborts). Prints a before/after diff per field and reports how many `[baseline_arm_1]` references remain project-wide, which it deliberately does not touch. |
 | `e2e-admin-form-user.php` | `setup` \| `teardown`. Creates a throwaway account with ordinary data-entry rights on every instrument and **no** design / user-rights / super_user, so the branching-logic banner it sees is the banner a coordinator sees. Prints the username, password and a direct data-entry URL. Password is hashed through `Authentication::hashPassword()` and then re-checked with `verifyTableUsernamePassword()`, because a fixture whose password silently does not work is the least diagnosable failure there is. **Tear it down when finished** — the password is in the source. |
 
+## ED Day-1 session handoff
+
+Supporting [`../24-ed-session-handoff.md`](../24-ed-session-handoff.md).
+
+| File | Purpose |
+|---|---|
+| `apply-ed-session-url-field.php` | `[pid] [form] [field]`. Idempotent. Adds `ed_session_url` (text, `@HIDDEN-SURVEY @READONLY`) to the `admin` form — the field whose **existence is the on/off switch** for `MICA::ensureEdSessionLink()`. Shifts `field_order`, moves `form_menu_description` if it displaced the form's first field, and re-reads the row to verify. Development status only; production needs the Designer or a Data Dictionary import. Prints the four REDCap-side configuration steps that remain. |
+| `verify-ed-session-link.php` | Read-only, exit 0/1. Checks all six links in the chain separately so the report names the broken one: the field and its `@READONLY`, which event the module writes to, the baseline host and which arms designate it, **randomization setup**, the survey redirect and the two guards it depends on, every record's stored value, and that no session link exists at an event that does not host the session. The randomization check is the one worth running — `Randomization.php:3112` skips trigger option 1 on survey pages, so a setup that randomizes perfectly for a CRC does nothing at all for a participant, silently. |
+
 ## Module-configuration dialog
 
 | File | Purpose |
@@ -37,7 +46,6 @@ Supporting [`../20-llm-request-capture.md`](../20-llm-request-capture.md).
 | File | Purpose |
 |---|---|
 | `capture-llm-payload.php` | `on` \| `off` \| `status` \| `list` \| `last` \| `shape`. Shows the exact JSON body sent to the provider and emits a runnable curl for it. `shape` derives the envelope from this project's settings without a network call or any prompt text, so it is safe to paste into a ticket; `on`/`last` capture the real bytes. **Off by default and it must stay that way** — the request body is the prompt, which is PHI. Arming needs both a configured directory and that directory to exist; deleting either disarms it. The capture point is one line in `secure_chat_ai_v9.9.9/classes/Models/BaseModelRequest.php`, i.e. **a module outside this repository** — inert unless armed, but it must be carried across when SecureChatAI is updated. It covers six of the seven model classes, every chat path included; text-to-speech runs its own curl and is not captured. The emitted curl never contains the API key. `tests/Unit/ReasoningModelMirrorTest.php` keeps `shape`'s alias list from drifting away from SecureChatAI's. |
-
 | `safetyscan-payload-sample.php` | `[pid] [--addendum="..."] [--no-addendum]`. Prints the exact SafetyScan request body — the composed system prompt (pinned artifact + the project's addendum, resolved through `ScanRunner` rather than recomposed), the canonical transcript, and the wrapped `response_format` — at all three levels: what MICA hands to `callAI()`, what SecureChatAI's parameter filter leaves, and the body on the wire. Read-only, no network call, and the transcript is **synthetic and validated against the pinned input schema**, because a real one is PHI and the request body *is* the transcript. Every value is derived from live code (four private methods reached by reflection) so the sample cannot drift from what a scan actually sends. Snapshot and commentary: [`../23-safetyscan-payload.md`](../23-safetyscan-payload.md). |
 
 For "just show me the payload" there is no script — `BaseModelRequest::logFullRequest()` appends one

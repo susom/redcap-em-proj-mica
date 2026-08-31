@@ -18,6 +18,7 @@ skipped.
 | `full-path.js` | Survey Login gate (incl. scoping and a wrong-credential attempt), chatbot load, multi-turn conversation with context retention, bundle hygiene, reload/restore, End Session, mobile layout | a **participant**, via native Survey Login |
 | `review-dashboard.js` | RA queue and its ordering, session review, evidence highlighting, jump-to-evidence, the disposition gate, audit, mobile layout and tap targets | a **REDCap user** — the dashboard is an authenticated module page |
 | `module-config.js` | The read-only SafetyScan prompt panel in the module's configuration dialog: that the hook ran rather than `config.json`'s fallback, the full artifact sha256, collapse/expand, the first and last line of the artifact, a height-bounded scroll box, and its position directly above the addendum field | a **design-rights REDCap user** — not an admin, deliberately |
+| `session-handoff.js` | The two pages a participant lands on when the arm-1 chain ends with no session to send them to: that the body is not blank, that neither message reveals the allocation, mobile layout, and that the `state` parameter is never echoed | **nobody** — the page is `no-auth` |
 
 ## Running the participant path
 
@@ -85,6 +86,27 @@ person who writes the addendum — can open the dialog at all.
 866px wide and every setting in it is clipped identically; the overflow is unchanged with the panel,
 without it, and with the whole settings table `display:none`. `C16` is therefore *differential* — it
 asserts the panel adds no width — and prints the absolute figure so a reader is not misled by it.
+
+## Running the session handoff
+
+```bash
+docker exec <web> php .../scripts/verify-ed-session-link.php 257     # server-side: is it wired?
+node e2e/session-handoff.js
+```
+
+No fixture and no login: the handoff page is `no-auth` and takes no record identifier, by design —
+its two messages are static, so there is nothing to authenticate and nothing to leak.
+
+**Why this page exists, and what the suite is really guarding.** REDCap's survey redirect is
+all-or-nothing: the guard at `Surveys/index.php:1833` tests the redirect template **before** piping,
+so `[ed_session_url]` piping to an empty string still reaches `redirect('')`. Measured in a browser:
+`302` with `Location:` empty and a body of **zero bytes** — a participant who had just finished
+screening saw a blank screen. `C3` asserts a non-blank body for that reason.
+
+`C4` is the other load-bearing one. The `done` message is what a **Standard Care** participant sees,
+so "you have no MICA session" would tell them they are in the control arm. That is unblinding, and it
+is exactly the kind of sentence that gets edited into a page nobody re-reviews — so the suite greps
+for it rather than trusting it.
 
 ## Two things to know before trusting a red run
 
