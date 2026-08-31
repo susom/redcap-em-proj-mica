@@ -42,7 +42,7 @@ Nothing below is created by this runbook; if any is missing, stop and fix that f
 | Chat host instrument | `mica_ed_session` exists and is designated to the Day-1 event of **each intervention arm** (arms 2 and 3 on the R01 structure) — and to **no event of the control arm** |
 | Allocation field | `study_group`, coded so the value **is** the arm number (`1` SC / `2` MICA / `3` MICA + SMS) |
 | Module setting | *Automatically add the record to its randomized arm* is **on** |
-| The screening chain | ends on a survey with auto-continue **off** (on 257 that is `sms_code_check`) |
+| The Day-1 battery | you know which survey ends it — on 257 the structure points at `tsr` (see step 3) |
 
 ```bash
 # Fastest precondition check - it reports each link in the chain separately.
@@ -110,9 +110,9 @@ survey for a record.
 
 ---
 
-## 3. Point the end of the screening chain at it
+## 3. Point the end of the ED battery at it
 
-*Online Designer → **`sms_code_check`** → Survey Settings → Survey Termination Options →
+*Online Designer → **the survey that ends the Day-1 battery** → Survey Settings → Survey Termination Options →
 **Redirect to a URL***:
 
 ```
@@ -134,10 +134,11 @@ Two settings on that same survey must stay **off**, and they are hard requiremen
 Survey settings are **not** part of the data dictionary draft — they apply immediately, even in
 production. This step needs no approval.
 
-> **If you want the handoff on `check_code` instead**, you must first turn *its* auto-continue off,
-> which stops the chain continuing into `sms_code_check`. Worth considering: `sms_code_check`
-> displays the passcode (`calcrnd`), which [`22-minimum-test-path.md`](22-minimum-test-path.md)
-> §Findings already flags as a production concern.
+> **Which survey is that?** The Day-1 battery runs `… ddq → audit → sip2r → phq → bscq → drug_use →
+> tsr`, and on the intervention arms `postsession` (CEMI post-session, arms 2/3 only) follows the
+> chat — so the structure places the session after **`tsr`**. Note `tsr` is designated to all twelve
+> events while `ed_session_url` lives on `admin` (Day-1 events only), so the pipe resolves empty at
+> Month 3/6/12 — see [`24-ed-session-handoff.md`](24-ed-session-handoff.md) §5.1.
 
 ---
 
@@ -241,7 +242,7 @@ participant submits "Demographics & BL Data" (baseline1, arm-1 Day 1)
        └─ :6735  redcap_save_record fires
                   ├─ ensureRecordInAssignedArm()  → record appears in arm 2 or 3
                   └─ ensureEdSessionLink()        → mints the link → ed_session_url
-… participant continues to check_code → sms_code_check
+… participant continues through the Day-1 battery to its last survey
        └─ redirect pipes [ed_session_url] → their own session (Survey Login prompt)
 ```
 
@@ -300,7 +301,7 @@ UI saves and survey submits, so those records land in the right arm with an empt
 | To undo | How |
 |---|---|
 | The whole feature | Rename or delete `ed_session_url`. The module returns `no-field` and does nothing. Clear the survey's Redirect to a URL in the same change, or the redirect pipes a field that no longer exists. |
-| Just the redirect | Clear *Redirect to a URL* on `sms_code_check`. The field keeps being written and the CRC can still copy it from the `admin` form. |
+| Just the redirect | Clear *Redirect to a URL* on whichever survey carries it. The field keeps being written and the CRC can still copy it from the `admin` form. |
 | The date stamping | Blank the *Stamp the randomization date* setting. Dates already written stay. |
 | Automatic randomization | Set the trigger option back to *Manual only*. The model stays; a CRC clicks **Randomize** and everything downstream still works. |
 
@@ -318,7 +319,7 @@ For diffing against production later.
 | Change | Value |
 |---|---|
 | `redcap_metadata` | one row: `ed_session_url` on `admin`, `text`, annotation `@HIDDEN-SURVEY @READONLY`, `field_order` 267 (between `study_group` 266 and `admin_complete` 268) |
-| `redcap_surveys` | `sms_code_check.end_survey_redirect_url` = `[ed_session_url]` (was NULL). Auto-continue and Save & Return were already off. |
+| `redcap_surveys` | **nothing** — a redirect was set on `sms_code_check` during testing and has been reverted. Choosing the survey that carries it is step 3. |
 | Module settings | none changed — all three new settings are blank on 257, i.e. defaults, with the date stamp therefore **off** |
 | Randomization | **not configured on 257** (`randomization = 0`). Production still needs §5 in full. |
 | Record data | `ed_session_url` populated on records 1–6 and `MICATEST01` by running the backfill |

@@ -256,17 +256,30 @@ import sit in the right arm with an empty field.
 
 ## 5. Part 2 — redirect at the end of the arm-1 chain
 
-### 5.1 Pick the handoff survey
+### 5.1 Which survey carries the redirect is a project decision, not the module's
 
-`check_code` auto-continues into `sms_code_check`, which is the last participant-facing
-survey. **`sms_code_check` displays the passcode** (`calcrnd`) — already flagged as a
-production concern in [`22-minimum-test-path.md`](22-minimum-test-path.md) §Findings. Making
-it the gateway into the intervention raises the stakes on that; consider putting the handoff
-on `check_code` and keeping `sms_code_check` for testing.
+The module's job ends at the field. Where the redirect goes is set in REDCap and is yours to choose.
+
+The Day-1 battery is longer than the screening chain: after `check_code` / `sms_code_check` come
+`ddq`, `audit`, `sip2r`, `phq`, `bscq`, `drug_use`, `tsr`. On the intervention arms `postsession`
+(CEMI post-session) sits after `tsr` and exists **only** on arms 2 and 3 — so the structure puts the
+chat between the last assessment and the post-session questionnaire:
+
+```
+… ddq → audit → sip2r → phq → bscq → drug_use → tsr → [mica_ed_session] → postsession → close
+```
+
+That makes **`tsr`** the survey the handoff follows.
+
+**One consequence to be aware of before you set it.** `tsr` is designated to all twelve events, while
+`ed_session_url` lives on `admin`, which exists only at the Day-1 events. A bare `[ed_session_url]`
+piped from `tsr` therefore resolves at the *context* event — correct at Day 1, and **empty at
+Month 3, 6 and 12**, which REDCap turns into a `302` with an empty `Location` and a blank page
+(§5.3). Whether that matters depends on how those later timepoints are delivered.
 
 ### 5.2 Set the redirect
 
-*Designer → chosen survey → Survey Termination Options → Redirect to a URL* → `[ed_session_url]`
+*Designer → the chosen survey → Survey Termination Options → Redirect to a URL* → `[ed_session_url]`
 
 Bare, no event prefix, because §4.2 put the value at the same event. Leave *auto-continue*
 **off** — the guard at `Surveys/index.php:1822` requires `!$end_survey_redirect_next_survey`,
