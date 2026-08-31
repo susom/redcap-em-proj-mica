@@ -206,6 +206,12 @@
             "type": "textarea"
         },
         {
+            "key": "session-fallback-instrument",
+            "name": "<b>Where a participant with no session goes instead</b><br><i>Name a survey (e.g. <code>close</code>) and a record with no session — Standard Care, or not yet randomized — gets <b>that survey's link</b> in the field above rather than the module's handoff page. Blank uses the handoff page.<br><br>This matters once the redirect sits in the middle of a battery rather than at the very end. A Standard Care participant has no session but has <b>not finished</b>: the survey after them is the study's own closing page with its completion and gift-card wording. Sending them to a page that says \"you have finished\" instead would take that away and tell them something subtly untrue. Named here so they carry on exactly as auto-continue would have taken them.<br><br>Only used when the survey is designated at the event being written to; otherwise the handoff page applies.</i>",
+            "required": false,
+            "type": "text"
+        },
+        {
             "key": "stamp-randomization-date-field",
             "name": "<b>Stamp the randomization date into this field</b><br><i><b>Blank means off, which is the default.</b> Name a field here and the module writes today's date into it when it stores the session link — but <b>only when that field is empty</b>, so a date a human recorded is never overwritten.<br><br>This exists because automating randomization takes the CRC off the form that used to carry <code>randomization_date</code> by hand, and that date is the anchor for <b>every reminder ladder (alerts 02–14)</b>. Left blank with randomization automated, those alerts have no anchor. Stamping a trial-critical date is a study decision, which is why it is off until someone names the field.</i>",
             "required": false,

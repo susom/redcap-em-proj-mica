@@ -287,6 +287,49 @@ all-clear — `getModuleDirectoryName()` returns `proj_mica_v9.9.9` while
 `directory_prefix` holds `proj_mica`, so the join matched nothing and the check passed
 for every input. It now uses `$module->PREFIX` and fails on a planted row.
 
+### Day-1 flow rebuilt: ID split from demographics, and MICA reached after TSR
+
+The PI reported the Day-1 flow was out of order and MICA never loaded. Three changes, all on the
+project rather than in the module except where noted.
+
+**`baseline1` split.** It carried contact/identity fields and the demographics questions together.
+The contact fields moved to a new `contact_info` instrument placed straight after consent; the three
+hidden fields went with them, and that is not cosmetic - `calcrnd` is the passcode `check_code`
+validates, so it has to be generated before check code runs. `baseline1` keeps its form name (two
+alert conditions test `baseline1_complete`, and renaming it would break them quietly) and is
+retitled "Demographics". Alert 01 was retargeted to the new form. Verified: participant data
+survived the move, and survey login still resolves - it is keyed on the field, not the form.
+
+**Order and auto-continue.** Six instruments had auto-continue off, which is why the chain stopped.
+The Day-1 journey now walks continuously: consent → person_obtaining_consent → contact_info →
+check_code → sms_code_check → baseline1 → the battery → tsr. `person_obtaining_consent` keeps its
+break on purpose; it is the staff consent-witness signature.
+
+**MICA after TSR — and a correction.** The first attempt was to move `mica_ed_session` after `tsr`
+and let auto-continue reach it. **That cannot work, and REDCap's own resolver says so:**
+`getAutoContinueSurveyUrl` walks only `$Proj->eventsForms[$event_id]` (`Survey.php:2702`), the whole
+participant journey runs at the arm-1 Day-1 event, and `mica_ed_session` is designated to the
+intervention arms' own events. Measured: `tsr @ 1004 → close`, MICA skipped. Auto-continue cannot
+cross events, so the redirect is the mechanism after all - `tsr`'s *Redirect to a URL* now pipes
+`[ed_session_url]`.
+
+That put a Standard Care participant in a worse place than before: no session, but not finished
+either, and the handoff page would have told them "you have finished" while the study's own closing
+survey and its gift-card wording sat one step away. So the new `session-fallback-instrument` setting
+names a survey (`close` on PID 257) to send them to instead, exactly where auto-continue would have.
+The guard in `writeSessionUrl()` had to widen with it: the fallback is now an ordinary `?s=` link, so
+"is this value ours to replace" resolves the hash against `redcap_surveys_participants` for this
+project rather than only recognising the handoff page - otherwise a participant randomized after the
+fallback was written would never receive their session link.
+
+Verified in a browser end to end: a randomized arm-2 participant submitting TSR lands on **MICA ED
+session**; an unrandomized one lands on **Close**.
+
+Two things found and deliberately left alone, both study decisions: `postsession` (CEMI post-session)
+has **no survey row at all**, so a participant cannot reach it once MICA ends; and `tsr` is
+designated to all twelve events while `ed_session_url` lives on `admin` (Day-1 events only), so the
+pipe is empty at Month 3/6/12 - out of scope for the Day-1 testing this was for.
+
 ### The ED Day-1 session link is minted at randomization and handed to the participant
 
 Two changes, one flow. When a record is randomized, the module resolves which arm's event hosts

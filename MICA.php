@@ -888,14 +888,35 @@ class MICA extends \ExternalModules\AbstractExternalModule {
              */
             $state = $resolved['status'] === EdSessionLink::NO_SESSION_IN_ARM ? 'done' : 'pending';
 
+            /*
+             * Prefer carrying on through the study's own flow over showing the handoff page.
+             *
+             * When the redirect sits on a survey in the middle of a battery - which it does once the
+             * handoff moves to the end of the Day-1 assessments - a Standard Care participant has no
+             * session but has not finished either: the survey after them is the study's own closing
+             * page, with its completion message and gift-card wording. Sending them to a module page
+             * that says "you have finished" instead would take that away and tell them something
+             * subtly untrue. So when `session-fallback-instrument` names a survey designated at this
+             * event, they are sent there exactly as auto-continue would have, and the handoff page is
+             * kept for the case where there is genuinely nowhere else to go.
+             */
+            $fallbackUrl = null;
+            $fallbackForm = trim((string) $this->getProjectSetting('session-fallback-instrument', $project_id));
+            if ($fallbackForm !== '' && in_array($fallbackForm, $proj->eventsForms[$writeEventId] ?? [], true)) {
+                $candidate = (string) \REDCap::getSurveyLink($record, $fallbackForm, $writeEventId, 1, $project_id);
+                if (trim($candidate) !== '') {
+                    $fallbackUrl = $candidate;
+                }
+            }
+
             return $this->writeSessionUrl(
                 $project_id,
                 $record,
                 $proj,
                 $writeEventId,
                 $urlField,
-                $this->sessionHandoffUrl((int) $project_id, $state),
-                $resolved['status'] . ':' . $state
+                $fallbackUrl ?? $this->sessionHandoffUrl((int) $project_id, $state),
+                $resolved['status'] . ':' . ($fallbackUrl !== null ? $fallbackForm : $state)
             );
         }
 
@@ -969,10 +990,35 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             return 'already-set';
         }
 
-        $isOurFallback = $existing !== ''
-            && str_contains($existing, 'page=' . rawurlencode('pages/sessionHandoff'));
+        /*
+         * Is what is already there something this module put there?
+         *
+         * Two shapes qualify. The handoff page is obvious. The other is a **survey link belonging to
+         * this project** - which covers both a stale session link and the `session-fallback-instrument`
+         * link written before the participant was randomized. That second case is the one that
+         * matters: a fallback pointing at the study's closing survey is an ordinary `?s=` URL, so a
+         * guard that only recognised the handoff page would refuse to replace it, and a participant
+         * randomized after it was written would never receive their session link.
+         *
+         * The hash is resolved against `redcap_surveys_participants` rather than pattern-matched, so
+         * a value that merely looks like a survey link - or belongs to another project - is still
+         * treated as somebody else's and left alone.
+         */
+        $isOurs = false;
+        if ($existing !== '') {
+            if (str_contains($existing, 'page=' . rawurlencode('pages/sessionHandoff'))) {
+                $isOurs = true;
+            } elseif (preg_match('/[?&]s=(\w+)/', $existing, $m)) {
+                $isOurs = (bool) $this->query(
+                    'SELECT 1 FROM redcap_surveys_participants p '
+                    . 'JOIN redcap_surveys s ON s.survey_id = p.survey_id '
+                    . 'WHERE p.hash = ? AND s.project_id = ? LIMIT 1',
+                    [$m[1], $project_id]
+                )->fetch_row();
+            }
+        }
 
-        if ($existing !== '' && $existing !== $value && !$isOurFallback) {
+        if ($existing !== '' && $existing !== $value && !$isOurs) {
             $this->log('ED session link left alone: the field already holds something else', [
                 'record' => (string) $record, 'field' => $urlField,
                 'would_have_written' => $describe,
