@@ -1,0 +1,61 @@
+redcap_randomization_group
+3,,,"*** TEST DATA - EVERY PARTICIPANT GETS A MICA SESSION ***"
+2,,,"For exercising the MICA + SafetyScan path only. NOT a randomization schedule:"
+2,,,"it contains NO Standard Care allocations, so it cannot be used for a real trial."
+3,,,"Use dev-allocation-table-TESTING-ONLY.csv if you need the balanced 1:1:1 sequence."
+2,,,"2=MICA   3=MICA + Weekly SMS"
+2
+3
+3
+2
+3
+3
+2
+3
+2
+2
+3
+2
+3
+2
+3
+3
+2
+2
+3
+3
+2
+3
+2
+2
+3
+3
+2
+3
+2
+2
+3
+3
+3
+2
+2
+3
+2
+3
+2
+2
+3
+2
+3
+2
+2
+3
+3
+3
+2
+3
+2
+2
+3
+2
+3
