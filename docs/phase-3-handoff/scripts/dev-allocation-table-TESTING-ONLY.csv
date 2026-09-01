@@ -1,0 +1,61 @@
+redcap_randomization_group
+2,,,"*** TEST DATA - NOT A REAL RANDOMIZATION SCHEDULE ***"
+1,,,"Generated for PID 257 DEVELOPMENT testing only."
+3,,,"A production sequence must come from the study statistician."
+2,,,"REDCap keeps development and production allocation tables separate;"
+3,,,"uploading this to production would invalidate the trial's randomization."
+1,,,""
+1,,,"Balanced 1:1:1, permuted blocks of 6, 60 allocations."
+1,,,"1=Standard Care (SC)  2=MICA  3=MICA + Weekly SMS"
+2
+3
+3
+2
+1
+3
+2
+1
+3
+2
+1
+2
+2
+1
+3
+3
+3
+2
+2
+3
+1
+1
+2
+3
+3
+2
+1
+1
+3
+3
+1
+2
+1
+2
+1
+2
+3
+1
+3
+2
+2
+1
+1
+3
+2
+3
+3
+3
+2
+1
+1
+2
