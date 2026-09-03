@@ -287,6 +287,63 @@ all-clear — `getModuleDirectoryName()` returns `proj_mica_v9.9.9` while
 `directory_prefix` holds `proj_mica`, so the join matched nothing and the check passed
 for every input. It now uses `$module->PREFIX` and fails on a planted row.
 
+### The questionnaire after a session opens by itself, and the booster gets its own context
+
+Two changes from live testing on PID 257.
+
+**CEMI did not open when a session ended.** Three things were stacked against it. `postsession` was
+never enabled as a survey at all, so there was nothing to open. The chat is a SPA that never submits
+its host survey's form, so REDCap never saw the submit it would normally continue from. And
+`completeSession()` returned a `survey_link` only when the static `chatbot_end_session_url_override`
+was set - which it was not, so the SPA fell through to its terminal notice.
+
+The fix keeps the flow in REDCap rather than in code. On completion the module now marks the
+session's **survey response** submitted - `markSessionCompleteOnFinish()` only ever wrote the *form
+status*, and the survey system reads a different column, which is why the session was never
+"completed" as far as REDCap was concerned - and then reads the host survey's **own Survey
+Termination Options** and honours them in REDCap's precedence: a redirect URL first, otherwise
+auto-continue. So the study configures what follows a session in the Designer and no instrument name
+appears in the module. A first attempt did add a `post-session-instrument` setting; it was removed,
+because naming the questionnaire in configuration is still naming it.
+
+Three things that fell out of building it: cloning `postsession`'s survey settings from `tsr` silently
+copied `tsr`'s `[ed_session_url]` redirect, which would have sent the participant back into the
+session they had just finished; `postsession`'s own auto-continue walks *backwards* into a duplicate
+battery, because the participant's journey runs at the arm-1 Day-1 event while the session and CEMI
+sit at the intervention arm's event where every other instrument is an empty copy; and
+`Project::loadEventsForms()` orders by `m.field_order` inside a `SELECT DISTINCT` that does not select
+it, so with many metadata rows per form that order is undefined - which is why the chain resolved
+correctly at one event and not at another.
+
+**The booster session now has its own chat-context list.** `chatbot_redcap_inject_booster` carries the
+3-month follow-up (DDQ) for arms 2 and 3 and the weekly SMS data for arm 3; blank falls back to the
+general list, which still serves Day-1. Session type comes from the project's own host map, the same
+way the system prompt picks between the baseline and booster personas.
+
+It is a separate code path rather than the same fetch with a different list, for two reasons that are
+both about events. The Day-1 path reads `current(json_decode(...))` - the **first** row `getData`
+returns, which on a longitudinal project is one event's copy - so asking it for DDQ in a booster
+session hands back the *Day-1* DDQ, the one number a booster conversation is not about. And the weekly
+SMS data does not live at the booster's event at all; it is collected on its own arm-3 event during
+weeks 1-12, so restricting the fetch to the booster event would drop it. The Day-1 path is left
+byte-identical, because it is what the validated Day-1 counselor already sees.
+
+**No arm logic anywhere.** The SMS instrument is designated to arm 3 only, so an arm-2 participant has
+no rows for it and contributes nothing while an arm-3 participant's data appears. One list serves both
+arms and adding or moving an instrument stays a Designer change.
+
+Three defects found while verifying it, all in the first version: `getData` with an explicit `fields`
+list returns **only those fields** - no `record_id` and no `redcap_event_name` - so every event's copy
+came back indistinguishable and produced unlabelled blocks (now read in `array` format, where the
+event *is* the key); field labels are authored in a rich-text editor and carry HTML and embedded
+newlines, which orphaned each value onto its own line; and `<form>_complete` comes back from
+`getFieldNames()`, so every block carried `Complete?: Incomplete`. Blocks are labelled with the
+event's `name` rather than `name_ext`, because the latter appends the arm and an allocation has no
+business being written into a prompt.
+
+Runbook: [`26-prod-runbook-day1-flow.md`](docs/phase-3-handoff/26-prod-runbook-day1-flow.md), which
+ends with four open study decisions rather than implying they are settled.
+
 ### Day-1 flow rebuilt: ID split from demographics, and MICA reached after TSR
 
 The PI reported the Day-1 flow was out of order and MICA never loaded. Three changes, all on the

@@ -110,6 +110,12 @@
             "type": "textarea"
         },
         {
+            "key": "chatbot_redcap_inject_booster",
+            "name": "<b>Instruments to inject into the Chat Context — BOOSTER session</b><br><i>Comma-delimited, and the counterpart to the general list above, which serves the Day-1 session. Blank falls back to that list.<br><br>This is where the <b>3-month follow-up</b> data goes (e.g. <code>ddq</code>) for arms 2 and 3, and the <b>weekly SMS</b> data for arm 3. Unlike the Day-1 list, each instrument is read at <b>every event the participant has data for</b> and each block is labelled with the event it came from — so the model can tell a baseline answer from a 3-month one instead of seeing two unlabelled values for the same question.<br><br><b>You do not need a separate arm-3 list.</b> The SMS instrument is designated to arm 3 only, so an arm-2 participant has no rows for it and it contributes nothing, while an arm-3 participant's data appears. One list serves both arms, and adding or moving an instrument stays a Designer change.</i>",
+            "required": false,
+            "type": "textarea"
+        },
+        {
             "key": "chatbot_system_context_general",
             "name": "Raw text to inject into and set the chatbot's overall system context, persona, guardrails <b>Required:</b> without it the model is given no persona and answers as whatever underlying model is configured.",
             "required": true,

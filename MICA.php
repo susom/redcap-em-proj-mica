@@ -1071,6 +1071,120 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     }
 
     /**
+     * Record the session's survey response as submitted, so REDCap treats the session as completed.
+     *
+     * `markSessionCompleteOnFinish()` writes the *form status*, which is what stops a participant
+     * re-entering the chat. This is the other half: `redcap_surveys_response.completion_time`, which
+     * is what the **survey** system reads. Without it the response stays "partial" forever - the
+     * response is not counted as complete, the survey queue never advances past it, and
+     * `Survey::getSurveyCompletionTime()` returns nothing - because the SPA never submits the form
+     * the way an ordinary survey page does.
+     *
+     * Written directly rather than through saveData: there is no field to save. The row is the
+     * record of the submission itself, and only its two timing columns are touched. Idempotent -
+     * a response already marked complete keeps its original time, so re-ending a session cannot
+     * rewrite when it finished.
+     */
+    private function markSurveyResponseSubmitted(string $record, ?string $instrument, int $eventId): void
+    {
+        if ($instrument === null || $instrument === '' || $eventId <= 0) {
+            return;
+        }
+
+        try {
+            $this->query(
+                'UPDATE redcap_surveys_response r '
+                . 'JOIN redcap_surveys_participants p ON p.participant_id = r.participant_id '
+                . 'JOIN redcap_surveys s ON s.survey_id = p.survey_id '
+                . 'SET r.first_submit_time = COALESCE(r.first_submit_time, NOW()), '
+                . '    r.completion_time   = COALESCE(r.completion_time, NOW()) '
+                . 'WHERE s.project_id = ? AND s.form_name = ? AND p.event_id = ? AND r.record = ?',
+                [(int) PROJECT_ID, $instrument, $eventId, $record]
+            );
+        } catch (\Throwable $t) {
+            // Never fail the session over this. The transcript is already safe by this point, and
+            // the participant's own ending must not turn into an error.
+            $this->emError('completeSession: could not mark the session response submitted', [
+                'record' => $record, 'instrument' => $instrument,
+                'event_id' => (string) $eventId, 'error' => $t->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * What REDCap says follows the chat, read from the host survey's own termination options.
+     *
+     * No instrument name appears here on purpose. The study decides what comes after a session in
+     * the Designer - *Auto-continue to next survey*, or *Redirect to a URL* - and this reads that
+     * decision and applies it, the same two options in the same precedence REDCap itself uses
+     * (`Surveys/index.php`: a redirect URL wins, otherwise auto-continue).
+     *
+     * Auto-continue resolves through `Survey::getAutoContinueSurveyUrl()`, which walks only the
+     * instruments designated to **this** event - so a Day-1 session continues into the Day-1
+     * questionnaire, a Month-3 booster into the Month-3 one, and an event with nothing after it
+     * yields null. That is the behaviour the study already configured for every other survey in the
+     * battery; the chat simply had no way to trigger it.
+     *
+     * @return string|null null when the survey specifies no continuation, or there is nothing next
+     */
+    private function sessionContinuationUrl(string $record, ?string $instrument, int $eventId): ?string
+    {
+        if ($instrument === null || $instrument === '' || $eventId <= 0) {
+            return null;
+        }
+
+        $proj = $this->projectFor((int) PROJECT_ID);
+        $surveyId = $proj->forms[$instrument]['survey_id'] ?? null;
+        if (!$surveyId) {
+            return null;
+        }
+
+        $survey = $proj->surveys[$surveyId] ?? [];
+
+        // 1. An explicit redirect URL on the survey, piped for this record exactly as
+        //    Surveys/index.php:1846 does - so `[field]` and smart variables behave the same here.
+        $redirect = trim((string) ($survey['end_survey_redirect_url'] ?? ''));
+        if ($redirect !== '') {
+            $piped = \Piping::replaceVariablesInLabel(
+                $redirect,
+                $record,
+                $eventId,
+                1,
+                [],
+                false,
+                null,
+                false,
+                '',
+                1,
+                false,
+                false,
+                $instrument
+            );
+            $piped = trim(str_replace(["\r\n", "\n", "\r", "\t"], ' ', (string) $piped));
+
+            // A template that pipes to nothing is the empty-Location trap: REDCap tests the
+            // template before piping, so it would redirect to ''. Refuse instead of sending the
+            // participant to a blank page.
+            if ($piped !== '') {
+                return $piped;
+            }
+            $this->emError('completeSession: the session survey has a redirect URL that piped to '
+                . 'nothing, so it was ignored rather than sending the participant to a blank page', [
+                    'record' => $record, 'instrument' => $instrument, 'template' => $redirect,
+                ]);
+        }
+
+        // 2. Otherwise auto-continue, if the study turned it on for this survey.
+        if (empty($survey['end_survey_redirect_next_survey'])) {
+            return null;
+        }
+
+        $next = (string) \Survey::getAutoContinueSurveyUrl($record, $instrument, $eventId, 1);
+
+        return trim($next) === '' ? null : $next;
+    }
+
+    /**
      * The no-auth handoff page, for a record with no session to be sent to.
      *
      * The pid is written explicitly rather than left to `getUrl()` for the same reason
@@ -1316,8 +1430,13 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     $recent_query = $messages[count($messages) - 1];
                     $this->logMICAQuery(json_encode($recent_query), $participant_id);
 
-                    // Add user baseline AFTER logging to leave it out of the logs
-                    $formattedBaseline = $this->getFormattedBaselineData($participant_id);
+                    // Add user baseline AFTER logging to leave it out of the logs.
+                    //
+                    // The host instrument is passed so a booster turn is injected with follow-up
+                    // data rather than baseline data. It is the framework's own value for this
+                    // request, not anything from the payload - the same source
+                    // resolveSessionHostInstrument() prefers, and for the same reason.
+                    $formattedBaseline = $this->getFormattedBaselineData($participant_id, $instrument);
                     if (!empty($formattedBaseline)) {
                         $messages = $this->appendSystemContext($messages, $formattedBaseline);
                     }
@@ -1671,7 +1790,36 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * @param string $participant_id The record_id of the participant.
      * @return string|null A concatenated formatted string or null if no data exists.
      */
-    private function getFormattedBaselineData($participant_id) {
+    private function getFormattedBaselineData($participant_id, ?string $hostInstrument = null) {
+        /*
+         * A booster session needs different data than a Day-1 session, and needs it from a
+         * different timepoint.
+         *
+         * The Day-1 counselor is injected with baseline instruments. A Month-3 booster has to be
+         * injected with what happened *since*: the 3-month follow-up (DDQ), and on the weekly-SMS
+         * arm the SMS check-in data as well. Those live at other events, so this is not the same
+         * fetch with a different list - see getFormattedFollowupData().
+         *
+         * Resolved from the host instrument through the project's own session host map, the same way
+         * the system prompt picks between the baseline and booster personas
+         * (systemContextWithoutPilotScaffolding). Softly: an unresolvable host falls back to
+         * baseline, because injecting the wrong context is better than throwing away a turn the
+         * participant is waiting on.
+         */
+        $sessionType = SessionHostMap::BASELINE;
+        try {
+            if ($hostInstrument !== null && $hostInstrument !== '') {
+                $sessionType = SessionHostMap::fromSetting($this->getProjectSetting('session-host-map'))
+                    ->resolve($hostInstrument)['session_type'];
+            }
+        } catch (\Throwable $t) {
+            $this->emDebug('inject: could not resolve the session type, using baseline', $t->getMessage());
+        }
+
+        if ($sessionType === SessionHostMap::BOOSTER) {
+            return $this->getFormattedFollowupData($participant_id);
+        }
+
         // Get comma-delimited instruments from project settings
         $instrumentsString = $this->getProjectSetting("chatbot_redcap_inject");
         if (empty($instrumentsString)) {
@@ -1682,20 +1830,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         // Get metadata once
         $metadata = \REDCap::getDataDictionary('array');
 
-        // Helper to decode enumerated values
-        $decodeChoice = function ($field, $value) use ($metadata) {
-            $choices = $metadata[$field]['select_choices_or_calculations'] ?? null;
-            if ($choices) {
-                $choiceArray = array_map('trim', explode('|', $choices));
-                foreach ($choiceArray as $choice) {
-                    list($code, $label) = array_map('trim', explode(',', $choice, 2));
-                    if ((string)$code === (string)$value) {
-                        return $label;
-                    }
-                }
-            }
-            return $value;
-        };
+        $decodeChoice = $this->choiceDecoder($metadata);
 
         $finalFormatted = "";
         foreach ($instruments as $instrument) {
@@ -1722,6 +1857,150 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             $finalFormatted .= $formatted . "\n";
         }
         return empty($finalFormatted) ? null : $finalFormatted;
+    }
+
+    /** Decode a coded value to its label, shared by both inject paths. */
+    private function choiceDecoder(array $metadata): callable
+    {
+        return function ($field, $value) use ($metadata) {
+            $choices = $metadata[$field]['select_choices_or_calculations'] ?? null;
+            if ($choices) {
+                foreach (array_map('trim', explode('|', $choices)) as $choice) {
+                    $parts = array_map('trim', explode(',', $choice, 2));
+                    if (count($parts) === 2 && (string) $parts[0] === (string) $value) {
+                        return $parts[1];
+                    }
+                }
+            }
+            return $value;
+        };
+    }
+
+    /**
+     * What the BOOSTER counselor is injected with: follow-up data, labelled by when it was collected.
+     *
+     * ## Why this is not the baseline fetch with a different list
+     *
+     * Two reasons, both about events.
+     *
+     * The baseline path reads `current(json_decode(...))` - the **first** row `getData` returns. On a
+     * longitudinal project that is one row per event, so it silently yields the earliest event's
+     * copy of an instrument. Ask it for DDQ in a booster session and it hands back the **Day-1**
+     * DDQ, which is precisely the wrong number: the booster conversation is about what changed since
+     * then. That path is left exactly as it is, because it is what the validated Day-1 counselor
+     * already sees, and this one reads every event instead.
+     *
+     * And the weekly-SMS data does not live at the booster's event either - it is collected on its
+     * own arm-3 event during weeks 1-12. Restricting the fetch to the booster event would drop it.
+     *
+     * ## Why there is no arm logic here
+     *
+     * The requirement is 3-month follow-up for arms 2 and 3, plus SMS data for arm 3 only. That
+     * falls out of reading the record rather than the arm: the SMS instrument is designated to arm 3
+     * alone, so an arm-2 participant simply has no rows for it and contributes nothing, while an
+     * arm-3 participant does. One instrument list serves both arms and no code has to know which arm
+     * anyone is in - which also means adding or moving an instrument stays a Designer change.
+     *
+     * Each block is labelled with the event it came from, so the model can tell a baseline value
+     * from a 3-month one instead of seeing two unlabelled numbers for the same question.
+     */
+    private function getFormattedFollowupData($participant_id): ?string
+    {
+        // Blank falls back to the general list, so a project that has not configured a booster list
+        // behaves as it did before rather than losing its context entirely.
+        $raw = trim((string) $this->getProjectSetting('chatbot_redcap_inject_booster'));
+        if ($raw === '') {
+            $raw = trim((string) $this->getProjectSetting('chatbot_redcap_inject'));
+        }
+        if ($raw === '') {
+            return null;
+        }
+
+        $instruments = array_values(array_filter(array_map('trim', explode(',', $raw))));
+        $metadata = \REDCap::getDataDictionary('array');
+        $decode   = $this->choiceDecoder($metadata);
+        $proj     = $this->projectFor((int) $this->getProjectId());
+
+        // Structural keys getData returns alongside the fields. They are not answers and must not be
+        // formatted as though a participant gave them.
+        $structural = ['record_id', 'redcap_event_name', 'redcap_repeat_instrument',
+                       'redcap_repeat_instance', 'redcap_data_access_group', $proj->table_pk];
+
+        $out = '';
+        foreach ($instruments as $instrument) {
+            if (!isset($proj->forms[$instrument])) {
+                $this->emDebug("inject (booster): no such instrument '$instrument', skipped");
+                continue;
+            }
+
+            /*
+             * `return_format => array`, not json.
+             *
+             * With an explicit `fields` list, the JSON format returns **only those fields** - no
+             * record id and no `redcap_event_name` - so every event's copy of an instrument comes
+             * back as an indistinguishable row and there is nothing to label a block with. That is
+             * how the first version of this silently produced three unlabelled DDQ blocks. The array
+             * format is keyed `[record][event_id][field]`, so the event is the key and cannot be
+             * lost.
+             */
+            $data = \REDCap::getData([
+                'project_id'    => $this->getProjectId(),
+                'records'       => [$participant_id],
+                'fields'        => \REDCap::getFieldNames($instrument),
+                'return_format' => 'array',
+            ]);
+
+            foreach (($data[$participant_id] ?? []) as $eventId => $values) {
+                // Repeating data nests under a non-numeric `repeat_instances` key; these
+                // instruments do not repeat, and a nested array is not a field/value map.
+                if (!is_numeric($eventId) || !is_array($values)) {
+                    continue;
+                }
+
+                $lines = '';
+                foreach ($values as $field => $value) {
+                    // `<form>_complete` comes back from getFieldNames() and is a form status, not an
+                    // answer - "Complete?: Incomplete" is noise in a counselor's context window.
+                    if (in_array($field, $structural, true) || str_ends_with($field, '_complete')
+                        || !is_scalar($value) || (string) $value === '') {
+                        continue;
+                    }
+                    $decoded = $decode($field, $value);
+                    if ((string) $decoded === '') {
+                        continue;
+                    }
+
+                    /*
+                     * Labels are authored in the Designer's rich-text editor, so they carry HTML and
+                     * embedded newlines - DDQ's `max` label is two lines long. Left as-is, the value
+                     * ends up orphaned on a line of its own and the model sees a question with no
+                     * answer next to it.
+                     */
+                    $label = trim(preg_replace('/\s+/', ' ', strip_tags(
+                        (string) ($metadata[$field]['field_label'] ?? $field)
+                    )) ?? $field);
+
+                    $lines .= ($label === '' ? $field : $label) . ": $decoded\n";
+                }
+
+                // An event where the participant answered nothing contributes nothing, which is what
+                // keeps an arm-2 record from carrying an empty "SMS check-in" heading.
+                if ($lines === '') {
+                    continue;
+                }
+
+                /*
+                 * `eventInfo` carries `name` / `name_ext`, not `descrip`. `name` rather than
+                 * `name_ext` on purpose: `name_ext` appends the arm ("Month 3 (Arm 2: MICA)") and
+                 * the allocation has no business being written into a prompt.
+                 */
+                $when = (string) ($proj->eventInfo[$eventId]['name'] ?? '');
+
+                $out .= '## ' . ucfirst($instrument) . ($when !== '' ? " - $when" : '') . "\n\n" . $lines . "\n";
+            }
+        }
+
+        return $out === '' ? null : $out;
     }
 
     /**
@@ -2389,12 +2668,28 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             );
 
             $surveys = ['success' => true];
+
+            /*
+             * Where the participant goes when the chat ends: whatever REDCap says comes next.
+             *
+             * The chat is a SPA that never submits its host survey's form, so REDCap never sees the
+             * submit it would normally continue from - which is the whole reason the questionnaire
+             * after a session did not open by itself. Rather than naming that questionnaire here,
+             * the session is *submitted* and the host survey's own Survey Termination Options are
+             * read and honoured, exactly as REDCap would for any other survey. So the study
+             * configures the flow in the Designer and this code has no instrument names in it.
+             *
+             * `chatbot_end_session_url_override` stays as the escape hatch it always was, and now
+             * only applies when the survey itself specifies no continuation.
+             */
+            $this->markSurveyResponseSubmitted($participant_id, $hostInstrument, (int) $hostEventId);
+
+            $next = $this->sessionContinuationUrl($participant_id, $hostInstrument, (int) $hostEventId);
             $override = trim((string) $this->getProjectSetting('chatbot_end_session_url_override'));
 
-            // Without a link the SPA signs the participant out with no message, which is the shape of
-            // docs 14 D16. An R01 project has no `posttest` survey to send them to, so the override is
-            // the only honest source of one.
-            if ($override !== '') {
+            if ($next !== null) {
+                $surveys['survey_link'] = $next;
+            } elseif ($override !== '') {
                 $surveys['survey_link'] = $override;
             }
 
