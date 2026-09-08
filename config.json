@@ -158,20 +158,8 @@
             "type": "dropdown",
             "choices": [
                 {
-                    "value": "gpt-4o",
-                    "name": "GPT-4o"
-                },
-                {
                     "value": "gpt-4.1",
                     "name": "GPT-4.1"
-                },
-                {
-                    "value": "o1",
-                    "name": "GPT-o1"
-                },
-                {
-                    "value": "o3-mini",
-                    "name": "GPT-o3-mini"
                 },
                 {
                     "value": "claude",
@@ -186,7 +174,7 @@
                     "name": "Llama 4 Maverick"
                 }
             ],
-            "default": "gpt-4o"
+            "default": "gpt-4.1"
         },
         {
             "key": "gpt-temperature",
@@ -225,7 +213,7 @@
         },
         {
             "key": "reasoning-effort",
-            "name": "<b>Reasoning Effort</b>  <br>(only applicable to o1, o3-mini reasoning models)",
+            "name": "<b>Reasoning Effort</b>  <br>(only applicable to reasoning models)",
             "required": false,
             "type": "dropdown",
             "choices": [
