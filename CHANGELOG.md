@@ -55,6 +55,111 @@ against `platform.php = 8.2` rather than the developer's PHP.
 `php-ml` and `twilio/sdk` were dropped: 2,598 files and 17.5 MB with zero
 references anywhere in the codebase. `vendor/` is 235 files / 1.3 MB.
 
+### A finished session could be walked back into with the browser Back button
+
+Reported from the field: press End Session, press Back, keep talking to MICA. Reproduced on PID 268
+through the real participant path, and the obvious explanation was wrong — Chromium does **not**
+bfcache the page. `goBack()` issued a real GET+POST, REDCap re-served the survey, and the server
+agreed to carry on.
+
+**`sessionIsClosed()` was documented as "⚠️ This check is the enforcement" and gated on a value
+that `completeSession()` was preventing itself from writing.** It reads `<host>_complete == '2'`,
+written on End Session through `REDCap::saveData()` — and core refuses a form-status write when
+the form's survey response has a **`first_submit_time`** (`Records.php:6238` builds its
+`$responses` lookup on exactly that column; `survey_403` is raised from it). The call that sets
+that column, `markSurveyResponseSubmitted()`, ran *first* — so every End Session blocked its own
+status write two calls later. The failure went to `emError()`, i.e. the emLogger **file** rather
+than `redcap_external_modules_log`, so nobody saw it.
+
+The correlation across every session response on PID 268 is exact: the one record whose response
+was never submitted (an abandoned session) had its form status written; all four that pressed End
+Session had `NULL`. Nothing about the write is impossible — it was only impossible *after* the
+stamp.
+
+The cost was not only re-entry. `callAI` writes the participant's message with `logMICAQuery()`
+before every other check, including `assertModelIsRegistered()`, so a post-End-Session turn was
+appended to a transcript that had already been finalized and its SafetyScan queued — a disclosure
+in that window is never scanned. From the reproduction: transcript finalized `09:50:23`, "Actually
+I want to keep talking after ending" logged `09:50:37`.
+
+Fixed in order of what actually enforces:
+
+- **The call order, which was the cause.** `completeSession()` writes the form status **before**
+  stamping the response, and the cron's `finalizeAndCloseSession()` does the same; both carry a
+  `⚠️ ORDER IS LOAD-BEARING` comment naming the other. One record settles it: `RANDTEST01` (before)
+  and `ORDER01` (after) have identical response timestamps and form status `NULL` vs `2`.
+- **`sessionIsClosed()` now reads a signal that is genuinely written.** `markSurveyResponseSubmitted()`
+  already stamps `redcap_surveys_response.completion_time` by direct SQL and always worked; the new
+  `hostSurveyResponseSubmitted()` reads it back through the same three-table join, event-scoped. The
+  form-status check stays as a second signal — it still works when a CRC sets it by hand, and
+  setting it back to Incomplete is still how a session is reopened.
+- **`callAI` refuses a closed session before it records anything**, at the top of the case, ahead of
+  `handleUserInput()` and `logMICAQuery()`. The bootstrap gate only runs when the page is built; a
+  stale tab or replayed request never re-runs it. An unresolvable host allows the turn and logs why
+  — stated as a decision, with the log line there so a guard that stops matching is visible.
+- **A bfcache restore reloads** (`pageshow` + `persisted`), re-running the existing gate rather than
+  adding a second way to say "this is over". Belt-and-braces: REDCap sends `no-store`, which
+  disqualifies bfcache in Chrome and Firefox, so Back takes the GET+POST path above. Safari is the
+  known exception that bfcaches `no-store` pages anyway, and iOS Safari is the likeliest browser on
+  an ED tablet. The `persisted === true` branch could not be exercised here even with the feature
+  forced on, and the doc says so rather than counting it as verified.
+
+**The window-expiry cron shared the root cause and is fixed in the same pass.**
+`finalizeAndCloseSession()` wrote only the form status and returned `false` the moment it failed,
+which skipped the `SESSION_CLOSED_LOG` write — and that log is the close-once guard. So a session
+that failed to close was never recorded as closed, stayed a candidate, and was retried on every
+run: `{"closed":1,"skipped":{"finalize_failed":4,...}}`, identically, forever. The closer now
+stamps the response too (with `$projectId` passed explicitly — cron has no `PROJECT_ID`, and the
+`UPDATE` would otherwise match zero rows and report success), treats the form-status write as
+best-effort, and returns `false` only when *neither* signal took. After: `finalize_failed` 0, and
+a second pass reports `already_closed` rather than retrying.
+
+**Closing is real now, so it has an undo.** `scripts/reopen-session.php` clears the response
+timestamps and resets the form status — in that order, the close path's dependency in reverse.
+Setting the form status Incomplete on the record page is no longer sufficient by itself. Rejected
+the tempting alternative of treating `<host>_complete = '0'` as an implicit reopen: it rests on
+that value never appearing for any other reason, and if it ever did, sessions would silently
+reopen and this bug would come back quietly.
+
+Verified on fresh participants in arms 2 and 3: a turn is accepted before ending and refused after,
+the composer and End Session button are gone on Back, the terminal notice renders, and — with the
+UI bypassed entirely by calling the AJAX action from the page context, which is what a stale tab
+does — the server answers `Session already completed.` and records nothing. Regression test:
+`npm run e2e:reentry`. Full write-up, including the unchanged `edit_completed_response = 1` survey
+setting that lets REDCap serve the page in the first place:
+[`docs/session-lifecycle/`](docs/session-lifecycle/README.md).
+
+### Arm placement worked by accident on PID 257 and not at all on PID 268
+
+`recordExistsInArm()` guarded its data-table lookup with
+`method_exists($this, 'getDataTable')`. The framework exposes `getDataTable()` on `Framework`, which
+`AbstractExternalModule` reaches through `__call`, and **`method_exists()` does not see magic
+methods** — so the check was always false and the query always ran against the hardcoded
+`redcap_data` fallback. `is_callable()` returns true there; `method_exists()` does not. Now
+`\Records::getDataTable()`, the resolver the module's seven other call sites already use.
+
+Invisible on PID 257, whose `data_table` *is* `redcap_data` — which is why
+[`15-arm-materialization.md`](docs/phase-3-handoff/15-arm-materialization.md)'s 12/12 verification
+passed. On PID 268 (`redcap_data7`) the query matched 0 rows where the real table has 33, so the
+method always answered "not in this arm", with two consequences:
+
+- **Standard Care took the materialize path.** The `already-present` short-circuit never fired, so
+  the module tried to write `study_group` at arm 1's Day-1 event — the randomization target field
+  *at its target event* — and `Records::saveData()` rejected it (`Records.php:6783`). The outcome
+  stayed correct (SC never leaves arm 1) but every SC participant logged
+  `arm materialization failed: saveData reported errors`, which would mask a real one.
+- **Idempotency was gone.** Re-saves re-attempted the write for arms 2/3 instead of short-circuiting.
+
+Found by running participants through the consent survey in a browser on PID 268 rather than by
+reading: the failure needs a project whose data table is not `redcap_data` *and* a Standard Care
+allocation, so no amount of 257 testing would have surfaced it. Arms 2 and 3 were never at risk —
+the target-field guard is field **and** event scoped (`Randomization.php:2354`), and the module
+writes to the other arm's event.
+
+Full verification, the two open protocol findings it turned up (the trigger does not require consent
+to be given; allocation precedes the whole baseline battery), and the reply to the study
+statistician: [`docs/randomization/`](docs/randomization/README.md).
+
 ### GPT-5.6 selectable — and it is reasoning-class, not a chat model
 
 New aliases `gpt-5-6-sol`, `gpt-5-6-luna`, `gpt-5-6-terra` in MICA's `llm-model`

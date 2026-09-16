@@ -43,9 +43,15 @@ So the rule is: **the record is placed in exactly the arm it was randomized to.*
 
 **Why the allocation field had to be invented:** nothing in PID 257 stored the assigned arm.
 `randomize_trigger` and `randomization_date` exist on `admin`, but `desc_group_assigned` is a
-*descriptive* (display-only) field, and REDCap's built-in Randomization module is disabled
-(`randomization = 0`). Without a real value, no code can know the target arm. If you later enable
-REDCap's Randomization module, point `study-group-field` at its allocation field instead.
+*descriptive* (display-only) field, and REDCap's built-in Randomization module was disabled
+(`randomization = 0`). Without a real value, no code can know the target arm.
+
+> **Superseded for PID 268 (2026-09-15).** The built-in Randomization module is now **enabled**, and
+> `study_group` is its **target field** — so there is nothing to repoint: REDCap writes the
+> allocation and this hook places the record, in the same save. See
+> [../randomization/README.md](../randomization/README.md) for the verified configuration, the
+> `Records::saveData()` target-field guard that the placement write depends on, and two open items
+> (the trigger does not require consent to be complete; allocation precedes the baseline battery).
 
 ## Coverage limit — read this before relying on the hook
 

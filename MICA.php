@@ -726,6 +726,25 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             return false;
         }
 
+        /**
+         * A page restored from the back/forward cache must re-ask the server.
+         *
+         * Chromium does NOT bfcache this page - going Back after End Session issues a real
+         * GET+POST, which is why the session gate is what stops re-entry there. Safari and
+         * Firefox often do bfcache, and iOS Safari is the likeliest browser in an ED. A restored
+         * page skips the whole bootstrap: no server round trip, so no gate, and the participant
+         * gets their old chat back with a live composer. The server still refuses the turn (see
+         * the callAI guard), but they would be typing into a chat that answers with an error
+         * instead of seeing the terminal notice.
+         *
+         * Reloading re-runs the bootstrap, which re-runs the gate and renders the same terminal
+         * state as every other path - rather than inventing a second way to say "this is over".
+         * Safe mid-session too: the conversation is restored from storage on mount.
+         */
+        window.addEventListener('pageshow', function(e){
+            if (e.persisted) window.location.reload();
+        });
+
         function ready(fn){ if (document.readyState !== 'loading') fn(); else document.addEventListener('DOMContentLoaded', fn); }
         ready(function(){
             var attempts = 0;
@@ -1085,11 +1104,22 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * a response already marked complete keeps its original time, so re-ending a session cannot
      * rewrite when it finished.
      */
-    private function markSurveyResponseSubmitted(string $record, ?string $instrument, int $eventId): void
-    {
+    private function markSurveyResponseSubmitted(
+        string $record,
+        ?string $instrument,
+        int $eventId,
+        ?int $projectId = null
+    ): void {
         if ($instrument === null || $instrument === '' || $eventId <= 0) {
             return;
         }
+
+        // Explicit for the cron. `PROJECT_ID` is a request-scoped constant and cron has no project
+        // global (the same reason finalizeAndCloseSession() carries $projectId and uses $Proj
+        // rather than REDCap::getEventNames()). Defaulted, not required, so the participant-facing
+        // caller is unchanged - but a cron call that fell back to it would silently UPDATE zero
+        // rows and report success.
+        $projectId ??= (int) PROJECT_ID;
 
         try {
             $this->query(
@@ -1099,7 +1129,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 . 'SET r.first_submit_time = COALESCE(r.first_submit_time, NOW()), '
                 . '    r.completion_time   = COALESCE(r.completion_time, NOW()) '
                 . 'WHERE s.project_id = ? AND s.form_name = ? AND p.event_id = ? AND r.record = ?',
-                [(int) PROJECT_ID, $instrument, $eventId, $record]
+                [$projectId, $instrument, $eventId, $record]
             );
         } catch (\Throwable $t) {
             // Never fail the session over this. The transcript is already safe by this point, and
@@ -1376,9 +1406,14 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      */
     private function recordExistsInArm($project_id, $record, int $arm): bool
     {
-        $dataTable = method_exists($this, 'getDataTable')
-            ? $this->getDataTable($project_id)
-            : 'redcap_data';
+        // NOT method_exists($this, 'getDataTable'): the framework exposes it on Framework, which
+        // AbstractExternalModule reaches through __call, and method_exists() does not see magic
+        // methods - so that check is always false and this silently fell back to 'redcap_data'.
+        // Harmless on PID 257 (whose data table IS redcap_data) and wrong on every newer project:
+        // on PID 268 (redcap_data7) it made this method always answer "not in the arm", which sent
+        // Standard Care down the materialize path and into REDCap's randomization target-field
+        // guard. Same resolver the rest of the module already uses.
+        $dataTable = \Records::getDataTable($project_id);
 
         $sql = "select 1 from $dataTable d
                   join redcap_events_metadata em on em.event_id = d.event_id
@@ -1421,6 +1456,59 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
             switch ($action) {
                 case "callAI":
+                    /**
+                     * A finished session cannot be talked into again.
+                     *
+                     * FIRST, before handleUserInput() and before logMICAQuery(): the message is
+                     * written to the transcript several lines below, and that write happens ahead
+                     * of every other check in this case - including assertModelIsRegistered(). So a
+                     * turn posted after End Session was persisted into the participant's chat log
+                     * even when the model call then failed, landing *after* the transcript had been
+                     * finalized and its SafetyScan queued. Reproduced on PID 268: the transcript
+                     * was finalized at 09:50:23 and "Actually I want to keep talking after ending"
+                     * was logged at 09:50:37.
+                     *
+                     * The SPA's bootstrap gate is not enough on its own. It only runs when the page
+                     * is built, and the host surveys allow a completed response to be re-opened, so
+                     * the browser Back button re-serves a live chat. This is the server-side check
+                     * that does not care how the client got here.
+                     *
+                     * `$instrument` and `$event_id` are the framework's own values for this
+                     * request, not payload fields - the same reason resolveParticipantId() ignores
+                     * the payload. When the instrument is absent or is not a configured chat host
+                     * this ALLOWS the turn: refusing would break any caller whose host cannot be
+                     * resolved, and the bootstrap gate still covers the participant's own path.
+                     * That is a deliberate choice, not an oversight - it is why the log line below
+                     * exists, so a guard that has quietly stopped matching is visible.
+                     *
+                     * The event falls back the OTHER way: no usable `$event_id` means the check
+                     * runs unscoped, i.e. any closed session on the record closes this one. The
+                     * framework always supplies it on a survey request, so this is near-theoretical
+                     * - but the two failure directions are not symmetric. An over-refusal is loud
+                     * (the participant is told, and `turn refused` is logged), while an
+                     * under-refusal silently appends to a sealed transcript. Prefer the loud one.
+                     */
+                    $turnHost = is_string($instrument) ? $instrument : '';
+                    if ($turnHost !== '' && $this->isChatHostInstrument($turnHost)) {
+                        if ($this->sessionIsClosed($participant_id, $turnHost, (int) $event_id ?: null)) {
+                            $this->log('turn refused: the session is already closed', [
+                                'record'     => (string) $participant_id,
+                                'instrument' => $turnHost,
+                                'event_id'   => (string) $event_id,
+                            ]);
+                            throw new \Exception(
+                                'Session already completed. Thank you. If you think this session '
+                                . 'should still be open, please contact the study team.'
+                            );
+                        }
+                    } else {
+                        $this->log('turn allowed without a session gate: no chat host instrument on '
+                            . 'this request', [
+                                'record'     => (string) $participant_id,
+                                'instrument' => $turnHost,
+                            ]);
+                    }
+
                     $messages = $this->handleUserInput($payload);
                     if (empty($messages)) {
                         throw new \Exception('No usable messages were provided');
@@ -2369,20 +2457,43 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     /**
      * Is this session closed?
      *
-     * Reads the host instrument's form status, which is the control surface a CRC uses: Complete
-     * means closed, and setting it back to Incomplete on the record page reopens it. The cron writes
-     * it when a window passes (see closeExpiredSessions()), and the participant's own End Session
-     * does NOT - a finished session is still inside its window, and the existing terminal notice in
-     * the SPA is what tells them it is over.
+     * Two independent signals, either of which closes it:
      *
-     * ⚠️ This check is the enforcement. Writing `<form>_complete` does not set
-     * `redcap_surveys_response.completion_time`, so REDCap will happily keep serving the survey -
-     * nobody later should assume the form status is blocking entry on its own.
+     * 1. **The host survey response has been submitted** - `completion_time` on
+     *    `redcap_surveys_response`, written by markSurveyResponseSubmitted() when the participant
+     *    presses End Session. This is what actually enforces "you cannot come back".
+     * 2. **The host instrument's form status is Complete** - the control surface a CRC uses:
+     *    setting it back to Incomplete on the record page reopens the session. The cron writes it
+     *    when a window passes (see closeExpiredSessions()).
+     *
+     * ⚠️ Signal 1 had to be added because signal 2 alone never fired for a participant's own
+     * ending, and it is the one that does not depend on call order. `Records::saveData()` refuses
+     * to write `<form>_complete` once the form's survey response has a **`first_submit_time`** -
+     * core builds its `$responses` lookup with `where ... r.first_submit_time is not null`
+     * (`Records.php:6238`) and raises `survey_403` from it. `markSurveyResponseSubmitted()` sets
+     * that column, and it used to run *before* the status write, so every End Session blocked its
+     * own form status, this method returned false, and the participant could re-enter the chat
+     * with the browser Back button and keep talking - the transcript having already been finalized
+     * and scanned. Verified on PID 268.
+     *
+     * The order is fixed now (status first, stamp second, in both completeSession() and
+     * finalizeAndCloseSession()) so signal 2 works again. Signal 1 stays primary anyway: it is a
+     * single UPDATE that cannot be refused, it is what REDCap's own survey system reads, and it
+     * does not quietly break if someone reorders those two calls again.
+     *
+     * Re-entry is possible in the first place because the host surveys have
+     * `edit_completed_response = 1` (and `save_and_return = 1`), so REDCap re-serves a completed
+     * response rather than refusing it. That is a project setting, not something this code should
+     * flip silently - see docs/session-lifecycle/README.md.
      */
     private function sessionIsClosed($recordId, ?string $hostInstrument, ?int $eventId = null): bool
     {
         if ($hostInstrument === null || $hostInstrument === '') {
             return false;
+        }
+
+        if ($this->hostSurveyResponseSubmitted((string) $recordId, $hostInstrument, $eventId)) {
+            return true;
         }
 
         $field = $hostInstrument . '_complete';
@@ -2418,6 +2529,63 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         }
 
         return false;
+    }
+
+    /**
+     * Has the participant already submitted this session's host survey response?
+     *
+     * The mirror of markSurveyResponseSubmitted(): same three-table join, reading the
+     * `completion_time` that method writes. Kept as its own query rather than folded into
+     * sessionIsClosed() so the two halves - "what closes a session" and "how submission is
+     * detected" - stay separately readable and separately testable.
+     *
+     * Event-scoped when the caller knows the event, which is the precise question on the
+     * participant's path: *this* session, not any session on the record. Neither chat host is a
+     * repeating form (only `mica_safety_finding` is), so there is no instance to disambiguate; if
+     * a host is ever made repeating, this needs an instance filter or it will block the second
+     * instance before it starts.
+     */
+    private function hostSurveyResponseSubmitted(
+        string $record,
+        string $hostInstrument,
+        ?int $eventId = null,
+        ?int $projectId = null
+    ): bool {
+        if ($record === '' || $hostInstrument === '') {
+            return false;
+        }
+
+        // Explicit for any caller without a request project context - see
+        // markSurveyResponseSubmitted(), which this reads back.
+        $projectId ??= (int) $this->getProjectId();
+
+        try {
+            $sql = 'SELECT 1 FROM redcap_surveys_response r '
+                 . 'JOIN redcap_surveys_participants p ON p.participant_id = r.participant_id '
+                 . 'JOIN redcap_surveys s ON s.survey_id = p.survey_id '
+                 . 'WHERE s.project_id = ? AND s.form_name = ? AND r.record = ? '
+                 . 'AND r.completion_time IS NOT NULL';
+            $params = [$projectId, $hostInstrument, $record];
+
+            if ($eventId !== null && $eventId > 0) {
+                $sql .= ' AND p.event_id = ?';
+                $params[] = $eventId;
+            }
+
+            $result = $this->query($sql . ' LIMIT 1', $params);
+            return (bool) $result->fetch_row();
+        } catch (\Throwable $t) {
+            // A failed lookup must not silently hand a finished participant an open session. The
+            // caller treats false as "still open", so say so loudly rather than only in the
+            // emLogger file - $this->log() lands in redcap_external_modules_log, which is where
+            // anyone actually looks.
+            $this->log('session gate: could not read the host survey response, so the session was ' .
+                'treated as open', [
+                    'record' => $record, 'instrument' => $hostInstrument,
+                    'event_id' => (string) ($eventId ?? ''), 'error' => $t->getMessage(),
+                ]);
+            return false;
+        }
     }
 
     private function systemContextWithoutPilotScaffolding($recordId, ?string $hostInstrument): array
@@ -2682,6 +2850,25 @@ class MICA extends \ExternalModules\AbstractExternalModule {
              * `chatbot_end_session_url_override` stays as the escape hatch it always was, and now
              * only applies when the survey itself specifies no continuation.
              */
+            /**
+             * ⚠️ ORDER IS LOAD-BEARING: form status FIRST, then the response stamp.
+             *
+             * `Records::saveData()` refuses to write `<form>_complete` for a form whose survey
+             * response has a **`first_submit_time`** - core builds its `$responses` lookup with
+             * `where ... r.first_submit_time is not null` (`Records.php:6238`) and raises
+             * `survey_403` off it. markSurveyResponseSubmitted() is what sets that column. So with
+             * the two calls the other way round - which is how this was written - the stamp landed
+             * first and then blocked the status write on every single session, silently.
+             *
+             * Measured across six records on PID 268: every response with `first_submit_time` set
+             * had no form status, and the one without it (a session the cron closed, never
+             * submitted) had `mica_ed_session_complete = 2`. Nothing about the write is impossible;
+             * it was only ever impossible *after* the stamp.
+             *
+             * Keep them adjacent and in this order. finalizeAndCloseSession() does the same, for
+             * the same reason.
+             */
+            $this->markSessionCompleteOnFinish($participant_id, $hostInstrument, $hostEventId);
             $this->markSurveyResponseSubmitted($participant_id, $hostInstrument, (int) $hostEventId);
 
             $next = $this->sessionContinuationUrl($participant_id, $hostInstrument, (int) $hostEventId);
@@ -2700,8 +2887,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 $hostEventId,
                 $hostInstance
             ));
-
-            $this->markSessionCompleteOnFinish($participant_id, $hostInstrument, $hostEventId);
 
             return $surveys;
         }
@@ -2776,17 +2961,27 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     }
 
     /**
-     * A participant who ends their session cannot walk back into it.
+     * Best-effort: put the host instrument's form status to Complete for the study team.
      *
-     * Closes the re-entry gap in `18 §10 A6` gate 3: Repeat Survey is enabled on both host surveys
-     * and nothing server-side stopped a finished participant reopening their link and continuing to
-     * talk, appending a second conversation to a session that had already been finalized and
-     * scanned. The SPA showed a terminal notice; the server agreed to carry on.
+     * ⚠️ **This is not what stops a participant re-entering, despite what this docblock used to
+     * say.** It was written to close the re-entry gap in `18 §10 A6` gate 3, and on the one path
+     * that mattered it silently failed every time: `markSurveyResponseSubmitted()` ran first and
+     * set `first_submit_time`, which is exactly the condition `Records::saveData()` refuses a
+     * `<form>_complete` write on (`survey_403`). The failure went to the emLogger file rather than
+     * the module log, so it looked like it worked. Reproduced on PID 268 with the browser Back
+     * button: the chat came back, live, and the server accepted another turn into an
+     * already-finalized transcript.
      *
-     * Same field and same meaning as the closer's: the host instrument's form status becomes
-     * Complete, `sessionIsClosed()` refuses entry on it, and a CRC reopens by setting it back to
-     * Incomplete. One control, whether the session ended because the participant finished it or
-     * because its window ran out.
+     * The call order is fixed, so this write now succeeds - but it is still not the enforcement,
+     * because it is one reordering away from failing again. See docs/session-lifecycle/README.md.
+     *
+     * What actually closes a session:
+     *   - `markSurveyResponseSubmitted()` stamps `redcap_surveys_response.completion_time`, and
+     *   - `sessionIsClosed()` reads it, refusing the bootstrap AND every subsequent `callAI` turn.
+     *
+     * This call still earns its place where no survey response exists (an admin-initiated
+     * finalize), and the status remains the CRC's control surface: setting it back to Incomplete is
+     * how a session is reopened, the same as for the window closer.
      *
      * **Never throws, and never fails the participant's completion.** Their transcript is already
      * finalized and their scan already queued by this point; a status write that failed would be a
@@ -2830,12 +3025,49 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 ]]),
             ]);
 
+            /**
+             * The known refusal is not an error, but it should no longer happen here.
+             *
+             * `Records::saveData()` rejects a `<form>_complete` write when the form's survey
+             * response already has a `first_submit_time` (`Records.php:6238` builds `$responses`
+             * on exactly that column; `survey_403` is raised from it). Callers now write the
+             * status BEFORE stamping the response, so this succeeds - it failed on every session
+             * only because the stamp used to come first.
+             *
+             * Still classified rather than assumed, because the refusal remains reachable: an
+             * admin-initiated finalize on a response the participant had already submitted, or
+             * anyone reordering those two calls again. Reported through $this->log() when it is
+             * anything else - emError() writes to the emLogger FILE, which is how the original
+             * failure stayed invisible for months.
+             */
             if (!empty($save['errors'])) {
-                $this->emError('completeSession: the session was finalized but its form status could '
-                    . 'not be written, so the participant can still re-enter it', [
-                        'participant_id' => $participantId,
-                        'errors'         => $save['errors'],
+                /*
+                 * Classified WITHOUT matching REDCap's prose. `survey_403` is a LanguageUpdater
+                 * string, so "Form Status field" is English-only and can be reworded upstream; if
+                 * the match ever stopped working this branch would flip and write a log row on
+                 * every single completed session - the exact log-noise failure this fix exists to
+                 * undo. Two language-independent facts identify the refusal instead: nothing was
+                 * written (`item_count` 0), and the rejected field is the one field this method
+                 * tried to write.
+                 */
+                $errorText    = strtolower(json_encode($save['errors']));
+                $wroteNothing = (int) ($save['item_count'] ?? 0) === 0;
+                $ourFieldOnly = strpos($errorText, strtolower($hostInstrument . '_complete')) !== false;
+
+                if ($wroteNothing && $ourFieldOnly) {
+                    $this->emDebug('completeSession: form status not written - REDCap does not allow '
+                        . 'it for a survey response. Expected; the session is closed by its submitted '
+                        . 'survey response, not by this field.', [
+                            'participant_id' => $participantId,
+                            'instrument'     => $hostInstrument,
+                        ]);
+                } else {
+                    $this->log('session close: the form status could not be written', [
+                        'record'     => (string) $participantId,
+                        'instrument' => $hostInstrument,
+                        'errors'     => substr(json_encode($save['errors']), 0, 500),
                     ]);
+                }
             }
         } catch (\Throwable $e) {
             $this->emError('completeSession: marking the session complete failed', [
@@ -3582,6 +3814,12 @@ class MICA extends \ExternalModules\AbstractExternalModule {
          * The session's own `$instance` still identifies the transcript, which is why it is carried
          * everywhere else here.
          */
+        /**
+         * ⚠️ ORDER IS LOAD-BEARING: form status FIRST, then the response stamp. Same reason as
+         * completeSession() - `Records::saveData()` refuses `<form>_complete` once the response has
+         * a `first_submit_time` (`Records.php:6238`, `survey_403`), and the stamp is what sets it.
+         * Stamp first and this write can never succeed.
+         */
         $save = \REDCap::saveData([
             'project_id'   => $projectId,
             'dataFormat'   => 'json',
@@ -3595,16 +3833,49 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
         // saveData never throws; an unread `errors` key is how a save that did nothing looks exactly
         // like one that worked (docs 14 D11/D16).
-        if (!empty($save['errors'])) {
-            $this->emError('session closer: the transcript was finalized and queued but the form '
-                . 'status could not be written, so the session is still open', [
-                    'project_id' => $projectId,
+        $statusWritten = empty($save['errors']);
+
+        /**
+         * The stamp is what actually closes the session, so it happens whether or not the status
+         * write above worked.
+         *
+         * `sessionIsClosed()` reads `redcap_surveys_response.completion_time`, and that - not the
+         * form status - is what refuses the bootstrap and every subsequent turn. Before this, the
+         * closer wrote only the form status and returned false the moment it failed, which
+         * suppressed the SESSION_CLOSED_LOG below and therefore the close-once guard: the session
+         * stayed a candidate and every later pass retried it forever. Observed as
+         * `finalize_failed: 4` on PID 268, once per already-ended session, per run.
+         *
+         * $projectId explicitly: cron has no PROJECT_ID constant to fall back on.
+         */
+        $this->markSurveyResponseSubmitted($record, $formName, $eventId, $projectId);
+        $stamped = $this->hostSurveyResponseSubmitted($record, $formName, $eventId, $projectId);
+
+        if (!$stamped) {
+            // Neither signal took. THIS is the case that must leave the session open and loud -
+            // the transcript is finalized and queued, but nothing marks the session closed, so a
+            // participant could still walk back in.
+            $this->log('session closer: the session could not be closed - neither the form status '
+                . 'nor the survey response could be marked', [
                     'record'     => $record,
+                    'project_id' => (string) $projectId,
                     'field'      => $field,
-                    'errors'     => $save['errors'],
+                    'errors'     => substr(json_encode($save['errors'] ?? []), 0, 500),
                 ]);
 
             return false;
+        }
+
+        if (!$statusWritten) {
+            // Closed, but the CRC's control surface is missing. Not fatal - and surfaced through
+            // $this->log() rather than emError(), because emError() writes to the emLogger FILE and
+            // that is precisely how the original failure stayed invisible.
+            $this->log('session closer: session closed, but its form status could not be written', [
+                'record'     => $record,
+                'project_id' => (string) $projectId,
+                'field'      => $field,
+                'errors'     => substr(json_encode($save['errors']), 0, 500),
+            ]);
         }
 
         $this->safeLog(self::SESSION_CLOSED_LOG, [

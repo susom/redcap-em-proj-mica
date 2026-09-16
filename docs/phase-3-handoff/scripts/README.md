@@ -95,6 +95,24 @@ docker exec $CONTAINER rm -rf /var/www/html/temp/scripts   # clean up
 Defaults are `pid=257`, `credential_field=last_name`, `credential_event_id=1004`
 (Day 1 (ED) arm 1 — the pre-randomization enrollment event).
 
+## Session lifecycle
+
+Supporting [`../../session-lifecycle/README.md`](../../session-lifecycle/README.md).
+
+| File | Purpose |
+|---|---|
+| `reopen-session.php` | `<pid> <record> <host_instrument> [event_id] [--dry-run]`. Undoes a session closure so the participant's existing link works again. Clears `redcap_surveys_response.first_submit_time` / `completion_time` **and then** sets `<host>_complete` back to Incomplete — that order matters, because `saveData` refuses a form-status write while the response carries a `first_submit_time` (`survey_403`), which is the close path's ordering dependency in reverse. Setting the form status Incomplete on the record page is **not** sufficient on its own: enforcement reads the response row. Prints the current state before touching anything. Does not reopen the transcript, and the expiry cron will not re-close the session (`sessionWasClosedBefore()` still holds its close record). |
+
+## Randomization → arm placement
+
+Supporting [`../../randomization/README.md`](../../randomization/README.md).
+
+| File | Purpose |
+|---|---|
+| `seed-rand-test.php` | `<pid> [record]`. Creates an eligible, **not-yet-randomized** participant in arm 1 (age/sex/phone/military/prison plus the three AUDIT-C items, so `audit_c_score` and `calc_screen_result` compute), reports whether the record is already randomized, and prints the `consent` survey link. Submitting that link in a browser is what exercises the real trigger — `Randomization::realtimeRandomization()` fires only on a UI save, so a script that calls `REDCap::saveData()` on `consent` proves nothing. Writes only the eligibility inputs, never `study_group`: that is the randomization target field and `Records::saveData()` rejects writes to it at the target event. |
+| `dev-allocation-table-TESTING-ONLY.csv` | Balanced 1:1:1 development sequence, 60 slots (20 per group), permuted blocks of 6. **Development tables only.** |
+| `dev-allocation-table-MICA-ONLY.csv` | Arms 2 and 3 only, so every test participant reaches a session. Deliberately unusable as a randomization schedule — it has no Standard Care allocations. |
+
 ## Before running against another project
 
 1. **`apply` refuses to run unless the project is in Development**, because adding dictionary
