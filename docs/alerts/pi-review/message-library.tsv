@@ -1,0 +1,63 @@
+sun_sms_start	Hi [baseline_arm_1][first_name], it's the MICA Team checking in.
+ar_1	Amazing job staying alcohol-free this week! Your body and mind will thank you for it
+ar_2	Staying alcohol-free this week took effort and intention. Give yourself credit for the choices you made along the way.
+ar_3	Incredible! You made a smart choice this week, and it's a big step toward your goals.
+ar_4	Awesome work! Staying alcohol-free shows your strength and commitment-keep it up!
+ar_5	Well done! Skipping alcohol this week is a great way to prioritize your well-being.
+ar_6	That's fantastic! You're proving to yourself that you can make choices that align with your goals.
+ar_7	Congrats on sticking to your plan this week! Your body and mind will feel the benefits!
+ar_8	You crushed it! Another alcohol-free week is another step toward feeling your best.
+ar_9	Well done on not drinking this week! It's a big accomplishment-celebrate that!
+ar_10	Awesome decision! You're showing how much control and strength you have-keep up the good work!
+ar_11	Fantastic! By choosing not to drink, you're setting yourself up for long-term health and success.
+ar_12	Great job! You made a choice that supports your goals and shows your dedication to change
+sd_1	Nice work this week. You stayed within lower-risk drinking levels, which shows awareness and control over your choices.
+sd_2	You reported drinking this week while staying below higher-risk levels. Think about what helped you keep your drinking where you wanted it.
+sd_3	Staying within your limits is an accomplishment. The choices you made along the way helped make that happen.
+sd_4	It sounds like you found a balance that worked for you this week. Taking time to notice what contributed to that success can help in the future.
+sd_5	Great job staying within lower-risk drinking guidelines. Small decisions can make a big difference over time.
+sd_6	This week shows that drinking and staying within your goals can go together. Reflect on what strategies helped you stay on track.
+sd_7	You remained below higher-risk drinking levels this week. That reflects thoughtful choices and attention to your goals.
+sd_8	Every week that you stay within your limits helps build confidence in your ability to manage your drinking.
+sd_9	You demonstrated control over your alcohol use this week. Give yourself credit for the decisions that supported that outcome.
+sd_10	Staying within lower-risk drinking levels can support better health, sleep, mood, and energy. 
+sd_11	You met a goal that many people find challenging—enjoying alcohol while keeping it within boundaries that feel right for you.
+sd_12	Looking ahead, try to continue making choices that fit with your goals around drinking.
+bd_1	This week’s drinking was in the range considered unhealthy. Taking a moment to consider how that fits with your personal goals may be worthwhile.
+bd_2	Drinking above recommended limits can increase the risk of health, relationship, and daily life problems over time. Small changes can make a meaningful difference.
+bd_3	Sometimes drinking patterns move us closer to our goals, and sometimes they move us farther away. This week may be an opportunity to reflect on what matters most to you.
+bd_4	The choices made this week do not define the future. Every week offers a new chance to move toward the life you want.
+bd_5	Drinking above lower-risk levels is common, but it can carry consequences that are easy to overlook in the moment and harder to ignore over time.
+bd_6	Many people find that their drinking does not always align with the goals they have for their health, energy, relationships, or future.
+bd_7	Lasting change often begins with noticing patterns honestly and without judgment. Awareness is an important first step.
+bd_8	Alcohol can offer short-term benefits while also creating costs that may not become apparent until later. Both sides are worth keeping in mind.
+bd_9	Reflecting on how alcohol fits into your priorities can help guide future choices in a direction that feels right for you.
+bd_10	Progress is not measured by perfection. It is measured by paying attention, learning, and continuing to move toward what matters most.
+bd_11	Drinking above lower-risk levels may increase the likelihood of alcohol-related consequences. Recognizing that risk can be an important part of making informed decisions.
+bd_12	Your goals, values, and priorities are uniquely your own. Taking time to consider whether your drinking reflects those priorities can be a powerful exercise.
+no_plan	Great! Thanks for letting us know.
+gp_1	Change often begins with paying attention rather than making a commitment. Taking time to reflect on your drinking can still be valuable.
+gp_2	Not everyone is ready to make a change immediately. Many people spend time weighing what they enjoy about drinking against what concerns them.
+gp_3	Choosing not to set a goal today does not mean you have closed the door on change in the future.
+gp_4	It can be difficult to think about changing a behavior that serves an important role in your life. Taking time to understand that role can be useful.
+gp_5	Many people feel uncertain about making changes to their drinking. Ambivalence is a normal part of the process.
+gp_6	You may not be ready to set a limit right now, but continuing to notice how alcohol affects your health, relationships, and daily life can provide valuable insight.
+gp_7	Change is most likely to last when it comes from your own reasons and priorities rather than pressure from others.
+gp_8	Deciding not to set a goal today is still a decision worth acknowledging. It reflects where you are right now in thinking about your drinking.
+gp_9	Sometimes the most important step is simply becoming more aware of how drinking fits into the life you want for yourself.
+gp_10	Many people find that their motivation for change develops gradually over time rather than all at once.
+gp_11	Whether or not you decide to make changes in the future, paying attention to the connection between your drinking and your personal goals can be informative.
+gp_12	Taking time to consider both the benefits and costs of drinking can help clarify what matters most to you
+gg_1	Great decision! Setting a drinking limit is a powerful way to stay in control. Alternating alcoholic drinks with water can make it easier to stick to your plan and feel better the next day.
+gg_2	Nice work setting a goal. People are often more successful when they decide in advance how many drinks they'll have rather than making decisions in the moment.
+gg_3	You’ve already taken an important step by choosing a limit. Slowing down and taking time between drinks can help your choices stay aligned with your goal.
+gg_4	Excellent choice. Staying in control of your own drink purchases can make it easier to track your drinking and stick with the limit you set.
+gg_5	Way to go! Eating before or while drinking can help reduce the effects of alcohol and make it easier to pace yourself throughout the evening.
+gg_6	Setting a goal shows commitment to yourself. Keeping a simple count of your drinks on your phone can help you stay aware of your progress.
+gg_7	Great plan. A quick check-in with yourself during the evening can help you decide whether your drinking is still matching the goal you set.
+gg_8	Nice work taking this step. Choosing beverages with lower alcohol content can help you enjoy social situations while staying within your limit.
+gg_9	You’ve made a thoughtful decision. Spending time with people who respect your goals can make it easier to follow through on them.
+gg_10	Setting a limit is a sign that you care about your health and well-being. Mixing in non-alcoholic drinks can help you stay on track and stay hydrated.
+gg_11	Great job committing to a goal. Removing easy opportunities to drink more than planned—such as carrying only enough money for your intended drinks—can support your success.
+gg_12	Well done. Deciding ahead of time how you’ll respond if offered another drink can make it easier to stay confident and stick with the choice you already made.
+sun_end_week_12	This completes the text messaging intervention part of the MICA study.

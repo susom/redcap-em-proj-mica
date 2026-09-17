@@ -15,8 +15,25 @@ does): [`../ALERTS_AUDIT_257_vs_262.md`](../ALERTS_AUDIT_257_vs_262.md)
 | `TEST_PLAN_LOCALHOST.md` | Step-by-step end-to-end test of all 7 requirement groups on localhost. |
 | `test_helpers.sql` | Watch/activate/time-travel/reset SQL used by the test plan. |
 | `PROD_PROMOTION.md` | Promoting to production: the two DD-upload errors, what the DD does **not** carry, and the order of operations. |
+| `ARM3_WEEKLY_SMS_STATUS.md` | **The Arm 3 weekly SMS is not in this build.** Nothing schedules it, and the `sunday` instrument is still wired to ASPIRE events, so REDCap refuses to run it. Two PI decisions block the fix. |
+| `pi-review/` | The PI-facing PDF built from that status doc, plus the two read-only scripts that produced its evidence. |
 
 ---
+
+## ⚠️ Field locations in this document are stale — read this first
+
+**Revised 2026-09-15.** The Day-1 baseline split (commit `519f0ca`) moved the contact and passcode
+fields off `baseline1` onto **`contact_info`**: `first_name`, `email`, `phonen`,
+`choice_fup_delivery`, `rnd`, `calcrnd`, `dummy_email`. Alert 01 was updated with them — it now
+**triggers on `contact_info`** and gates on `[contact_info_complete]='2'`, not `baseline1`.
+
+Everything below, and all of [`TEST_PLAN_LOCALHOST.md`](TEST_PLAN_LOCALHOST.md), still says
+`baseline1`. Anyone following the stale path completes the wrong form and sees nothing fire. The
+alert definitions in the database are correct; only the prose is out of date. Verified against
+`redcap_metadata` and `redcap_alerts` on PID 257.
+
+For a current, step-by-step SMS test on arm 3 see
+[`pi-review/MICA_Arm3_SMS_Test_Manual.pdf`](pi-review/).
 
 ## ⚠️ Nothing is live
 
