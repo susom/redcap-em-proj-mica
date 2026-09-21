@@ -3,6 +3,14 @@
 **The module side is implemented and verified on PID 257 (2026-08-28). What remains is REDCap
 configuration that needs the study's allocation table — see §8.**
 
+> **Superseded in one place (2026-09-21).** This document describes the redirect as sitting on a
+> survey *before* the study's closing page, which is what made a fallback instrument the kinder
+> destination for arm 1. On PID 268 the redirect now sits on `close` itself, so the fallback would
+> name the survey carrying the redirect and arm 1 ended the chain in an `ERR_TOO_MANY_REDIRECTS`
+> cycle. The module now refuses that and sends Standard Care to `pages/sessionHandoff.php`
+> (`state=done`), which is the honest ending once nothing follows `close`. Read
+> [`27-arm1-redirect-loop.md`](27-arm1-redirect-loop.md) alongside §5.3(a) and §7.
+
 | | |
 |---|---|
 | `classes/EdSessionLink.php` | resolves arm → host instrument → event, framework-free; 21 unit tests |

@@ -910,21 +910,45 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             /*
              * Prefer carrying on through the study's own flow over showing the handoff page.
              *
-             * When the redirect sits on a survey in the middle of a battery - which it does once the
-             * handoff moves to the end of the Day-1 assessments - a Standard Care participant has no
-             * session but has not finished either: the survey after them is the study's own closing
-             * page, with its completion message and gift-card wording. Sending them to a module page
-             * that says "you have finished" instead would take that away and tell them something
-             * subtly untrue. So when `session-fallback-instrument` names a survey designated at this
-             * event, they are sent there exactly as auto-continue would have, and the handoff page is
-             * kept for the case where there is genuinely nowhere else to go.
+             * While the redirect sits on a survey in the *middle* of a battery, a Standard Care
+             * participant has no session but has not finished either, and the survey after them is
+             * the study's own closing page. Sending them to a module page that says "you have
+             * finished" would tell them something subtly untrue. So when
+             * `session-fallback-instrument` names a survey designated at this event, they are sent
+             * there exactly as auto-continue would have.
+             *
+             * That stops being true the moment the redirect moves onto the closing page itself,
+             * which is where PID 268 now is: there is nothing after it, the fallback would name the
+             * survey carrying the redirect, and the handoff page IS the honest ending. Hence the
+             * guard below - see docs/phase-3-handoff/27-arm1-redirect-loop.md.
              */
             $fallbackUrl = null;
             $fallbackForm = trim((string) $this->getProjectSetting('session-fallback-instrument', $project_id));
             if ($fallbackForm !== '' && in_array($fallbackForm, $proj->eventsForms[$writeEventId] ?? [], true)) {
-                $candidate = (string) \REDCap::getSurveyLink($record, $fallbackForm, $writeEventId, 1, $project_id);
-                if (trim($candidate) !== '') {
-                    $fallbackUrl = $candidate;
+                /*
+                 * Never hand a survey a link back to itself.
+                 *
+                 * The fallback only makes sense while the redirect sits on a survey *before* the one
+                 * being fallen back to. Move the redirect onto that survey - which is what happened
+                 * when it moved from `tsr` to `close` - and the setting silently names the survey
+                 * carrying the redirect: `close` finishes, pipes `[ed_session_url]`, and gets its own
+                 * `?s=` link back. REDCap then re-fires the redirect on every GET of a completed
+                 * survey (`Surveys/index.php:1851`), so the participant bounces between one URL and
+                 * itself until the browser gives up with ERR_TOO_MANY_REDIRECTS.
+                 *
+                 * Arm 1 is where this is permanent: Standard Care is the only allocation that takes
+                 * the fallback forever, so a fix that relies on someone remembering to re-point a
+                 * setting is a fix that breaks the control arm the next time the flow is reordered.
+                 */
+                if ($this->surveyRedirectPipesField($project_id, $fallbackForm, $urlField)) {
+                    $this->log('ED session fallback refused: it would redirect the survey to itself', [
+                        'record' => (string) $record, 'instrument' => $fallbackForm, 'field' => $urlField,
+                    ]);
+                } else {
+                    $candidate = (string) \REDCap::getSurveyLink($record, $fallbackForm, $writeEventId, 1, $project_id);
+                    if (trim($candidate) !== '') {
+                        $fallbackUrl = $candidate;
+                    }
                 }
             }
 
@@ -959,6 +983,23 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             $url,
             'arm ' . $resolved['arm'] . ' ' . $host . ' @ event ' . $resolved['eventId']
         );
+    }
+
+    /**
+     * Does this survey's own "Redirect to a URL" pipe the session-URL field?
+     *
+     * Read from `redcap_surveys` rather than from `$Proj`, because a survey's termination options
+     * are not carried on the Project object. Only the read is here; the decision is
+     * `EdSessionLink::redirectPipesField()`, same split as the rest of the feature.
+     */
+    private function surveyRedirectPipesField($project_id, string $formName, string $urlField): bool
+    {
+        $row = $this->query(
+            'SELECT end_survey_redirect_url FROM redcap_surveys WHERE project_id = ? AND form_name = ? LIMIT 1',
+            [$project_id, $formName]
+        )->fetch_assoc();
+
+        return EdSessionLink::redirectPipesField((string) ($row['end_survey_redirect_url'] ?? ''), $urlField);
     }
 
     /**

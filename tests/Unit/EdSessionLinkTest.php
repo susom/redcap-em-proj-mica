@@ -215,4 +215,37 @@ final class EdSessionLinkTest extends TestCase
         $map = SessionHostMap::fromSetting('mica_booster_session:booster:remote_followup');
         $this->assertNull(EdSessionLink::hostInstrument($map));
     }
+
+    // --------------------------------------------------- self-redirect (ERR_TOO_MANY_REDIRECTS)
+
+    public function testASurveyWhoseRedirectPipesTheFieldIsACycle(): void
+    {
+        // The measured arm-1 failure: `close` redirects to [ed_session_url], the fallback wrote
+        // `close`'s own link into it, and Chromium gave up after 19 hops.
+        $this->assertTrue(EdSessionLink::redirectPipesField('[ed_session_url]', 'ed_session_url'));
+    }
+
+    public function testAnEventPrefixedRedirectIsTheSameCycle(): void
+    {
+        // REDCap accepts both shapes, so recognising only the bare one would let the loop back in
+        // for any study that prefixes the event.
+        $template = '[day_1_ed_arm_1][ed_session_url]';
+        $this->assertTrue(EdSessionLink::redirectPipesField($template, 'ed_session_url'));
+    }
+
+    public function testARedirectPointingSomewhereElseIsLeftAlone(): void
+    {
+        // mica_ed_session's own redirect. Refusing this would take an intervention participant's
+        // session away to prevent a loop that is not there.
+        $this->assertFalse(EdSessionLink::redirectPipesField('[survey-url:postsession]', 'ed_session_url'));
+        $this->assertFalse(EdSessionLink::redirectPipesField('https://example.org/done', 'ed_session_url'));
+        $this->assertFalse(EdSessionLink::redirectPipesField('', 'ed_session_url'));
+    }
+
+    public function testAFieldWhoseNameIsAPrefixOfTheRedirectsFieldIsNotAMatch(): void
+    {
+        // `[ed_session_url_2]` is a different field; a substring match would refuse a fallback
+        // that is perfectly safe.
+        $this->assertFalse(EdSessionLink::redirectPipesField('[ed_session_url_2]', 'ed_session_url'));
+    }
 }

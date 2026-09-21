@@ -70,6 +70,36 @@ class EdSessionLink
     }
 
     /**
+     * Does a survey's "Redirect to a URL" template pipe the session-URL field?
+     *
+     * Asked about the *template* rather than a resolved URL, because the question is whether a
+     * survey would send a participant wherever this field points - which is true before the field
+     * holds anything, and stays true after it is overwritten.
+     *
+     * A `true` here means writing that survey's own link into the field creates a cycle: REDCap
+     * re-fires an end-of-survey redirect on every GET of a completed survey
+     * (`Surveys/index.php:1851`), so the survey redirects to itself until the browser gives up with
+     * ERR_TOO_MANY_REDIRECTS. That is a browser-level dead end for the participant, with no message
+     * and no way forward, which is why it is checked rather than trusted to configuration.
+     *
+     * Recognises the two shapes REDCap accepts for naming a field in a redirect: the bare
+     * `[ed_session_url]` and the event-prefixed `[day_1_ed_arm_1][ed_session_url]`.
+     *
+     * @param string $redirectTemplate `redcap_surveys.end_survey_redirect_url`, unpiped
+     */
+    public static function redirectPipesField(string $redirectTemplate, string $urlField): bool
+    {
+        if (trim($redirectTemplate) === '' || trim($urlField) === '') {
+            return false;
+        }
+
+        return (bool) preg_match(
+            '/\[(?:[A-Za-z0-9_-]+\]\[)?' . preg_quote($urlField, '/') . '\]/',
+            $redirectTemplate
+        );
+    }
+
+    /**
      * Resolve the arm and event for a record's Day-1 session.
      *
      * @param mixed  $studyGroupValue raw allocation value; by project convention it IS the arm number
