@@ -18,6 +18,7 @@ skipped.
 | `full-path.js` | Survey Login gate (incl. scoping and a wrong-credential attempt), chatbot load, multi-turn conversation with context retention, bundle hygiene, reload/restore, End Session, mobile layout | a **participant**, via native Survey Login |
 | `review-dashboard.js` | RA queue and its ordering, session review, evidence highlighting, jump-to-evidence, the disposition gate, audit, mobile layout and tap targets | a **REDCap user** — the dashboard is an authenticated module page |
 | `module-config.js` | The read-only SafetyScan prompt panel in the module's configuration dialog: that the hook ran rather than `config.json`'s fallback, the full artifact sha256, collapse/expand, the first and last line of the artifact, a height-bounded scroll box, and its position directly above the addendum field | a **design-rights REDCap user** — not an admin, deliberately |
+| `close-empty-redirect.js` | Submitting and revisiting `close` at every kind of event: that a non-screening `close` lands on the `done` handoff page instead of a blank one, and that the screening `close` still hands off to the session or the `pending` page. Desktop and mobile | a **participant**, via real survey links |
 | `session-handoff.js` | The two pages a participant lands on when the arm-1 chain ends with no session to send them to: that the body is not blank, that neither message reveals the allocation, mobile layout, and that the `state` parameter is never echoed | **nobody** — the page is `no-auth` |
 
 ## Running the participant path
@@ -107,6 +108,19 @@ screening saw a blank screen. `C3` asserts a non-blank body for that reason.
 so "you have no MICA session" would tell them they are in the control arm. That is unblinding, and it
 is exactly the kind of sentence that gets edited into a page nobody re-reviews — so the suite greps
 for it rather than trusting it.
+
+## Running the `close` empty-redirect suite
+
+```bash
+node e2e/close-empty-redirect.js 'done=<close link at a non-screening event>' 'session=<screening close link>' ...
+```
+
+Each argument is `<expected>=<link>`, where the expectation is `done`, `pending` or `session`. Mint
+un-submitted links with `REDCap::getSurveyLink()`. The desktop run submits and the mobile run
+revisits, which covers both of REDCap's redirect paths. The suite submits real responses, so run it
+against throwaway records. See
+[`../docs/phase-3-handoff/29-close-empty-redirect.md`](../docs/phase-3-handoff/29-close-empty-redirect.md)
+§5 for the matrix and why it waits for `networkidle`.
 
 ## Two things to know before trusting a red run
 

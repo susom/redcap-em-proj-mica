@@ -1003,6 +1003,166 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     }
 
     /**
+     * Submit path of the empty-redirect guard. See handoffInsteadOfEmptyRedirect().
+     *
+     * Runs at `Surveys/index.php:2822`, which is inside REDCap's redirect branch, after the
+     * template has passed its emptiness test and before it is piped at `:2825`. It is the last
+     * point at which a module can still change where the participant ends up.
+     */
+    public function redcap_survey_complete($project_id, $record, $instrument, $event_id, $group_id,
+                                           $survey_hash, $response_id, $repeat_instance)
+    {
+        try {
+            // Auto-continue replaces the template with the next survey's URL (`Surveys/index.php:2799`),
+            // in which case the template never gets piped and there is nothing to guard.
+            $proj = $this->projectFor((int) $project_id);
+            $survey = $proj->surveys[$proj->forms[$instrument]['survey_id'] ?? 0] ?? [];
+            if (
+                !empty($survey['end_survey_redirect_next_survey'])
+                && trim((string) \Survey::getAutoContinueSurveyUrl($record, $instrument, $event_id, $repeat_instance ?: 1)) !== ''
+            ) {
+                return;
+            }
+
+            $url = $this->handoffInsteadOfEmptyRedirect(
+                (int) $project_id,
+                (string) $record,
+                (string) $instrument,
+                (int) $event_id,
+                (int) ($repeat_instance ?: 1)
+            );
+            if ($url !== null) {
+                $this->redirectAfterHook($url);
+            }
+        } catch (\Throwable $t) {
+            $this->log('empty-redirect guard threw on submit', [
+                'record' => (string) $record, 'error' => $t->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Revisit path of the empty-redirect guard. See handoffInsteadOfEmptyRedirect().
+     *
+     * REDCap re-fires the redirect on every GET of a completed response (`Surveys/index.php:1821`)
+     * and no survey hook runs before it, so this is the only place to catch it. The conditions are
+     * `:1821`'s, copied: no auto-continue, no save-and-return, not the public link, completed. The
+     * survey's hash is the participant's own bearer link, so resolving it here reveals nothing the
+     * page REDCap was about to serve would not.
+     */
+    public function redcap_every_page_before_render($project_id)
+    {
+        if (
+            !$project_id
+            || !defined('PAGE') || PAGE !== 'surveys/index.php'
+            || ($_SERVER['REQUEST_METHOD'] ?? '') !== 'GET'
+            || !isset($_GET['s']) || !is_string($_GET['s'])
+            || isset($_GET['__passthru'])
+        ) {
+            return;
+        }
+
+        try {
+            $instance = (int) ($_GET['instance'] ?? 1) ?: 1;
+            $row = $this->query(
+                'SELECT p.participant_id, p.event_id, p.participant_email, s.form_name, r.record, r.completion_time '
+                . 'FROM redcap_surveys_participants p '
+                . 'JOIN redcap_surveys s ON s.survey_id = p.survey_id '
+                . 'LEFT JOIN redcap_surveys_response r ON r.participant_id = p.participant_id AND r.instance = ? '
+                . 'WHERE p.hash = ? AND s.project_id = ? LIMIT 1',
+                [$instance, $_GET['s'], $project_id]
+            )->fetch_assoc();
+
+            // The public link has a NULL email and is exempt from the re-fire, as at `:1821`.
+            if (!$row || $row['participant_email'] === null || empty($row['completion_time'])) {
+                return;
+            }
+
+            $proj = $this->projectFor((int) $project_id);
+            $survey = $proj->surveys[$proj->forms[$row['form_name']]['survey_id'] ?? 0] ?? [];
+            if (!empty($survey['end_survey_redirect_next_survey']) || !empty($survey['save_and_return'])) {
+                return;
+            }
+
+            $url = $this->handoffInsteadOfEmptyRedirect(
+                (int) $project_id,
+                (string) $row['record'],
+                (string) $row['form_name'],
+                (int) $row['event_id'],
+                $instance,
+                (int) $row['participant_id']
+            );
+            if ($url !== null) {
+                $this->redirectAfterHook($url);
+            }
+        } catch (\Throwable $t) {
+            $this->log('empty-redirect guard threw on revisit', ['error' => $t->getMessage()]);
+        }
+    }
+
+    /**
+     * The handoff page, when a survey redirecting through the session-URL field would otherwise
+     * send its participant to a blank page. Null when REDCap's own redirect is fine.
+     *
+     * The field holds a value at one event only - the first hosting its form - but `close`, which
+     * carries the `[ed_session_url]` redirect, is designated at every event of every arm. Piped at
+     * any of those other events it resolves to nothing, and REDCap redirects to `''` anyway
+     * (`EdSessionLink::redirectPipesToNothing()`). That is every intervention participant finishing
+     * Day 1, and everyone finishing a follow-up. See docs/phase-3-handoff/29-close-empty-redirect.md.
+     *
+     * `state=done` because in every such case the participant has just completed the study's
+     * closing survey: there is nothing after it.
+     */
+    private function handoffInsteadOfEmptyRedirect(
+        int $projectId,
+        string $record,
+        string $form,
+        int $eventId,
+        int $instance,
+        ?int $participantId = null
+    ): ?string {
+        if ($record === '' || $form === '' || $eventId <= 0) {
+            return null;
+        }
+
+        $proj = $this->projectFor($projectId);
+        $template = (string) ($proj->surveys[$proj->forms[$form]['survey_id'] ?? 0]['end_survey_redirect_url'] ?? '');
+        $urlField = trim((string) ($this->getProjectSetting('ed-session-url-field', $projectId) ?: 'ed_session_url'));
+        if (!EdSessionLink::redirectPipesField($template, $urlField)) {
+            return null;
+        }
+
+        // Piped exactly as `Surveys/index.php:1846` and `:2825` pipe it.
+        $piped = (string) \Piping::replaceVariablesInLabel(
+            $template,
+            $record,
+            $eventId,
+            $instance,
+            [],
+            false,
+            null,
+            false,
+            $proj->isRepeatingForm($eventId, $form) ? $form : '',
+            1,
+            false,
+            false,
+            $form,
+            $participantId
+        );
+        $piped = str_replace(["\r\n", "\n", "\r", "\t"], ' ', br2nl($piped));
+
+        if (!EdSessionLink::redirectPipesToNothing($template, $urlField, $piped)) {
+            return null;
+        }
+
+        $this->log('Survey redirect piped to nothing: sent to the handoff page instead of a blank one', [
+            'record' => $record, 'instrument' => $form, 'event_id' => (string) $eventId,
+        ]);
+
+        return $this->sessionHandoffUrl($projectId, 'done');
+    }
+
+    /**
      * Write a value into the session-URL field, idempotently, and stamp the randomization date.
      *
      * Shared by the real link and the handoff fallback so that "never overwrite a real link" is one

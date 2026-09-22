@@ -62,6 +62,12 @@ now completed → 302 again → forever.
 **Arms 2 and 3 never see it** because their `ed_session_url` holds the `mica_ed_session` link, which
 leaves `close` on the first hop. That is why this reads as an arm-1 bug rather than a broken survey.
 
+> **Only half true (2026-09-22).** Arms 2 and 3 never see the *loop* at the screening `close`, but
+> they hit a blank page at the `close` that ends their Day-1 session chain (event 1108/1112), and so
+> does everyone at every follow-up `close`: the field only holds a value at the first event, so
+> `[ed_session_url]` pipes to nothing everywhere else. See
+> [`29-close-empty-redirect.md`](29-close-empty-redirect.md).
+
 ## 3. Verified state before the fix
 
 Every arm-1 record in PID 268 pointed at `close`; every arm-2/3 record pointed at its session:

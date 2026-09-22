@@ -248,4 +248,28 @@ final class EdSessionLinkTest extends TestCase
         // that is perfectly safe.
         $this->assertFalse(EdSessionLink::redirectPipesField('[ed_session_url_2]', 'ed_session_url'));
     }
+
+    // ------------------------------------------------ empty redirect (blank page, empty Location)
+
+    public function testARedirectThatPipesTheFieldToNothingIsABlankPage(): void
+    {
+        // The measured arm-3 failure: `close` at the arm-3 Day-1 event pipes [ed_session_url]
+        // against an event where the field is empty, and REDCap answers 302 with `Location:` empty.
+        $this->assertTrue(EdSessionLink::redirectPipesToNothing('[ed_session_url]', 'ed_session_url', ''));
+        $this->assertTrue(EdSessionLink::redirectPipesToNothing('[ed_session_url]', 'ed_session_url', "  \n"));
+    }
+
+    public function testARedirectThatPipesTheFieldToAUrlIsLeftToRedcap(): void
+    {
+        // The screening `close`: its piped value is the session link, which is the whole handoff.
+        $piped = 'http://redcap.local/surveys/?s=2YYh9NYjEyMJwKEH';
+        $this->assertFalse(EdSessionLink::redirectPipesToNothing('[ed_session_url]', 'ed_session_url', $piped));
+    }
+
+    public function testSomebodyElsesEmptyRedirectIsNotClaimed(): void
+    {
+        // A redirect naming a different field is the study's own configuration, broken or not.
+        $this->assertFalse(EdSessionLink::redirectPipesToNothing('[other_url]', 'ed_session_url', ''));
+        $this->assertFalse(EdSessionLink::redirectPipesToNothing('', 'ed_session_url', ''));
+    }
 }

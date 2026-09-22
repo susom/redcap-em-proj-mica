@@ -10,6 +10,10 @@ configuration that needs the study's allocation table — see §8.**
 > cycle. The module now refuses that and sends Standard Care to `pages/sessionHandoff.php`
 > (`state=done`), which is the honest ending once nothing follows `close`. Read
 > [`27-arm1-redirect-loop.md`](27-arm1-redirect-loop.md) alongside §5.3(a) and §7.
+>
+> **And (2026-09-22):** `close` is designated at every event but the field only holds a value at the
+> first, so every *other* `close` piped its redirect to nothing and showed a white page. The module
+> now catches that at submit and revisit. See [`29-close-empty-redirect.md`](29-close-empty-redirect.md).
 
 | | |
 |---|---|

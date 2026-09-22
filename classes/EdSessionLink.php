@@ -100,6 +100,31 @@ class EdSessionLink
     }
 
     /**
+     * Would REDCap send this survey's participant to a blank page?
+     *
+     * REDCap tests the redirect *template* for emptiness and then redirects to whatever piping makes
+     * of it (`Surveys/index.php:2805-2831` on submit, `:1833-1851` on revisiting a completed
+     * response), so a template that pipes to nothing reaches `redirect('')`: `302` with an empty
+     * `Location:` and no body. The browser shows a white page.
+     *
+     * The session-URL field holds a value at one event only - the first one hosting its form - but a
+     * survey whose redirect pipes it is typically designated at many. `close` is at every event of
+     * every arm, so every `close` except the screening one pipes against an event where the field is
+     * empty. Only surveys piping this module's field are claimed; anybody else's redirect is left to
+     * REDCap.
+     *
+     * @param string $redirectTemplate `redcap_surveys.end_survey_redirect_url`, unpiped
+     * @param string $pipedRedirect    the same template piped for the record, event and instance
+     */
+    public static function redirectPipesToNothing(
+        string $redirectTemplate,
+        string $urlField,
+        string $pipedRedirect
+    ): bool {
+        return self::redirectPipesField($redirectTemplate, $urlField) && trim($pipedRedirect) === '';
+    }
+
+    /**
      * Resolve the arm and event for a record's Day-1 session.
      *
      * @param mixed  $studyGroupValue raw allocation value; by project convention it IS the arm number
