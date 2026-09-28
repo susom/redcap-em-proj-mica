@@ -55,6 +55,28 @@ against `platform.php = 8.2` rather than the developer's PHP.
 `php-ml` and `twilio/sdk` were dropped: 2,598 files and 17.5 MB with zero
 references anywhere in the codebase. `vendor/` is 235 files / 1.3 MB.
 
+### No SafetyScan had ever succeeded on a GPT alias — the provider refused the schema (D23)
+
+Found while checking the PI's requirement that a CRC hears about a critical finding within 5 minutes
+([`31`](docs/phase-3-handoff/31-critical-finding-crc-notify.md)). Azure's strict structured output
+refuses `uniqueItems`, and the pinned output schema uses it twice. So every scan was an HTTP 400:
+three attempts, then manual review. The session reached its reviewers as "could not be screened"
+about 7.5 minutes after End Session, never as a finding. Reproduced as a participant: a disclosed
+overdose plan produced only "could not be screened", 457 s after End Session.
+
+- **`SecureChatSafetyScanCaller::providerSchema()`** withholds `uniqueItems` from the copy sent as
+  structured output.
+  - The artifact and its manifest hash are untouched.
+  - `ScanRunner` still validates the answer against the full pinned schema, so uniqueness is still
+    enforced.
+  - The run payload records `provider_schema_withheld`.
+- **The "findings ready" email's dashboard link now wraps on a phone** (`word-break:break-all`).
+  REDCap's plain-text part is unchanged.
+- **After the fix,** the same session gave a critical `self_harm` finding, and the CRC's "highest
+  urgency: critical" email arrived 22–65 s after End Session, over three runs.
+- **New:** `e2e/critical-notify.js`, `docs/phase-3-handoff/scripts/e2e-crc-reviewer.php` and
+  `tests/Unit/ProviderSchemaTest.php`.
+
 ### A finished session could be walked back into with the browser Back button
 
 Reported from the field: press End Session, press Back, keep talking to MICA. Reproduced on PID 268

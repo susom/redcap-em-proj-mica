@@ -119,6 +119,13 @@ class RedcapEmailChannel implements NotificationChannelInterface
      * more to an attacker than the tag they could not inject. Record ids cannot contain a newline, so
      * nothing user-supplied can reach a line of its own.
      *
+     * **The link may break anywhere** (`word-break:break-all`). A browser only breaks a URL at a few
+     * characters such as `?`, so `https://<host>/redcap_vX/ExternalModules/?` is one unbreakable run,
+     * and on a phone it is wider than the screen: the CRC reading a critical-finding notice had to
+     * scroll sideways to see the link (found in an end-to-end run, e2e/critical-notify.js). A fixed
+     * attribute, nothing interpolated, and REDCap's anchor rewrite tolerates it - it matches
+     * `<a\s[^>]*href=…[^>]*>` - so the text part is still `URL (URL)`.
+     *
      * Static and pure, so the conversion can be tested without a REDCap or a mail server - every
      * constraint above is a silent-rendering failure otherwise.
      */
@@ -135,7 +142,7 @@ class RedcapEmailChannel implements NotificationChannelInterface
             // Load-bearing - do not widen it to something friendlier like `\S+` without adding the
             // escaping back.
             $lines[$i] = preg_match('~^https?://[^\s<>"\']+$~', $url) === 1
-                ? '<a href="' . $url . '">' . $url . '</a>'
+                ? '<a href="' . $url . '" style="word-break:break-all">' . $url . '</a>'
                 : $escaped;
         }
 

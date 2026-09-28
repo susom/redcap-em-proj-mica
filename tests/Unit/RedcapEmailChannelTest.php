@@ -146,7 +146,7 @@ final class RedcapEmailChannelTest extends TestCase
         $url = 'https://redcap.example.org/review?pid=257';
 
         $this->assertStringContainsString(
-            '<a href="' . $url . '">' . $url . '</a>',
+            '<a href="' . $url . '" style="word-break:break-all">' . $url . '</a>',
             C::bodyToHtml("Open the dashboard:\n$url")
         );
     }
@@ -157,7 +157,22 @@ final class RedcapEmailChannelTest extends TestCase
         // that a clinical notice is sending them to their own REDCap host before they click.
         $html = C::bodyToHtml("Open:\n" . self::URL);
 
-        $this->assertStringContainsString('<a href="' . self::URL . '">' . self::URL . '</a>', $html);
+        $this->assertStringContainsString(
+            '<a href="' . self::URL . '" style="word-break:break-all">' . self::URL . '</a>',
+            $html
+        );
+    }
+
+    public function testALongLinkCanWrapOnAPhoneAndStillReadsAsAUrlInPlainText(): void
+    {
+        // Up to the `?` a URL is one unbreakable run, wider than a phone screen for a real host. The
+        // style lets it wrap; REDCap's anchor rewrite must still see through it.
+        $url = 'https://redcap.stanford.edu/redcap_v17.2.3/ExternalModules/'
+            . '?prefix=proj_mica&page=pages%2Freview&pid=35968';
+        $html = C::bodyToHtml("Open the review dashboard:\n$url");
+
+        $this->assertStringContainsString('style="word-break:break-all"', $html);
+        $this->assertSame("Open the review dashboard:\n$url ($url)", $this->plainTextAsRedcapWould($html));
     }
 
     public function testABodyWithNoUrlIsLeftAlone(): void

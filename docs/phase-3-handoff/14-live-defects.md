@@ -1,7 +1,7 @@
 # 14 — Live defects found during the SecureChatAI audit (2026-08-18)
 
 **Status:** FINDINGS — most verified by code reading. **Fixed and verified so far:
-D1, D2, D3, D4, D6, D7, D8, D10, D11, D13, D16, D22.** Still open: D5, D9, D12,
+D1, D2, D3, D4, D6, D7, D8, D10, D11, D13, D16, D22, D23.** Still open: D5, D9, D12,
 D14, D15, D17-D21
 **Scope:** defects in the code as it stands on `mica-phase-3` @ `ab81cca`.
 These are distinct from the SOW migration work in
@@ -495,7 +495,9 @@ Cappy's convention is the target: metadata only — role + content **length**
 
 **Severity:** blocking (safety-critical — the scan is the mechanism that surfaces self-harm
 disclosures for review, and it fails 100% of the time)
-**Status:** open. Found 2026-08-25 by capturing the outgoing body; see `20-llm-request-capture.md`.
+**Status: FIXED 2026-09-28** (working tree, not yet committed or deployed) — reproduced through the
+participant path, fixed at send time, re-verified the same way. See "Fix and verification" below.
+Found 2026-08-25 by capturing the outgoing body; see `20-llm-request-capture.md`.
 
 The pinned output schema uses `uniqueItems`, and Azure OpenAI structured outputs does not allow it.
 Every SafetyScan call returns HTTP 400 before the model sees anything:
@@ -556,6 +558,62 @@ where it can be, in `ScanRunner`'s post-hoc validation (`:248`) rather than by t
 
 Worth deciding at the same time whether `notification_policy_schema`'s four occurrences are ever sent
 to a provider or are validation-only; if the former, they fail the same way.
+
+#### Fix and verification (2026-09-28)
+
+Still live on 2026-09-28, a month after it was found: every scan on this instance since then had
+failed (jobs 330–334 on PIDs 268 and 271), and the one on 271 had also emailed nobody because the
+reviewer role had no users. Found while checking the PI's requirement that a CRC hears about a
+critical finding within 5 minutes — see [`31-critical-finding-crc-notify.md`](31-critical-finding-crc-notify.md).
+
+**Reproduced first**, twice:
+- **At the provider** (non-PHI synthetic transcript, the pinned schema, `strict: true`):
+  - with the pinned schema, **HTTP 400**: "`'uniqueItems' is not permitted`"
+  - with the same schema minus `uniqueItems`, **HTTP 200** and schema-valid output
+
+  So `uniqueItems` is the only keyword it refuses. `minLength`, `maxLength`, `minItems`, `maxItems`,
+  `minimum`, `maximum`, `$schema`, `$id` and `title` are all accepted.
+- **As a participant** (`e2e/critical-notify.js`, PID 271, record `SCAN5MIN01`): a disclosure of an
+  overdose plan for tonight, then End Session. Timeline after End Session:
+  - +33 s, +156 s, +456 s: the three attempts, each `service_error`
+  - +456 s: `manual_review_required`
+  - +457 s: the CRC email, "A session could not be screened and needs manual review"
+
+  The record got only a `scan_failure` placeholder. 7 of 17 checks failed.
+
+**The fix withholds the keyword from the request, not from the artifact**
+(`SecureChatSafetyScanCaller::providerSchema()`, `PROVIDER_WITHHELD_KEYWORDS`).
+- **The artifact is untouched.** Editing it would have broken the manifest's provenance (its hashes
+  are copied from the handoff package) and turned the artifacts launch gate red.
+- **The provider's copy:** the caller hands SecureChatAI the pinned schema minus `uniqueItems`, and
+  nothing else changes. The prompt fallback for non-OpenAI aliases still embeds the full schema.
+- **Uniqueness is still enforced after decoding.** `ScanRunner` validates the answer against the full
+  pinned schema, so a duplicated `recommended_actions` entry is still `schema_invalid`.
+- **The run row says what was sent.** Its payload records `provider_schema_withheld: ["uniqueItems"]`
+  beside `output_schema_sha256`, so the row never names a schema it did not send.
+
+**Re-verified the same way:** records `SCAN5MIN02`, `SCAN5MIN03` and `SCAN5MIN04`, the same
+disclosure, 19 of 19 checks each.
+- Scan `ok` on the first attempt (5.6–10.4 s at the provider).
+- Findings: `self_harm` **critical** ("a specific overdose plan for tonight") plus
+  `dangerous_alcohol_use` high.
+- CRC email "highest urgency: critical" **42 s, 65 s and 22 s after End Session**. Most of that is the
+  wait for the once-a-minute cron.
+
+Unit tests: `tests/Unit/ProviderSchemaTest.php` and three in `ScanRunnerTest`. Also brought into line:
+`scripts/safetyscan-payload-sample.php` and [`23-safetyscan-payload.md`](23-safetyscan-payload.md).
+
+**Deploy before go-live.** Prod runs whatever MICA code it was given. Until this change is there,
+every prod session reaches its reviewers as "could not be screened", about 7.5 minutes after it ends.
+
+Two things this does not change:
+- **The misclassification is unchanged.** A deterministic 400 is still classified `service_error` and
+  retried as transient. It no longer happens for this cause, but a future unsupported keyword would
+  again cost three attempts before manual review.
+- **The preflight was falsely green.** `scripts/preflight-safetyscan.php` reported **PASS** on 271
+  throughout: it never calls the provider, and it counts a mapped reviewer role without checking that
+  anyone is in it. The Launch readiness tab's reviewer gate does check that, so use it and a synthetic
+  session, not the preflight, as go-live evidence.
 
 ---
 

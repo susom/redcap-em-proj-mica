@@ -93,7 +93,7 @@ And with the addendum blank, which is the normal state and where PID 257 is left
                 "content": "<<TRANSCRIPT JSON - printed in full below>>"
             }
         ],
-        "json_schema": "<<pinned safetyscan output schema - printed in full below>>"
+        "json_schema": "<<pinned safetyscan output schema, minus the withheld keywords - in full below>>"
     },
     "project_id": 257,
     "username": null
@@ -108,8 +108,11 @@ participant identity to attach even if one were wanted.
 POST `https://aihubapi.stanfordhealthcare.org/azure-openai/deployments/gpt-5-6-sol/chat/completions`
 
 The two message bodies are shown in full in the next two sections; `response_format.json_schema.schema`
-is the pinned `safetyscan_output_schema` (sha256 `57df62da7270…`, ~4 KB pretty-printed) and is elided
-here only for length — the script prints it in full.
+is the pinned `safetyscan_output_schema` (sha256 `57df62da7270…`, ~4 KB pretty-printed) **without its
+two `uniqueItems`**, and is elided here only for length — the script prints it in full. Since
+2026-09-28 the caller withholds that keyword because Azure's strict structured output refuses the
+whole request over it; the answer is still validated against the full pinned schema, and the run row
+records `provider_schema_withheld` ([14 D23](14-live-defects.md)).
 
 ```json
 {
@@ -125,7 +128,7 @@ here only for length — the script prints it in full.
         "json_schema": {
             "name": "response",
             "strict": true,
-            "schema": { "...": "the pinned safetyscan_output_schema, 57df62da7270" }
+            "schema": { "...": "the pinned safetyscan_output_schema, 57df62da7270, minus uniqueItems" }
         }
     }
 }

@@ -25,7 +25,8 @@ interface SafetyScanCallerInterface
      *   latencyMs: int,
      *   promptTokens: ?int,
      *   completionTokens: ?int,
-     *   schemaWasSent: bool
+     *   schemaWasSent: bool,
+     *   providerSchemaWithheld?: list<string>
      * }
      *   `runStatus` is one of EntityTypes::runStatusChoices(). `output` is the decoded model output
      *   when and only when runStatus is `ok`; every other status must carry null, so a caller
@@ -35,6 +36,10 @@ interface SafetyScanCallerInterface
      *   It exists because SecureChatAI silently drops `json_schema` for any model outside its
      *   OpenAI allowlist - so a scan can fail as `invalid_json` for a configuration reason that
      *   looks like a model fault, and the difference has to be visible on the run row.
+     *
+     *   `providerSchemaWithheld` names the JSON Schema keywords left out of the copy of the schema
+     *   the provider was sent, because it refuses them (SecureChatSafetyScanCaller::
+     *   PROVIDER_WITHHELD_KEYWORDS). Absent or empty means the provider got the pinned schema as is.
      */
     public function scan(
         string $modelAlias,

@@ -39,6 +39,14 @@ Supporting [`../24-ed-session-handoff.md`](../24-ed-session-handoff.md).
 |---|---|
 | `e2e-module-config-user.php` | `setup` \| `teardown`. Creates a throwaway account with **design rights** on the project and nothing else — no user-rights, no super_user, no data entry — so the module's own configuration dialog can be opened in a browser by the user who actually configures it. Design is the real gate: `ExternalModules::hasProjectSettingSavePermission()` short-circuits to `true` for a super user, so an admin run cannot tell you whether an ordinary study designer can open the dialog at all. Drives [`../../../e2e/module-config.js`](../../../e2e/module-config.js), which checks the read-only pinned-prompt panel. Same password handling as `e2e-admin-form-user.php`. **Tear it down when finished** — a known password plus design rights is the one combination worth being fussy about. |
 
+## Critical finding → CRC
+
+Supporting [`../31-critical-finding-crc-notify.md`](../31-critical-finding-crc-notify.md).
+
+| File | Purpose |
+|---|---|
+| `e2e-crc-reviewer.php` | `<pid> setup` \| `teardown`. Puts a stand-in CRC, `e2e_crc <crc-e2e@example.org>`, into the REDCap role named by the module's `role-ra-reviewer` setting: the role the "findings ready" email is addressed to. It then proves the address resolves, using the same query the module runs at send time. No password, because the account never logs in; it only holds the role and an address. This is the step a real CRC needs on prod. A mapped role with nobody in it is how the 09-22 notice on 271 went nowhere ("No recipient addresses were given"). Drives [`../../../e2e/critical-notify.js`](../../../e2e/critical-notify.js). |
+
 ## LLM request capture
 
 Supporting [`../20-llm-request-capture.md`](../20-llm-request-capture.md).

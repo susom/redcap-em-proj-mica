@@ -218,6 +218,10 @@ $prompt = $resolve->invoke($runner);
 
 $outputSchema = $registry->getJson('safetyscan_output_schema');
 
+// What structured output is asked for: the pinned schema minus the keywords the provider refuses
+// (docs 14, D23). The same call the caller makes, so this cannot drift from a real scan.
+$provider = \Stanford\MICA\SecureChatSafetyScanCaller::providerSchema($outputSchema);
+
 // ------------------------------------------------- level A: what MICA hands to SecureChatAI::callAI
 
 $schemaModels = (new \ReflectionClass(\Stanford\MICA\SecureChatSafetyScanCaller::class))
@@ -250,7 +254,7 @@ $callAiParams = [
         ['role' => 'system', 'content' => $systemPromptSent],
         ['role' => 'user',   'content' => $transcriptJson],
     ],
-    'json_schema' => $outputSchema,
+    'json_schema' => $provider['schema'],
 ];
 
 // ------------------------------------------- level B: SecureChatAI's filter, then the dynamic budget
@@ -306,6 +310,10 @@ printf("  pinned artifact sha256      %s\n", $registry->getHash('safetyscan_prom
 printf("  prompt_addendum_sha256      %s\n", $prompt['addendumSha256'] ?? '(none - no addendum)');
 printf("  input_schema_sha256         %s\n", $registry->getHash('safetyscan_input_schema'));
 printf("  output_schema_sha256        %s\n", $registry->getHash('safetyscan_output_schema'));
+printf("  withheld from the provider  %s\n", !$schemaWillBeForwarded || $provider['withheld'] === []
+    ? '(nothing)'
+    : implode(', ', $provider['withheld']) . ' - strict structured output refuses it; the answer is '
+      . 'still validated against the full pinned schema (docs 14, D23)');
 printf("  SecureChatAI token budget   %s = %d (from %d prompt tokens)\n", $tokenParam, $dynamicMax, $promptTokens);
 
 h('LEVEL A - what MICA hands to SecureChatAI::callAI() (SecureChatSafetyScanCaller::scan)');
@@ -316,7 +324,7 @@ echo pretty([
             ['role' => 'system', 'content' => '<<SYSTEM PROMPT - printed in full below>>'],
             ['role' => 'user',   'content' => '<<TRANSCRIPT JSON - printed in full below>>'],
         ],
-        'json_schema' => '<<pinned safetyscan output schema - printed in full below>>',
+        'json_schema' => '<<pinned safetyscan output schema, minus the withheld keywords - in full below>>',
     ],
     'project_id' => $PID,
     'username'   => null,

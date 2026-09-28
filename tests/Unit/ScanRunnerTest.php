@@ -637,6 +637,53 @@ final class ScanRunnerTest extends TestCase
         $this->assertFalse($payload['schema_was_sent']);
     }
 
+    public function testTheRunRowNamesWhatTheProviderWasNotSent(): void
+    {
+        // output_schema_sha256 names the pinned artifact; the provider got it minus these keywords.
+        // Without this line the row claims a schema it did not send (docs 14, D23).
+        $logId = $this->storeTranscript();
+
+        $this->runner(new StubSafetyScanCaller(
+            StubSafetyScanCaller::ok($this->scanOutput('no_supported_concern', 'none'))
+            + ['providerSchemaWithheld' => ['uniqueItems']]
+        ))->run($this->job($logId));
+
+        $payload = json_decode($this->results->lastRun()['model_output_json'], true);
+
+        $this->assertSame(['uniqueItems'], $payload['provider_schema_withheld']);
+    }
+
+    public function testARunRowWithNothingWithheldIsUnchanged(): void
+    {
+        $logId = $this->storeTranscript();
+
+        $this->runner(new StubSafetyScanCaller(
+            StubSafetyScanCaller::ok($this->scanOutput('no_supported_concern', 'none'))
+            + ['providerSchemaWithheld' => []]
+        ))->run($this->job($logId));
+
+        $payload = json_decode($this->results->lastRun()['model_output_json'], true);
+
+        $this->assertArrayNotHasKey('provider_schema_withheld', $payload);
+    }
+
+    public function testADuplicatedRecommendedActionIsStillRefused(): void
+    {
+        // The provider no longer enforces uniqueItems while it decodes; the pinned schema still does,
+        // here, and a scan it refuses releases nothing.
+        $logId = $this->storeTranscript();
+        $duplicated = $this->scanOutput('findings_present', 'critical', [
+            $this->finding(['recommended_actions' => ['ra_review', 'ra_review']]),
+        ]);
+
+        $outcome = $this->runner(new StubSafetyScanCaller(StubSafetyScanCaller::ok($duplicated)))
+            ->run($this->job($logId));
+
+        $this->assertSame('schema_invalid', $outcome->runStatus);
+        $this->assertStringContainsString('[uniqueItems]', $outcome->error);
+        $this->assertSame([], $this->results->findingWrites);
+    }
+
     // --------------------------------------------------------------- the request
 
     public function testThePinnedPromptAndSchemaAreWhatGetSent(): void

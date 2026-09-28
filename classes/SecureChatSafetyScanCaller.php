@@ -38,6 +38,29 @@ class SecureChatSafetyScanCaller implements SafetyScanCallerInterface
         'o1', 'o3', 'o3-mini', 'o4-mini',
     ];
 
+    /**
+     * JSON Schema keywords withheld from the copy of the pinned output schema the provider is sent.
+     *
+     * SecureChatAI sends the schema as strict structured output, and Azure OpenAI refuses the whole
+     * request over a keyword strict mode does not support - HTTP 400 before the model sees anything.
+     * `uniqueItems` is one, and the pinned schema carries it twice (`recommended_actions`,
+     * `recommended_notification_targets`). So every scan on a GPT alias failed, three attempts each,
+     * and a session reached its reviewers as "could not be screened" about seven minutes after it
+     * ended - never as a finding (docs 14, D23).
+     *
+     * Withheld from the request, not deleted from the artifact. The artifact is still the contract:
+     * ScanRunner validates every answer against the full pinned schema, `uniqueItems` included, so a
+     * duplicated action is still refused - it is only no longer enforced by the provider while it
+     * decodes. Editing the artifact instead would break the provenance the manifest records (its
+     * hashes are copied from the handoff package) and turn the artifacts launch gate red.
+     *
+     * Only what a live probe showed the provider rejects. 2026-09-28, gpt-5-6-sol: the pinned schema
+     * is a 400 naming `uniqueItems`, and the same schema without it a 200 with schema-valid output -
+     * so `minLength`, `maxLength`, `minItems`, `maxItems`, `minimum`, `maximum`, `$schema`, `$id`
+     * and `title` are all accepted, and stay.
+     */
+    public const PROVIDER_WITHHELD_KEYWORDS = ['uniqueItems'];
+
     private MICA $module;
     private ?int $projectId;
 
@@ -52,6 +75,59 @@ class SecureChatSafetyScanCaller implements SafetyScanCallerInterface
         string $systemPrompt,
         string $transcriptJson,
         array $outputSchema
+    ): array {
+        $provider = self::providerSchema($outputSchema);
+        $result = $this->attempt($modelAlias, $systemPrompt, $transcriptJson, $outputSchema, $provider['schema']);
+
+        // Only when a schema actually went to the provider. Outside SecureChatAI's allowlist it is
+        // dropped and the prompt carries the full pinned schema instead, so nothing was withheld.
+        $result['providerSchemaWithheld'] = $result['schemaWasSent'] ? $provider['withheld'] : [];
+
+        return $result;
+    }
+
+    /**
+     * The pinned output schema as the provider is sent it, and the keywords that were withheld.
+     *
+     * Static and pure, so it can be tested without a MICA instance. A keyword is withheld only where
+     * it is one - its value must be a boolean, which `uniqueItems` always is - so a *data property*
+     * that happened to be called `uniqueItems` (a subschema under `properties`) would be kept.
+     *
+     * @param array<string,mixed> $schema
+     * @return array{schema: array<string,mixed>, withheld: list<string>}
+     */
+    public static function providerSchema(array $schema): array
+    {
+        $withheld = [];
+
+        $strip = static function (array $node) use (&$strip, &$withheld): array {
+            foreach ($node as $key => $value) {
+                if (is_string($key) && is_bool($value) && in_array($key, self::PROVIDER_WITHHELD_KEYWORDS, true)) {
+                    unset($node[$key]);
+                    $withheld[$key] = true;
+                } elseif (is_array($value)) {
+                    $node[$key] = $strip($value);
+                }
+            }
+
+            return $node;
+        };
+
+        return ['schema' => $strip($schema), 'withheld' => array_keys($withheld)];
+    }
+
+    /**
+     * One call to SecureChatAI, classified.
+     *
+     * @param array<string,mixed> $outputSchema   the pinned schema, for the prompt fallback
+     * @param array<string,mixed> $providerSchema what structured output is asked for with
+     */
+    private function attempt(
+        string $modelAlias,
+        string $systemPrompt,
+        string $transcriptJson,
+        array $outputSchema,
+        array $providerSchema
     ): array {
         $schemaWasSent = $this->schemaWouldBeSent($modelAlias);
         $startedAt = microtime(true);
@@ -85,7 +161,7 @@ class SecureChatSafetyScanCaller implements SafetyScanCallerInterface
                         ['role' => 'system', 'content' => $prompt],
                         ['role' => 'user', 'content' => $transcriptJson],
                     ],
-                    'json_schema' => $outputSchema,
+                    'json_schema' => $providerSchema,
                 ],
                 $this->projectId,
                 // No username: the scan is a system action against a pseudonymous transcript, and

@@ -568,6 +568,20 @@ class ScanRunner
         }
 
         /**
+         * The keywords the provider's copy of the output schema did not carry.
+         *
+         * `output_schema_sha256` on the row is the pinned artifact, which every answer is still
+         * validated against - but it is not byte for byte what the provider was sent, and a row that
+         * names a schema it did not send is the same dishonesty as one naming a prompt it did not
+         * use. The provider's copy is the pinned artifact minus exactly these keywords, so this list
+         * and that hash together reproduce it. Only written when something was withheld, the same
+         * convention as `schema_in_prompt`.
+         */
+        if (($result['providerSchemaWithheld'] ?? []) !== []) {
+            $payload['provider_schema_withheld'] = array_values($result['providerSchemaWithheld']);
+        }
+
+        /**
          * Which prompt produced this row.
          *
          * Only written when the pinned artifact was not sent alone, so every existing row and every
