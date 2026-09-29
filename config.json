@@ -237,9 +237,32 @@
         },
         {
             "key": "safetyscan-model-alias",
-            "name": "<b>SafetyScan model alias</b><br><i>Must match a SecureChatAI registry alias. The handoff names <code>gemini-3.5-flash</code> for production; dev uses <code>gemini-2.5-flash</code>.</i>",
+            "name": "<b>SafetyScan model alias</b><br><i>The SecureChatAI model that screens every finished session for safety concerns. <b>GPT-5.6 Sol is the one verified end to end.</b> A dropdown rather than free text because a mistyped alias fails every scan: on 2026-09-28 prod had <code>gpt-5.6-sol</code> (the model's version name) instead of <code>gpt-5-6-sol</code>, and every session came out \"NOT SCREENED\". Only models with enforced structured output are offered - the scan depends on it. The model must also be registered in SecureChatAI on this server; the review dashboard's Launch readiness tab checks. <b>Do not leave it blank:</b> blank falls back to <code>gemini-2.5-flash</code>, which Stanford prod does not register.</i>",
             "required": false,
-            "type": "text"
+            "type": "dropdown",
+            "choices": [
+                {
+                    "value": "gpt-5-6-sol",
+                    "name": "GPT-5.6 Sol (verified for SafetyScan - recommended)"
+                },
+                {
+                    "value": "gpt-5-6-luna",
+                    "name": "GPT-5.6 Luna"
+                },
+                {
+                    "value": "gpt-5-6-terra",
+                    "name": "GPT-5.6 Terra"
+                },
+                {
+                    "value": "gpt-5-4",
+                    "name": "GPT-5.4"
+                },
+                {
+                    "value": "gpt-4-1",
+                    "name": "GPT-4.1"
+                }
+            ],
+            "default": "gpt-5-6-sol"
         },
         {
             "key": "safetyscan-max-attempts",

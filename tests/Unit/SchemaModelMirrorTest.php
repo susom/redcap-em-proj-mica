@@ -83,9 +83,14 @@ final class SchemaModelMirrorTest extends TestCase
     }
 
     /**
-     * The actual invariant: the mirror equals the literal it mirrors. Parses the provider source
-     * rather than loading it - SecureChatAI.php needs the REDCap framework, and this suite is
-     * deliberately framework-free (see tests/bootstrap.php).
+     * The actual invariant: the mirror holds the same aliases as the list it mirrors. Parses the
+     * provider source rather than loading it - SecureChatAI.php needs the REDCap framework, and this
+     * suite is deliberately framework-free (see tests/bootstrap.php).
+     *
+     * Two shapes of that list, both accepted: the `$schemaModels` local of older checkouts, and the
+     * `SCHEMA_CAPABLE_MODELS` constant it became (SecureChatAI 26eb4ab, 2026-08-24). Compared as a set,
+     * not in order: the constant is in *preference* order for agent mode's fallback, while
+     * schemaWouldBeSent() only asks whether an alias is on it.
      */
     public function testTheMirrorMatchesSecureChatAisOwnList(): void
     {
@@ -94,21 +99,24 @@ final class SchemaModelMirrorTest extends TestCase
         }
 
         $source = file_get_contents(self::PROVIDER_SOURCE);
-        preg_match_all('/\$schemaModels\s*=\s*\[(.*?)\];/s', $source, $matches);
+        preg_match_all('/(?:\$schemaModels|SCHEMA_CAPABLE_MODELS)\s*=\s*\[(.*?)\];/s', $source, $matches);
 
         $this->assertNotEmpty(
             $matches[1],
-            'no $schemaModels literal found in SecureChatAI.php - it was renamed, and the mirror is '
-            . 'now anchored to nothing'
+            'no schema-capable model list found in SecureChatAI.php (neither $schemaModels nor '
+            . 'SCHEMA_CAPABLE_MODELS) - it was renamed, and the mirror is now anchored to nothing'
         );
 
         $mirror = $this->mirror();
+        sort($mirror);
         foreach ($matches[1] as $i => $literal) {
             preg_match_all("/'([^']+)'/", $literal, $aliases);
+            $provider = $aliases[1];
+            sort($provider);
             $this->assertSame(
                 $mirror,
-                $aliases[1],
-                "\$schemaModels occurrence #{$i} in SecureChatAI.php has drifted from "
+                $provider,
+                "the schema-capable model list (occurrence #{$i}) in SecureChatAI.php has drifted from "
                 . 'SecureChatSafetyScanCaller::OPENAI_SCHEMA_MODELS'
             );
         }

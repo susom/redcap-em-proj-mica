@@ -635,14 +635,15 @@ claimed everyone's jobs and, for each one:
 Transcripts and findings were still read from and written to the right record, because those follow
 the job row. That is why the dashboard looked plausible.
 
-**What it did to prod 35968.** Every session from about 09-14 on (13 records) ended "NOT SCREENED".
-- **The model:** every attempt ran on `gemini-2.5-flash`, the built-in fallback for a blank alias,
-  in about 80 ms. Setting 35968's own alias to `gpt-5-6-sol` changed nothing, and neither did Gemini:
-  the alias came from the project that claimed the job.
-- **The traces:** 35968's View Logs had no SecureChatAI row for any scan, and its notice table was
-  empty. Both were being written under the other project.
-- **One wrong inference to undo:** it was concluded that 35968's own alias had been blank. The cause
-  was the claiming project's blank alias.
+**Whether it hit prod 35968 is not established.** It needs a second MICA-enabled project on the same
+server, and that query was never run. What prod did show fits it, but doesn't prove it:
+- **The model:** job 20's attempts (09-28, 14:48) ran on `gemini-2.5-flash`, the built-in fallback
+  for a blank alias. That happens either because 35968's own alias was blank at the time, or because
+  another project's pass claimed the job.
+- **The traces:** 35968 had no SecureChatAI row and no notice row for the scan. That is expected under
+  D24, but it wasn't followed up.
+- **The later failures had a different cause:** a mistyped alias, after these fixes were deployed. See
+  [31](31-critical-finding-crc-notify.md).
 
 **Reproduced locally** (271 and 279, both MICA-enabled; 271's pass runs first):
 - **The first observation:** a notice for 279's job 343 was stored under **271** and emailed to 271's

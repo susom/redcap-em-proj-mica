@@ -71,26 +71,30 @@ anymore."**
 - **It depends on context.** In one full local session the filter let the same sentence through; in
   the next it didn't. The verdict turns on the wording and on the prompt around it.
 
-**Locally, the scan is not blocked and the CRC is still told. On prod it wasn't, for a different
-reason:** 35968's scans were being run by **another project's** scan pass ([14 D24](14-live-defects.md)).
+**Locally, the scan is not blocked and the CRC is still told. On prod it wasn't.** Every failure
+showed the same generic "rewrote as an assistant message" error. In every case the scan asked for a
+model that prod's SecureChatAI doesn't have.
 
-**What prod did** (record 130, job 20, read with `scripts/diagnose-scan-notify.sql`):
-- **The model:** all three attempts ran on **`gemini-2.5-flash`**, in 76–85 ms.
-- **Why that model:** the scan cron's first MICA project took every project's queued jobs and scanned
-  them with **its own** settings. Its alias was blank, so MICA used its built-in `gemini-2.5-flash`,
-  which prod no longer registers.
-- **The traces:** its notices and its SecureChatAI rows were written under that project. That is why
-  35968 had neither, and why setting 35968's own alias, to sol or to Gemini, changed nothing.
-- **The dashboard:** it said "NOT SCREENED" with the generic "rewrote as an assistant message" error.
+1. **Record 130, job 20, 14:48** (`scripts/diagnose-scan-notify.sql`, query 2): all three attempts ran
+   on **`gemini-2.5-flash`**, in 76–85 ms. That is MICA's fallback for a blank alias, and prod no longer
+   registers it. Why the alias was blank is not settled. Either 35968's own alias was blank then, or
+   another MICA project's pass claimed the job
+   ([14 D24](14-live-defects.md), real and now fixed, but unconfirmed on prod).
+2. **After the fixes were deployed:** the alias had been typed **`gpt-5.6-sol`**, which is the model's
+   version name, instead of `gpt-5-6-sol`. SecureChatAI refuses it ("Unsupported model: gpt-5.6-sol");
+   reproduced here, failing in 20 ms with the same generic error. Found 09-28.
 
-**The same cause explains all 13 unscreened sessions since about 2026-09-14** (records 11–130). Record
-1, 5 and 6's August scans worked on `google/gemini-2.5-flash` while it was still registered.
+**How to avoid it:**
+- **Use the name as registered.** The alias must match SecureChatAI's registry exactly.
+- **Check the Launch readiness gate.** The *Model aliases resolve* gate turns red on a wrong alias,
+  but Development status only shows a banner.
+- **The real reason is in SecureChatAI's log.** View Logs says "Unsupported model: …".
 
-**A correction:** this doc first said 35968's own alias had been blank. The run rows only show the
-claiming project's alias.
+The only scans that worked on prod were record 1's, 5's and 6's in August, on
+`google/gemini-2.5-flash` while it was still registered.
 
-**Fixed locally** (D24): claims are scoped to the pass's project. Also fixed: D25, escaped apostrophes
-that failed the quote check, found on the prod copy, PID 279.
+**Fixed along the way:** D24 (scan claims are now scoped to their project), and D25 (escaped
+apostrophes that failed the quote check), found on the prod copy, PID 279.
 
 What happened locally:
 - **The scan passes the filter.** The same conversation, wrapped as a transcript under the scan

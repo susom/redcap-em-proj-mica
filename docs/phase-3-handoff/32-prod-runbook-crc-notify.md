@@ -116,7 +116,13 @@ there. Anything not listed, leave as it is.
 - **Booster session window (days):** 14.
 
 **SafetyScan**
-- **SafetyScan model alias:** `gpt-5-6-sol`.
+- **SafetyScan model alias:** `gpt-5-6-sol`, shown as **GPT-5.6 Sol** in the dropdown.
+  - **It's a dropdown** once the release that changes `config.json` is deployed, so the alias can't be
+    mistyped. Before, it was free
+    text, and `gpt-5.6-sol` (the model's version name) failed every scan as "Unsupported model",
+    behind the generic error. That happened on prod on 09-28.
+  - **After deploying,** open Configure and check GPT-5.6 Sol is the one shown, then Save. A value
+    saved before the switch that isn't one of the choices stays in effect until you Save over it.
   - This is the alias verified end to end, on 271.
   - The field's help text mentions `gemini-3.5-flash` for production. That is not provisioned, and
     untested with this pipeline, so don't switch to it without a qualification run.
@@ -231,8 +237,10 @@ every session from starting**, so all 7 must be green before the move.
 **If something else happens:**
 - **First, check which model the scan actually used:** query 2 in `scripts/diagnose-scan-notify.sql`,
   the `model_alias` column.
-  - **If it's not 35968's alias,** another project's scan pass ran the job. That was D24, and the cause
-    of every "NOT SCREENED" on prod until 2026-09-28. The fix must be deployed.
+  - **If it's not 35968's alias,** another project's scan pass ran the job. That is D24, fixed in
+    `1b1e271`.
+  - **If it is 35968's alias but misspelled** (on 09-28 it was `gpt-5.6-sol`, the model's version
+    name), SecureChatAI refuses it as "Unsupported model". Fix the alias in step 4.
   - **`gemini-2.5-flash` specifically** is the fallback for a blank alias, on whichever project ran
     the scan.
 - **"A session could not be screened and needs manual review"**, and the dashboard shows the job's

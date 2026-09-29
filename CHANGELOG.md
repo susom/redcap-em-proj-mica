@@ -55,15 +55,30 @@ against `platform.php = 8.2` rather than the developer's PHP.
 `php-ml` and `twilio/sdk` were dropped: 2,598 files and 17.5 MB with zero
 references anywhere in the codebase. `vendor/` is 235 files / 1.3 MB.
 
+### SafetyScan model alias is a dropdown, not free text
+
+On 2026-09-28 prod's alias was typed `gpt-5.6-sol`, which is the model's version name. The registry
+alias is `gpt-5-6-sol`.
+- **What it did:** SecureChatAI refused it as "Unsupported model", every scan failed in about 20 ms,
+  and every session came out "NOT SCREENED" behind MICA's generic "provider reported a failure" error.
+- **The setting now offers five choices:** GPT-5.6 Sol (verified, first), Luna, Terra, GPT-5.4 and
+  GPT-4.1. These are the models that get enforced structured output, which the scan depends on. Its
+  default for new projects is `gpt-5-6-sol`.
+- **The help text** now says what a blank alias does: MICA falls back to `gemini-2.5-flash`, which
+  prod doesn't register.
+- **`e2e/module-config.js` checks it,** on desktop and phone (C24–C26), and all 49 checks pass on 271.
+- **`SchemaModelMirrorTest` now reads SecureChatAI's `SCHEMA_CAPABLE_MODELS` constant** (SecureChatAI
+  `26eb4ab`) as well as the older `$schemaModels` local, and compares the two lists as sets.
+
 ### Scans ran under whichever project's cron pass came first, and quotes with apostrophes failed (D24, D25)
 
 **D24: one project scanned, and announced, every project's sessions.**
 - **The bug:** `RedcapScanQueueStore::claim()` took the oldest due job with no project in the query.
   The first MICA project's pass therefore scanned every project's sessions with its own model alias,
   prompt addendum and thresholds, and notified its own reviewers.
-- **What it did on prod 35968:** every session from about 2026-09-14 was scanned by another project on
-  its blank alias (`gemini-2.5-flash`, no longer registered). Every one ended "NOT SCREENED", and the
-  notices and SecureChatAI rows landed under that other project.
+- **Prod 35968:** its scans since about 2026-09-14 ran on the blank-alias fallback `gemini-2.5-flash`
+  and ended "NOT SCREENED". D24 would explain that, but so would 35968's own alias being blank, and
+  it's unconfirmed which. After the deploy, the scans failed on a mistyped alias (`gpt-5.6-sol`).
 - **The fix:** `claim()` and `findStaleClaims()` now take the project, and `ScanQueue` is built with
   the project it serves. It refuses to claim or reap without one.
 - **Verified on the same job, 279's job 344:**

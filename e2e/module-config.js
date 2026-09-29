@@ -23,6 +23,9 @@ const BASE = process.env.MICA_BASE || 'http://redcap.local';
 const USER = process.env.MICA_E2E_CONFIG_USER || 'e2e_mica_config';
 const PASS = process.env.MICA_E2E_CONFIG_PASS || 'E2eModCfg!2026';
 const PID = process.env.MICA_PID || '257';
+// What config.json offers for the SafetyScan model, in order, and what this project has saved.
+const ALIAS_CHOICES = ['gpt-5-6-sol', 'gpt-5-6-luna', 'gpt-5-6-terra', 'gpt-5-4', 'gpt-4-1'];
+const EXPECTED_ALIAS = process.env.MICA_EXPECTED_ALIAS || 'gpt-5-6-sol';
 const EM_PATH = `/redcap_v17.2.3/ExternalModules/manager/project.php?pid=${PID}`;
 
 // The pin itself. Hard-coded on purpose: reading it from handoff/manifest.json would make the spec
@@ -157,6 +160,20 @@ async function run(mobile) {
   // half is checked by verify-settings.php, which can see the settings table.
   check(`C19 ${label}: the anchor renders no input, so Save posts nothing for it`,
     (await modal.locator('[name="safetyscan-prompt-pinned-view"]').count()) === 0);
+
+  // A dropdown, not free text: a typed `gpt-5.6-sol` - the model's version name, not its registry
+  // alias - failed every prod scan on 2026-09-28 behind MICA's generic "provider failure" message.
+  const alias = modal.locator('select[name="safetyscan-model-alias"]');
+  check(`C24 ${label}: SafetyScan model alias is a dropdown, not a text box`,
+    (await alias.count()) === 1 && (await modal.locator('input[name="safetyscan-model-alias"]').count()) === 0);
+  const offered = (await alias.count())
+    ? await alias.locator('option').evaluateAll((os) => os.map((o) => o.value).filter(Boolean))
+    : [];
+  check(`C25 ${label}: it offers the structured-output models, GPT-5.6 Sol first`,
+    JSON.stringify(offered) === JSON.stringify(ALIAS_CHOICES), offered.join(', '));
+  const selected = (await alias.count()) ? await alias.inputValue() : '(no dropdown)';
+  check(`C26 ${label}: the saved alias is the one shown as selected`, selected === EXPECTED_ALIAS,
+    `selected "${selected}", saved "${EXPECTED_ALIAS}"`);
 
   await p.screenshot({ path: `${SHOTS}/module-config-${label}.png` });
   check(`C20 ${label}: no page JS errors`, errs.length === 0, errs.join(' | '));
