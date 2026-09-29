@@ -28,9 +28,10 @@ final class ScanWorkerTest extends TestCase
         $this->logs = [];
     }
 
-    private function queue(int $maxAttempts = 3): ScanQueue
+    /** Scoped to 257, the project every test job is enqueued for. */
+    private function queue(int $maxAttempts = 3, int $projectId = 257): ScanQueue
     {
-        return new ScanQueue($this->store, new SM($maxAttempts), fn(): int => $this->now);
+        return new ScanQueue($this->store, new SM($maxAttempts), fn(): int => $this->now, null, $projectId);
     }
 
     private function worker(?callable $runner = null, ?ScanQueue $queue = null): ScanWorker
@@ -51,6 +52,24 @@ final class ScanWorkerTest extends TestCase
         for ($i = 0; $i < $n; $i++) {
             $queue->enqueue('257', '2', 1, 1008, 'baseline', 900 + $i, str_repeat((string) $i, 64));
         }
+    }
+
+    public function testAPassNeverRunsAnotherProjectsJob(): void
+    {
+        // Each project's pass scans with that project's model, prompt and thresholds, and tells that
+        // project's reviewers. Another project's job must stay queued for its own pass.
+        $this->queue(3, 271)->enqueue('271', '9', 1, 1008, 'baseline', 700, str_repeat('c', 64));
+        $ran = [];
+
+        $result = $this->worker(function (array $job) use (&$ran): array {
+            $ran[] = $job['project_id'];
+
+            return ['runStatus' => 'ok', 'error' => null];
+        })->runPass();
+
+        $this->assertSame([], $ran);
+        $this->assertSame(0, $result['claimed']);
+        $this->assertSame(1, $this->store->countByStatus()[SM::QUEUED]);
     }
 
     public function testAnEmptyQueueIsANoOpPass(): void

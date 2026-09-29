@@ -25,13 +25,22 @@ final class ScanQueueTest extends TestCase
         $this->now = self::NOW;
     }
 
-    private function queue(int $maxAttempts = 3): ScanQueue
+    /** Scoped to 257, the project every test job below is enqueued for. */
+    private function queue(int $maxAttempts = 3, int $projectId = 257): ScanQueue
     {
         return new ScanQueue(
             $this->store,
             new SM($maxAttempts),
-            fn(): int => $this->now
+            fn(): int => $this->now,
+            null,
+            $projectId
         );
+    }
+
+    /** A job for another MICA project on the same server - older, so it would be claimed first. */
+    private function enqueueForAnotherProject(): void
+    {
+        $this->queue(3, 271)->enqueue('271', '5', 1, self::EVENT, 'baseline', 800, str_repeat('b', 64));
     }
 
     private function enqueue(ScanQueue $queue, string $sha = self::SHA, int $version = 1): array
@@ -344,6 +353,64 @@ final class ScanQueueTest extends TestCase
         $this->assertSame(SM::MANUAL_REVIEW_REQUIRED, $this->store->findJob(1)['status']);
     }
 
+    // ------------------------------------------------------------------ one project per queue
+
+    public function testAQueueOnlyClaimsItsOwnProjectsJobs(): void
+    {
+        // Prod 35968, 2026-09-28: another project's pass took 35968's jobs and scanned them on its
+        // own settings - a blank alias, so the built-in gemini-2.5-flash, which prod no longer has.
+        $this->enqueueForAnotherProject();   // job 1, project 271
+        $this->enqueue($this->queue());      // job 2, project 257
+
+        $claimed = $this->queue()->claimNext('t-257');
+
+        $this->assertSame(2, (int) $claimed['id']);
+        $this->assertSame(SM::QUEUED, $this->store->findJob(1)['status'], "another project's job was taken");
+        $this->assertSame(1, (int) $this->queue(3, 271)->claimNext('t-271')['id']);
+    }
+
+    public function testAQueueOnlyOffersNothingWhenOnlyOtherProjectsHaveWork(): void
+    {
+        $this->enqueueForAnotherProject();
+
+        $this->assertNull($this->queue()->claimNext('t-257'));
+    }
+
+    public function testAQueueWithNoProjectRefusesToClaim(): void
+    {
+        // Rather than silently claiming from every project, which is the bug.
+        $this->expectException(\LogicException::class);
+
+        (new ScanQueue($this->store, new SM(3), fn(): int => $this->now))->claimNext('t1');
+    }
+
+    public function testAQueueWithNoProjectRefusesToReap(): void
+    {
+        $this->expectException(\LogicException::class);
+
+        (new ScanQueue($this->store, new SM(3), fn(): int => $this->now))->reapStaleClaims();
+    }
+
+    public function testAQueueWithNoProjectCanStillEnqueue(): void
+    {
+        // The finalizer's queue only enqueues; the job carries its own project.
+        $result = (new ScanQueue($this->store, new SM(3), fn(): int => $this->now))
+            ->enqueue('257', '2', 1, self::EVENT, 'baseline', 900, self::SHA);
+
+        $this->assertTrue($result['created']);
+    }
+
+    public function testStaleClaimsAreOnlyReapedForTheQueuesOwnProject(): void
+    {
+        $this->enqueueForAnotherProject();
+        $this->queue(3, 271)->claimNext('t-271');      // job 1 is now scanning, for 271
+        $this->now += SM::STALE_CLAIM_SECONDS + 1;
+
+        $this->assertSame([], $this->queue()->reapStaleClaims(), "reaped another project's job");
+        $this->assertSame(SM::SCANNING, $this->store->findJob(1)['status']);
+        $this->assertCount(1, $this->queue(3, 271)->reapStaleClaims());
+    }
+
     public function testLoggingNamesTheJobAndTheOutcome(): void
     {
         $lines = [];
@@ -353,7 +420,8 @@ final class ScanQueueTest extends TestCase
             fn(): int => $this->now,
             static function (string $m) use (&$lines): void {
                 $lines[] = $m;
-            }
+            },
+            257
         );
 
         $this->enqueue($queue);
@@ -375,7 +443,8 @@ final class ScanQueueTest extends TestCase
             fn(): int => $this->now,
             static function (string $m) use (&$lines): void {
                 $lines[] = $m;
-            }
+            },
+            257
         );
 
         $this->enqueue($queue);

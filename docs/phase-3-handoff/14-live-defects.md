@@ -1,7 +1,7 @@
 # 14 — Live defects found during the SecureChatAI audit (2026-08-18)
 
 **Status:** FINDINGS — most verified by code reading. **Fixed and verified so far:
-D1, D2, D3, D4, D6, D7, D8, D10, D11, D13, D16, D22, D23.** Still open: D5, D9, D12,
+D1, D2, D3, D4, D6, D7, D8, D10, D11, D13, D16, D22, D23, D24, D25.** Still open: D5, D9, D12,
 D14, D15, D17-D21
 **Scope:** defects in the code as it stands on `mica-phase-3` @ `ab81cca`.
 These are distinct from the SOW migration work in
@@ -614,6 +614,90 @@ Two things this does not change:
   throughout: it never calls the provider, and it counts a mapped reviewer role without checking that
   anyone is in it. The Launch readiness tab's reviewer gate does check that, so use it and a synthetic
   session, not the preflight, as go-live evidence.
+
+---
+
+### D24 — Any project's scan pass took every project's jobs, and scanned and announced them as its own
+
+**Severity:** blocking, and a disclosure: one project's reviewers were told about another project's
+participants.
+**Status: FIXED 2026-09-28** (working tree). Reproduced on PIDs 271 and 279 first; the before and
+after are on the same job.
+
+**The code.** `mica_scan_worker` runs one pass per MICA-enabled project, and each pass is wired with
+that project's settings. `RedcapScanQueueStore::claim()` took the oldest due job with
+`WHERE status = ? AND next_attempt_at <= ?`, with no project in it. So the first project's pass
+claimed everyone's jobs and, for each one:
+- **scanned it with its own settings:** its model alias, prompt addendum, thresholds and mock mode
+- **notified its own reviewers,** and recorded the notice under its own project
+- **made the SecureChatAI call under its own project id**
+
+Transcripts and findings were still read from and written to the right record, because those follow
+the job row. That is why the dashboard looked plausible.
+
+**What it did to prod 35968.** Every session from about 09-14 on (13 records) ended "NOT SCREENED".
+- **The model:** every attempt ran on `gemini-2.5-flash`, the built-in fallback for a blank alias,
+  in about 80 ms. Setting 35968's own alias to `gpt-5-6-sol` changed nothing, and neither did Gemini:
+  the alias came from the project that claimed the job.
+- **The traces:** 35968's View Logs had no SecureChatAI row for any scan, and its notice table was
+  empty. Both were being written under the other project.
+- **One wrong inference to undo:** it was concluded that 35968's own alias had been blank. The cause
+  was the claiming project's blank alias.
+
+**Reproduced locally** (271 and 279, both MICA-enabled; 271's pass runs first):
+- **The first observation:** a notice for 279's job 343 was stored under **271** and emailed to 271's
+  reviewer. Its event, 1216, belongs to 279.
+- **The deliberate reproduction:**
+  1. 271's alias was blanked, to play prod's other project.
+  2. Scan job 344 was queued for 279's record 1 (279's alias is `gpt-5-6-sol`).
+  3. Attempt 1 ran on **`gemini-2.5-flash`**: `service_error` in **5 ms**, with SecureChatAI logging
+     "Unsupported model: gemini-2.5-flash" **under 271**. Prod's exact shape.
+
+**The fix.** The project is now part of the queue contract.
+- `claim()` and `findStaleClaims()` take a project id, and the SQL filters on it.
+- `ScanQueue` is built with the project it serves. It throws `LogicException` if asked to claim or
+  reap without one, so an unscoped claim can't come back quietly. Enqueue needs no project.
+- **Verified:**
+  - **The same job, after the fix:** attempt 2 was claimed by **279's own pass** and ran on
+    **`gpt-5-6-sol`** in 7.3 s. Its notice was stored under **279** and went to 279's reviewer.
+  - **Unit tests:** 6 in `ScanQueueTest` and 1 in `ScanWorkerTest`.
+
+**On prod:** deploy the fix. Also check which other projects have MICA enabled. Any that aren't in use
+should have it switched off.
+
+### D25 — MICA's own input escaping made a correct quote fail, and threw the whole scan away
+
+**Severity:** blocking. Real participants type "I'm" and "don't", and a quote containing one could
+discard a critical finding.
+**Status: FIXED 2026-09-28** (working tree).
+
+**The cause.**
+- **Where the escaping happens:** `handleUserInput()` passes every participant message through
+  `Sanitizer` (`htmlspecialchars`, `ENT_QUOTES`) before it is logged.
+- **What the transcript held:** the escaped copy, "I&#039;m".
+- **What the scanner did:** it quoted the participant's real words, "I'm going to take all of them
+  tonight".
+- **Why it failed:** the quote check is byte-exact and doesn't retry, so the scan ended
+  `citation_mismatch`. The critical finding was dropped and the session showed "NOT SCREENED".
+- **When it happens:** only when the model decodes the entity. On 271 it had copied the entity, so it
+  passed; on 279 (job 343) it decoded it and failed.
+
+**The fix.** `TranscriptBuilder` now undoes exactly that escaping (`htmlspecialchars_decode`,
+`ENT_QUOTES`) for participant rows. The transcript holds what was typed, and the check stays
+byte-exact.
+- **It is an exact inverse, checked.** A participant who literally typed `&#039;` keeps it, and
+  Unicode is untouched.
+- **MICA's replies are not touched;** they were never escaped.
+- **It is safe to display.** The review dashboard renders transcript text as React text, never as
+  markup, and there is no `dangerouslySetInnerHTML` in `mica-review/src`.
+- **Reviewers see it correctly** too. Until now they saw "I&#039;m".
+- **Only new transcripts are affected;** already-finalized ones keep their stored text and hash.
+- **Verified:** the runbook's six messages on 271 (`APOS01`) gave `ok` and a critical finding. The
+  evidence quotes read "I don't…" and "I've…", and the CRC's email arrived at 65 s. There are 4 unit
+  tests in `TranscriptBuilderTest`, including the regression.
+
+**Not changed:** the counselor model still receives the escaped text ("don&#039;t"). That affects
+reply quality, not safety.
 
 ---
 

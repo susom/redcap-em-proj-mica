@@ -51,10 +51,24 @@ if (!RECORD) { console.error('usage: node e2e/critical-notify.js <record> [tsr s
 const R = RECORD.replace(/'/g, '');
 
 // Synthetic, and unambiguous on purpose: the test is about the pipeline, not the model's judgement.
-const TURNS = [
-  'Hi. Honestly this week has been really bad. I have been drinking most of a bottle of vodka every day.',
-  'I do not want to be alive anymore. I have saved up a full bottle of my sleeping pills and I am going to take all of them tonight when I get home.',
-];
+// MICA_TURNS=runbook uses the six messages the prod runbook (docs 32, step 6) tells staff to type, so a
+// failure on prod can be replayed here word for word.
+const TURN_SETS = {
+  short: [
+    'Hi. Honestly this week has been really bad. I have been drinking most of a bottle of vodka every day.',
+    'I do not want to be alive anymore. I have saved up a full bottle of my sleeping pills and I am going to take all of them tonight when I get home.',
+  ],
+  runbook: [
+    'I got brought into the ED last night after drinking.',
+    'I drink most of a bottle of vodka most days now.',
+    'I lost my job last month and my partner moved out.',
+    "Honestly I don't see the point of anything anymore.",
+    "I've been saving my sleeping pills. I have a full bottle at home.",
+    "I'm going to take all of them tonight when I get home.",
+  ],
+};
+const TURNS = TURN_SETS[process.env.MICA_TURNS || 'short'];
+if (!TURNS) { console.error(`MICA_TURNS must be one of: ${Object.keys(TURN_SETS).join(', ')}`); process.exit(2); }
 
 let pass = 0, fail = 0;
 const check = (name, ok, detail = '') => {
@@ -73,9 +87,30 @@ const mail = async () => {
   return ((await r.json()).messages || []).filter(m => (m.To || []).some(t => t.Address === CRC));
 };
 
+// Only this record's "findings ready" or "could not be screened" notice counts. The CRC's mailbox also
+// gets the acknowledgement monitor's reminders about EARLIER sessions ("N finding(s) past the
+// 60-minute acknowledgment window"), and taking one of those for this session's notice once passed A8
+// and A9 while the scan was still failing.
+const noticeFor = async (seen) => {
+  for (const m of (await mail()).filter(x => !seen.has(x.ID))) {
+    if (!/ready for review|could not be screened/.test(m.Subject)) continue;
+    const full = await (await fetch(`${MAILPIT}/api/v1/message/${m.ID}`)).json();
+    // The text part has CRLF line endings, so `\r?\n`; the line end also stops CRIT01 matching CRIT010.
+    const escaped = RECORD.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`Record: ${escaped}(\\r?\\n|$)`).test(full.Text)) return m;
+  }
+  return null;
+};
+
 const composer = p => p.locator(`${CHAT} textarea, ${CHAT} input:not([type=hidden]), ${CHAT} [contenteditable]`).first();
 
-/** Send one turn and wait for the model's answer to come back, rather than for a fixed time. */
+/**
+ * Send one turn and wait for the model's answer to come back, rather than for a fixed time.
+ *
+ * HTTP 200 is not an answer. When the provider fails, SecureChatAI rewrites the failure into a polite
+ * assistant message and MICA returns it with `provider_error: true` - still a 200. A run with the AI
+ * Hub unreachable once "answered" every turn this way.
+ */
 async function say(p, text) {
   await composer(p).fill(text);
   const answered = p.waitForResponse(r => /prefix=proj_mica/.test(r.url()) && /callAI/.test(r.request().postData() || ''),
@@ -84,7 +119,11 @@ async function say(p, text) {
   await btns.nth((await btns.count()) - 1).click({ force: true });
   const r = await answered;
   await p.waitForTimeout(1500);
-  return r ? r.status() : 0;
+  if (!r) return { ok: false, detail: 'no callAI response' };
+  const body = await r.text().catch(() => '');
+  // MICA's result is itself JSON-encoded inside the framework's response, so its quotes arrive escaped.
+  const failed = /\\?"provider_error\\?"\s*:\s*true/.test(body);
+  return { ok: r.status() === 200 && !failed, detail: failed ? 'provider_error: the model did not answer' : `HTTP ${r.status()}` };
 }
 
 (async () => {
@@ -128,8 +167,8 @@ async function say(p, text) {
   }
   check('S1 the chat opens', await composer(p).count() > 0);
   for (const [i, t] of TURNS.entries()) {
-    const status = await say(p, t);
-    check(`S${i + 2} turn ${i + 1} answered`, status === 200, `HTTP ${status}`);
+    const { ok, detail } = await say(p, t);
+    check(`S${i + 2} turn ${i + 1} answered by the model`, ok, detail);
   }
   await p.screenshot({ path: `${SHOTS}/critical-notify-session.png`, fullPage: true });
 
@@ -155,7 +194,7 @@ async function say(p, text) {
       [notice] = rows(`SELECT id, status, recipient_count, IFNULL(subject,''), IFNULL(error,''), sent_at FROM redcap_entity_mica_notification WHERE project_id=${PID} AND record='${R}' AND notification_type='reviewers_ready' ORDER BY id DESC LIMIT 1`);
       if (notice) mark(`notice:${notice[1]}`, `reviewers_ready notice: ${notice[1]} to ${notice[2]} recipient(s)${notice[4] ? ' — ' + notice[4] : ''}`);
     }
-    email = (await mail()).find(m => !before.has(m.ID));
+    email = await noticeFor(before);
     if (email) { mark('email', `email in ${CRC}'s mailbox: "${email.Subject}"`); break; }
     if (notice && notice[1] !== 'sent') break;
     await new Promise(r => setTimeout(r, 5000));

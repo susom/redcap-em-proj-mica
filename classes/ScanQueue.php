@@ -30,22 +30,27 @@ class ScanQueue
     private $clock;
     /** @var callable(string): void */
     private $logger;
+    /** The project whose jobs this queue claims and reaps. Null only for an enqueue-only queue. */
+    private ?int $projectId;
 
     /**
-     * @param callable(): int|null       $clock  epoch seconds; injected so backoff is testable
+     * @param callable(): int|null       $clock     epoch seconds; injected so backoff is testable
      * @param callable(string): void|null $logger
+     * @param int|null                    $projectId required to claim or reap - see claimNext()
      */
     public function __construct(
         ScanQueueStoreInterface $store,
         ScanJobStateMachine $states,
         ?callable $clock = null,
-        ?callable $logger = null
+        ?callable $logger = null,
+        ?int $projectId = null
     ) {
         $this->store = $store;
         $this->states = $states;
         $this->clock = $clock ?? static fn(): int => time();
         $this->logger = $logger ?? static function (string $m): void {
         };
+        $this->projectId = $projectId;
     }
 
     /**
@@ -154,13 +159,19 @@ class ScanQueue
     }
 
     /**
-     * Take the next due job, or null if there is nothing to do.
+     * Take this project's next due job, or null if there is nothing to do.
+     *
+     * Only ever this queue's project. The worker scans a claimed job with its own project's settings
+     * and notifies its own project's reviewers, so a job from another project would be scanned on the
+     * wrong model and announced to the wrong people - which is what an unscoped claim did on prod
+     * 35968 (docs 31). A queue built without a project refuses rather than claiming from all of them.
      *
      * @return array<string,mixed>|null
+     * @throws \LogicException when the queue was built without a project
      */
     public function claimNext(string $claimToken): ?array
     {
-        return $this->store->claim($claimToken, ($this->clock)());
+        return $this->store->claim($claimToken, ($this->clock)(), $this->scope('claim'));
     }
 
     /**
@@ -217,11 +228,12 @@ class ScanQueue
      */
     public function reapStaleClaims(int $limit = 20): array
     {
+        $projectId = $this->scope('reap');
         $now = ($this->clock)();
         $cutoff = $now - ScanJobStateMachine::STALE_CLAIM_SECONDS;
         $reaped = [];
 
-        foreach ($this->store->findStaleClaims($cutoff, $limit) as $job) {
+        foreach ($this->store->findStaleClaims($cutoff, $limit, $projectId) as $job) {
             $claimedAt = isset($job['claimed_at']) ? (int) $job['claimed_at'] : null;
 
             if (!$this->states->isClaimStale((string) $job['status'], $claimedAt, $now)) {
@@ -250,6 +262,20 @@ class ScanQueue
         }
 
         return $reaped;
+    }
+
+    /** The project to claim or reap for; there is deliberately no "all projects". */
+    private function scope(string $what): int
+    {
+        if ($this->projectId === null) {
+            throw new \LogicException(
+                "This scan queue has no project, so it cannot $what jobs. Build it with the project it "
+                . 'works for: an unscoped queue would take every project\'s jobs and scan them with '
+                . 'this project\'s settings.'
+            );
+        }
+
+        return $this->projectId;
     }
 
     private function log(string $message): void

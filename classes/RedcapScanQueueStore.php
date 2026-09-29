@@ -109,11 +109,11 @@ class RedcapScanQueueStore implements ScanQueueStoreInterface
      * poisoned job cannot starve everything behind it forever - it fails, backs off, and the next
      * job goes ahead of it.
      */
-    public function claim(string $claimToken, int $now): ?array
+    public function claim(string $claimToken, int $now, int $projectId): ?array
     {
         $this->module->query(
             'UPDATE ' . self::TABLE . ' SET status = ?, claimed_by = ?, claimed_at = ?, updated = ? '
-            . 'WHERE status = ? AND next_attempt_at <= ? ORDER BY id LIMIT 1',
+            . 'WHERE status = ? AND next_attempt_at <= ? AND project_id = ? ORDER BY id LIMIT 1',
             [
                 ScanJobStateMachine::SCANNING,
                 $claimToken,
@@ -121,6 +121,7 @@ class RedcapScanQueueStore implements ScanQueueStoreInterface
                 $now,
                 ScanJobStateMachine::QUEUED,
                 $now,
+                $projectId,
             ]
         );
 
@@ -128,8 +129,8 @@ class RedcapScanQueueStore implements ScanQueueStoreInterface
         // asked of the data rather than of the driver, and it returns the row we need anyway.
         $result = $this->module->query(
             'SELECT ' . self::columns() . ' FROM ' . self::TABLE
-            . ' WHERE claimed_by = ? AND status = ? LIMIT 1',
-            [$claimToken, ScanJobStateMachine::SCANNING]
+            . ' WHERE claimed_by = ? AND status = ? AND project_id = ? LIMIT 1',
+            [$claimToken, ScanJobStateMachine::SCANNING, $projectId]
         );
 
         return $result->fetch_assoc() ?: null;
@@ -170,13 +171,13 @@ class RedcapScanQueueStore implements ScanQueueStoreInterface
         );
     }
 
-    public function findStaleClaims(int $cutoff, int $limit): array
+    public function findStaleClaims(int $cutoff, int $limit, int $projectId): array
     {
         $result = $this->module->query(
             'SELECT ' . self::columns() . ' FROM ' . self::TABLE
-            . ' WHERE status = ? AND (claimed_at IS NULL OR claimed_at <= ?) ORDER BY id LIMIT '
+            . ' WHERE status = ? AND project_id = ? AND (claimed_at IS NULL OR claimed_at <= ?) ORDER BY id LIMIT '
             . max(1, min(500, $limit)),
-            [ScanJobStateMachine::SCANNING, $cutoff]
+            [ScanJobStateMachine::SCANNING, $projectId, $cutoff]
         );
 
         $rows = [];

@@ -51,6 +51,69 @@ to be taken tonight. After the fix every record got two findings:
 **Worst case with a healthy scan: about 1.5 minutes.** That is 60 s of cron wait, the scan time, and
 delivery.
 
+### The runbook's six-message test (doc 32, step 6), 2026-09-28
+
+This found a second problem, and it is **not** in MICA's code.
+
+**Azure's content filter refuses MICA's reply to "Honestly I don't see the point of anything
+anymore."**
+- **What happened:** the counselor call came back HTTP 400, 988 bytes, `code: content_filter`, with
+  **`self_harm` rated medium**. The filter blocks at medium.
+- **What the participant sees:** SecureChatAI turns the refusal into "I apologize, but I'm experiencing
+  network difficulties. Please wait a moment and try again." ([screenshot](../../e2e/shots/critical-notify-session.png),
+  gitignored).
+- **Prod has it too.** The same 400 and 988 bytes are in prod 35968's SecureChatAI log at 14:47:24,
+  for the same message.
+- **So does the development key.** This is the AI Hub's filter policy, not a prod setting.
+- **Which sentences it blocks:** probed one at a time on `gpt-5-6-luna` and `gpt-5-6-sol`, only this
+  one of the six. More explicit ones pass, rated low: "I do not want to be alive anymore…", "I'm going
+  to take all of them tonight".
+- **It depends on context.** In one full local session the filter let the same sentence through; in
+  the next it didn't. The verdict turns on the wording and on the prompt around it.
+
+**Locally, the scan is not blocked and the CRC is still told. On prod it wasn't, for a different
+reason:** 35968's scans were being run by **another project's** scan pass ([14 D24](14-live-defects.md)).
+
+**What prod did** (record 130, job 20, read with `scripts/diagnose-scan-notify.sql`):
+- **The model:** all three attempts ran on **`gemini-2.5-flash`**, in 76–85 ms.
+- **Why that model:** the scan cron's first MICA project took every project's queued jobs and scanned
+  them with **its own** settings. Its alias was blank, so MICA used its built-in `gemini-2.5-flash`,
+  which prod no longer registers.
+- **The traces:** its notices and its SecureChatAI rows were written under that project. That is why
+  35968 had neither, and why setting 35968's own alias, to sol or to Gemini, changed nothing.
+- **The dashboard:** it said "NOT SCREENED" with the generic "rewrote as an assistant message" error.
+
+**The same cause explains all 13 unscreened sessions since about 2026-09-14** (records 11–130). Record
+1, 5 and 6's August scans worked on `google/gemini-2.5-flash` while it was still registered.
+
+**A correction:** this doc first said 35968's own alias had been blank. The run rows only show the
+claiming project's alias.
+
+**Fixed locally** (D24): claims are scoped to the pass's project. Also fixed: D25, escaped apostrophes
+that failed the quote check, found on the prod copy, PID 279.
+
+What happened locally:
+- **The scan passes the filter.** The same conversation, wrapped as a transcript under the scan
+  prompt, is rated self_harm low.
+- **Measured with this sentence in the transcript** (records `SCAN6TURN02` and `SCAN6TURN03`):
+  - the scan returned `ok` on the first attempt, with a critical `self_harm` finding
+  - the CRC email "highest urgency: critical" arrived **65 s and 71 s** after End Session
+
+  So the safety net holds even when the counselor's reply is refused.
+
+**Escaped apostrophes** (`Sanitizer`, `htmlspecialchars(ENT_QUOTES)`):
+- **Where they end up:** every participant message reaches the model, and the scan transcript, as
+  "don&#039;t".
+- **Why it passed here:** the scanner copied the entity into its quotes as it appears, so the
+  byte-exact quote check passed.
+- **The risk:** a model that decodes it would fail the whole scan as `citation_mismatch`. That failure
+  isn't retried; it goes to manual review.
+- **What reviewers see:** "&#039;" in the evidence. Not changed yet.
+
+To see whether a server's AI Hub key refuses self-harm text, and why, run
+[`scripts/probe-content-filter.php`](scripts/README.md). On the development key it prints the 988-byte
+`content_filter` refusal for this sentence.
+
 ## What prod needs before go-live
 
 Step by step, with every MICA setting by its dialog label: [32](32-prod-runbook-crc-notify.md).
@@ -80,6 +143,10 @@ Step by step, with every MICA setting by its dialog label: [32](32-prod-runbook-
 
 ## What "within 5 minutes" does not cover today
 
+- **MICA's reply to some self-harm statements.** Azure's content filter refuses it, and the
+  participant is told "network difficulties" (above). Locally the scan and the CRC's email were
+  unaffected; on prod's test they both failed, cause still open. The fix for the filter is the AI Hub
+  team's content-filter configuration for MICA's deployments.
 - **Sessions the participant never ends.** Closing the tab does not end the session. It is scanned
   only when the hourly closer closes it:
   - `close-expired-sessions` must be on. It is **off on 271**, so there an abandoned session is never

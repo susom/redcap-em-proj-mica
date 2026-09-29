@@ -55,6 +55,31 @@ against `platform.php = 8.2` rather than the developer's PHP.
 `php-ml` and `twilio/sdk` were dropped: 2,598 files and 17.5 MB with zero
 references anywhere in the codebase. `vendor/` is 235 files / 1.3 MB.
 
+### Scans ran under whichever project's cron pass came first, and quotes with apostrophes failed (D24, D25)
+
+**D24: one project scanned, and announced, every project's sessions.**
+- **The bug:** `RedcapScanQueueStore::claim()` took the oldest due job with no project in the query.
+  The first MICA project's pass therefore scanned every project's sessions with its own model alias,
+  prompt addendum and thresholds, and notified its own reviewers.
+- **What it did on prod 35968:** every session from about 2026-09-14 was scanned by another project on
+  its blank alias (`gemini-2.5-flash`, no longer registered). Every one ended "NOT SCREENED", and the
+  notices and SecureChatAI rows landed under that other project.
+- **The fix:** `claim()` and `findStaleClaims()` now take the project, and `ScanQueue` is built with
+  the project it serves. It refuses to claim or reap without one.
+- **Verified on the same job, 279's job 344:**
+  - **Before:** 271's pass ran it on `gemini-2.5-flash`, failing in 5 ms.
+  - **After:** 279's own pass ran it on `gpt-5-6-sol`, and its notice went to 279's reviewer.
+
+**D25: MICA's own escaping made a correct quote fail.**
+- **The cause:** Sanitizer stores "I'm" as "I&#039;m". When the scanner quoted the participant's real
+  words, the byte-exact check failed with `citation_mismatch`, and a critical finding was discarded.
+- **The fix:** `TranscriptBuilder` now undoes exactly that escaping for participant text. The check
+  stays byte-exact, and the review dashboard renders text safely.
+- **Verified:** the runbook's six messages on 271 now give a released critical finding, quoting
+  "I don't…" and "I've…", with the CRC's email at 65 s.
+
+11 new unit tests; 1,081 passing.
+
 ### No SafetyScan had ever succeeded on a GPT alias — the provider refused the schema (D23)
 
 Found while checking the PI's requirement that a CRC hears about a critical finding within 5 minutes

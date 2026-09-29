@@ -5,6 +5,7 @@ namespace Stanford\MICA\Tests\Unit;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Stanford\MICA\ArtifactRegistry;
+use Stanford\MICA\QuoteVerifier;
 use Stanford\MICA\SchemaValidator;
 use Stanford\MICA\TranscriptBuilder;
 use Stanford\MICA\TranscriptException;
@@ -194,14 +195,60 @@ final class TranscriptBuilderTest extends TestCase
 
     public function testContentIsCarriedVerbatim(): void
     {
-        // Stage 4 verifies every evidence quote as a byte-exact substring of this string. Trimming,
-        // entity-decoding or smart-quote conversion here becomes a citation_mismatch there, which
-        // reads as a model fault.
-        $raw = "  leading and trailing  \n\ttabs & <b>markup</b> and \"curly\" 'quotes' — em dash  ";
+        // Stage 4 verifies every evidence quote as a byte-exact substring of this string. Trimming
+        // or smart-quote conversion here becomes a citation_mismatch there, which reads as a model
+        // fault. The row holds MICA's escaped copy (Sanitizer), so what must come out is what was
+        // typed - whitespace, markup-looking text, quotes and all.
+        $typed = "  leading and trailing  \n\ttabs & <b>markup</b> and \"curly\" 'quotes' — em dash  ";
 
-        $payload = $this->build([$this->participantRow(1, $raw)]);
+        $payload = $this->build([$this->participantRow(1, htmlspecialchars($typed, ENT_QUOTES))]);
 
-        $this->assertSame($raw, $payload['messages'][0]['content']);
+        $this->assertSame($typed, $payload['messages'][0]['content']);
+    }
+
+    public function testTheScannerGetsTheParticipantsWordsNotMicasEscapedCopy(): void
+    {
+        // As MICA.php stores it: Sanitizer turned the apostrophe into an entity before logging.
+        $payload = $this->build([$this->participantRow(1, 'I&#039;m going to take all of them tonight')]);
+
+        $this->assertSame("I'm going to take all of them tonight", $payload['messages'][0]['content']);
+    }
+
+    public function testAnEntityTheParticipantActuallyTypedSurvives(): void
+    {
+        // Typed "&#039;" is stored "&amp;#039;"; undoing the escaping once gives back what was typed.
+        $payload = $this->build([$this->participantRow(1, 'I typed &amp;#039; on purpose')]);
+
+        $this->assertSame('I typed &#039; on purpose', $payload['messages'][0]['content']);
+    }
+
+    public function testMicasRepliesAreNotDecoded(): void
+    {
+        // The counselor's reply is logged as the model returned it, never escaped, so an entity in
+        // it is something the model wrote and must stay as written.
+        $payload = $this->build([$this->turnRow(2, 'hello', 'Tom &amp; Jerry, and &#039;quoted&#039;')]);
+
+        $this->assertSame('Tom &amp; Jerry, and &#039;quoted&#039;', $payload['messages'][0]['content']);
+    }
+
+    public function testAQuoteWithARealApostropheVerifiesAgainstAnEscapedRow(): void
+    {
+        // The regression itself (PID 279, 2026-09-28): the scanner quoted the participant's own
+        // words, the transcript held "I&#039;m", and the byte-exact check threw the scan away -
+        // critical finding included - as citation_mismatch.
+        $transcript = $this->build([$this->participantRow(1, 'I&#039;m going to take all of them tonight')]);
+
+        $problems = (new QuoteVerifier())->verify([
+            'findings' => [[
+                'evidence' => [[
+                    'message_id'   => 'L1',
+                    'speaker_role' => 'participant',
+                    'exact_quote'  => "I'm going to take all of them tonight",
+                ]],
+            ]],
+        ], $transcript);
+
+        $this->assertSame([], $problems);
     }
 
     public function testOversizeContentFailsRatherThanTruncating(): void

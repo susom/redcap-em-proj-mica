@@ -219,6 +219,9 @@ every session from starting**, so all 7 must be green before the move.
    - "Honestly I don't see the point of anything anymore."
    - "I've been saving my sleeping pills. I have a full bottle at home."
    - "I'm going to take all of them tonight when I get home."
+   After message 4 ("Honestly I don't see the point…"), MICA may answer **"I apologize, but I'm
+   experiencing network difficulties"**. That is Azure's content filter refusing the counselor's reply
+   ([31](31-critical-finding-crc-notify.md)), not the test failing. Carry on: the scan still runs.
 5. **Click End Session** and note the time.
 6. **Within 5 minutes** each CRC should receive
    `[MICA] N SafetyScan finding(s) ready for review - highest urgency: critical`.
@@ -226,12 +229,90 @@ every session from starting**, so all 7 must be green before the move.
    `self_harm` finding and the quoted evidence.
 
 **If something else happens:**
-- **"A session could not be screened and needs manual review"** — the fix isn't deployed (step 2),
-  or the SafetyScan alias doesn't work (the *Model aliases* gate).
-- **No email at all:**
-  - the *Reviewers* gate count
-  - the CRC's profile email, and their spam or quarantine folder
-  - that *Finalize transcripts and queue safety scans* is on
+- **First, check which model the scan actually used:** query 2 in `scripts/diagnose-scan-notify.sql`,
+  the `model_alias` column.
+  - **If it's not 35968's alias,** another project's scan pass ran the job. That was D24, and the cause
+    of every "NOT SCREENED" on prod until 2026-09-28. The fix must be deployed.
+  - **`gemini-2.5-flash` specifically** is the fallback for a blank alias, on whichever project ran
+    the scan.
+- **"A session could not be screened and needs manual review"**, and the dashboard shows the job's
+  error as "The provider reported a failure that SecureChatAI rewrote as an assistant message…". That
+  sentence only says the AI call failed; SecureChatAI hides the reason from MICA. The reason is in
+  **SecureChatAI's log**, which needs design rights, not admin:
+  1. **Open the module logs:** the project's left menu → External Modules → **View Logs**
+     (`…/ExternalModules/manager/logs.php?pid=35968`). Verified 2026-09-28 as a design-rights,
+     non-admin user.
+  2. **Set up the page:**
+     - Set **Message Length Limit** to `1000`. The default of 200 cuts `error_message` off before the
+       status code and length.
+     - Set **Module(s)** to `secure_chat_ai`.
+     - Click **Display**.
+  3. **Find the `SecureChatLogError` rows** from the test's time. Each is a JSON message, and the
+     field to read is `error_message`. The same row also holds the transcript, which is synthetic
+     here.
+
+     **Tell the two kinds of row apart:**
+     - **The scan's rows** start `{"project_id":35968,"session_id":null`: the id without quotes, and
+       no session. There is one per attempt, at about 0, 1 and 6 minutes after End Session.
+     - **The chat's rows** have the id in quotes and a `session_id`. Those are the counselor's replies,
+       not the scan.
+  4. **Read the `error_message`:**
+     - **`HTTP error: 400 (response body omitted; length=295 bytes)`** — almost certainly the
+       provider refusing the scan's schema. That is the failure this fix removes, and 295 bytes is
+       exactly what it logged locally before the fix, measured once. So prod is most likely **not
+       running the fix**: check the deployed MICA version (step 2).
+     - **`HTTP error: 400 (response body omitted; length=988 bytes)` on a chat row** — Azure's content
+       filter refused the counselor's reply (`self_harm`). Seen on prod and on the development key for
+       "Honestly I don't see the point of anything anymore." See 31. It doesn't stop the scan.
+     - **`HTTP error: 400` with any other length** — the provider refused the request for another
+       reason. The body is withheld by design, so run `scripts/probe-content-filter.php` on the server,
+       or replay the request, to read it.
+     - **`Unsupported model: gpt-5-6-sol`** — not in prod's SecureChatAI registry (step 2). The *Model
+       aliases* gate should be red too.
+     - **`HTTP error: 401` or `403`** — the key in prod's registry entry has no access to that
+       deployment.
+     - **`HTTP error: 404`** — the registry entry's URL names a deployment that doesn't exist.
+     - **`HTTP error: 429`** — rate limit or quota.
+     - **`cURL error: …`** — the server can't reach the AI Hub.
+- **No email at all**, not even "could not be screened". The dashboard doesn't show whether a notice
+  was sent or to whom, so check:
+  - **The *Reviewers configured* gate.** The email goes **only** to users in the role mapped as
+    Reviewer, so you get it only if you are in that role. A super user or Project Admin outside it gets
+    nothing.
+  - **The CRC's profile email**, and their spam or quarantine folder.
+  - **That *Finalize transcripts and queue safety scans* is on.**
+- **For a REDCap admin:** [`scripts/diagnose-scan-notify.sql`](scripts/diagnose-scan-notify.sql). One
+  read-only query per question, with no transcript text, for the test record:
+  - **The scan job.**
+  - **Each attempt:** its status and latency, and whether it ran with the fix (`withheld` =
+    `["uniqueItems"]`).
+  - **The notice rows:** sent or failed, how many recipients, and the error.
+  - **SecureChatAI's error text for the scan.**
+
+  It was tested on 271 against a record from before the fix and one from after.
+- **In Google Cloud Logging** (Logs Explorer), MICA's own error lines, if emLogger's output reaches it.
+  A plain-text search, because emLogger writes JSON lines to files and the pipeline may store them as
+  `jsonPayload` or `textPayload`. The cron's lines have `pid` "-", but the project id is in their
+  message, so `"35968"` still matches them. Set the time range to cover the test:
+
+  ```
+  ("SafetyScan gave up on a session" OR "reviewers could not be told" OR "Notifying reviewers failed"
+   OR "mica_scan_worker cron failed" OR "transcript finalization FAILED" OR "transcript finalized with a warning")
+  "35968"
+  ```
+
+  How to read the results:
+  - **`SafetyScan gave up on a session; a manual-review task was created`** — the scan failed on every
+    attempt ("NOT SCREENED").
+  - **`reviewers could not be told`** — its `reason` says why no email came. "No recipient addresses
+    were given" means nobody is in the Reviewer role; "REDCap::email() refused…" means the send failed.
+  - **No such line** — a notice was sent to whoever is in the Reviewer role.
+  - **`mica_scan_worker cron failed for one project`** — the worker crashed; its `error` says why.
+
+  These lines never contain the provider's error text. That is in View Logs or the SQL above.
+
+**To test again, use a fresh test record.** A failed job is not rescanned by itself, and the spent
+record's session is closed.
 
 Afterwards the test record, and the module's own state for it (transcript, scan job, finding), is
 test data. It goes with the rest at the move ([30](30-go-live-readiness.md), blocker 7).

@@ -158,6 +158,20 @@ class TranscriptBuilder
                 return [];
             }
 
+            /**
+             * What the participant typed, not MICA's escaped copy of it.
+             *
+             * handleUserInput() runs every message through Sanitizer (`htmlspecialchars`,
+             * ENT_QUOTES) before it is logged, so this row holds "I&#039;m" for "I'm". The scanner,
+             * reading that, quoted the participant's real words - "I'm going to take all of them
+             * tonight" - and the byte-exact quote check rejected the whole scan, critical finding
+             * included, as `citation_mismatch` (docs 31, PID 279, 2026-09-28). Undoing exactly that
+             * escaping, and nothing else, restores the original text: an apostrophe comes back, and a
+             * participant who literally typed "&#039;" still has "&#039;". MICA's replies are never
+             * escaped, so they are not touched.
+             */
+            $content = htmlspecialchars_decode($content, ENT_QUOTES);
+
             return [$this->message($logId, 'participant', $content, $row['timestamp'] ?? null)];
         }
 
@@ -191,9 +205,10 @@ class TranscriptBuilder
         return [
             'message_id'   => 'L' . $logId,
             'speaker_role' => $role,
-            // Verbatim. Not trimmed, not entity-decoded, not normalised: Stage 4 verifies each
-            // evidence quote as a byte-exact substring of this string, so any tidying here shows up
-            // there as a citation mismatch that looks like a model fault.
+            // Verbatim. Not trimmed, not normalised: Stage 4 verifies each evidence quote as a
+            // byte-exact substring of this string, so any tidying here shows up there as a citation
+            // mismatch that looks like a model fault. (Participant text has had MICA's own input
+            // escaping undone above - that restores what was typed, it does not tidy it.)
             'content'      => $content,
             'timestamp'    => $this->iso8601($timestamp),
         ];

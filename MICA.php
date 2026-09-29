@@ -4155,11 +4155,14 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 ?: ScanJobStateMachine::DEFAULT_MAX_ATTEMPTS)
         );
 
+        // Scoped to this pass's project. Everything below scans with this project's settings and
+        // notifies this project's reviewers, so it may only ever claim this project's jobs.
         $queue = new ScanQueue(
             new RedcapScanQueueStore($this),
             $states,
             null,
-            fn(string $m) => $this->emDebug("scan queue (pid $projectId): $m")
+            fn(string $m) => $this->emDebug("scan queue (pid $projectId): $m"),
+            $projectId
         );
 
         $runner = $this->scanRunnerFor($projectId);

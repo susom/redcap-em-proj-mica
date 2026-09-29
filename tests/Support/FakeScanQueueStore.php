@@ -75,17 +75,20 @@ final class FakeScanQueueStore implements ScanQueueStoreInterface
         return $this->jobs[$id] ?? null;
     }
 
-    public function claim(string $claimToken, int $now): ?array
+    public function claim(string $claimToken, int $now, int $projectId): ?array
     {
         $this->calls[] = 'claim';
 
-        // FIFO by id, and only jobs whose backoff has elapsed - the same predicate as the real
-        // UPDATE, so a test that passes here means the same thing there.
+        // FIFO by id, only jobs whose backoff has elapsed, only this project's - the same predicate
+        // as the real UPDATE, so a test that passes here means the same thing there.
         foreach ($this->jobs as $id => $job) {
             if ($job['status'] !== ScanJobStateMachine::QUEUED) {
                 continue;
             }
             if ((int) $job['next_attempt_at'] > $now) {
+                continue;
+            }
+            if ((int) ($job['project_id'] ?? 0) !== $projectId) {
                 continue;
             }
 
@@ -105,11 +108,14 @@ final class FakeScanQueueStore implements ScanQueueStoreInterface
         $this->jobs[$id] = array_merge($this->jobs[$id] ?? [], $fields);
     }
 
-    public function findStaleClaims(int $cutoff, int $limit): array
+    public function findStaleClaims(int $cutoff, int $limit, int $projectId): array
     {
         $stale = [];
         foreach ($this->jobs as $job) {
             if ($job['status'] !== ScanJobStateMachine::SCANNING) {
+                continue;
+            }
+            if ((int) ($job['project_id'] ?? 0) !== $projectId) {
                 continue;
             }
             $claimedAt = $job['claimed_at'] ?? null;
