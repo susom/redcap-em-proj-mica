@@ -1,0 +1,30 @@
+if(
+  [sc_age] = "" OR [s_sex] = "" OR [prison] = "" OR [days_dr] = "",
+  "",
+  if(
+    [days_dr] = "0",
+    0,
+    if(
+      [audit_c_score] = "",
+      "",
+      if(
+        ([s_sex] = "1" AND [audit_c_score] < 4)
+        OR ([s_sex] = "2" AND [audit_c_score] < 3),
+        0,
+        if(
+          [phone] = "" OR ([s_sex] = "2" AND [preg] = ""),
+          "",
+          if(
+            [sc_age] >= 18
+            AND [sc_age] <= 65
+            AND [phone] = "1"
+            AND [prison] = "0"
+            AND ([s_sex] = "1" OR [preg] = "0"),
+            1,
+            2
+          )
+        )
+      )
+    )
+  )
+)
