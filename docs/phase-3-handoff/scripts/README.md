@@ -49,6 +49,17 @@ Supporting [`../31-critical-finding-crc-notify.md`](../31-critical-finding-crc-n
 | `diagnose-scan-notify.sql` | For a REDCap admin, in Control Center → **Database Query Tool**: four standalone read-only SELECTs, pasted one at a time. There are no variables, because that tool runs one statement per request and must start with `select`; a `SET @record` line leaves the SELECTs empty, which is how every query came back empty on 2026-09-28. Replace `35968` and `'130'`. They show the scan job, each attempt (status, latency, and whether the D23 fix ran: `withheld` = `["uniqueItems"]`), the notice rows (sent or failed, recipients, error), and SecureChatAI's error text for the scan, matched to the job's lifetime. None of this is in the REDCap UI. No transcript text is selected. Tested on 271: `SCAN5MIN01` shows the 295-byte refusals and `withheld` NULL; `SCAN6TURN03` shows `ok` and the critical notice. |
 | `probe-content-filter.php` | `[alias ...]`, default `gpt-5-6-luna gpt-5-6-sol`. Read-only. Sends a neutral sentence and "Honestly I don't see the point of anything anymore." to each alias through that alias's own SecureChatAI registry entry. It prints the HTTP status and body size, and on a refusal the provider's error code and message and which content-filter categories fired. It also prints the sha256 prefix of the key, so two servers' keys can be compared without either being shown (development: `5633477c62`). **Run it on the server in question**: SecureChatAI discards the provider's error body, and reading it needs that server's key. On the development key it prints `content_filter`, `self_harm`, 988 bytes, the refusal prod logged on 2026-09-28. Synthetic text only; the key is never printed. |
 
+## Arm-3 weekly SMS (Enhanced SMS Conversation)
+
+Supporting [`../../alerts/ESMS_REPROMPT_TIMEOUT.md`](../../alerts/ESMS_REPROMPT_TIMEOUT.md) and the
+[`ARM3_WEEKLY_SMS_*`](../../alerts/) docs.
+
+| File | Purpose |
+|---|---|
+| `apply-esms-config.php` | `[pid]`, default 271. Idempotent. Enables the module on the project and writes every setting the weekly SMS needs, including the PI's pacing: 60-minute re-prompt and 1440-minute (24 h) timeout. |
+| `simulate-weekly-sms.php` | `<pid> <record> <instance> <answers>`. The conversation's *content*: every branch the answers reach, through the module's `FormManager`. Sends nothing, cleans up. |
+| `simulate-esms-timing.php` | `<pid> "<minute=reply,...>" <until_minute>`. The conversation's *timing*: re-prompts and timeout, through the module's real `@ESMS` send, `pages/inbound.php` and cron method, with a recording Twilio client and a simulated clock. Prints the phone's view with times and the module's Logging entries. It parks the live ESMS cron, enables the module and turns incoming SMS on for the run, and puts all three back on exit, along with the test record and the module's rows. It refuses to run if any project has an ACTIVE conversation. `"61=15,62=Yes" 240` on the unfixed module reproduces the PI's transcript (2026-09-30 report): the `gset` re-prompt goes out empty. Takes ~15 s per simulated day. |
+
 ## LLM request capture
 
 Supporting [`../20-llm-request-capture.md`](../20-llm-request-capture.md).
@@ -122,6 +133,19 @@ Supporting [`../../randomization/README.md`](../../randomization/README.md).
 | `seed-rand-test.php` | `<pid> [record]`. Creates an eligible, **not-yet-randomized** participant in arm 1 (age/sex/phone/military/prison plus the three AUDIT-C items, so `audit_c_score` and `calc_screen_result` compute), reports whether the record is already randomized, and prints the `consent` survey link. Submitting that link in a browser is what exercises the real trigger — `Randomization::realtimeRandomization()` fires only on a UI save, so a script that calls `REDCap::saveData()` on `consent` proves nothing. Writes only the eligibility inputs, never `study_group`: that is the randomization target field and `Records::saveData()` rejects writes to it at the target event. |
 | `dev-allocation-table-TESTING-ONLY.csv` | Balanced 1:1:1 development sequence, 60 slots (20 per group), permuted blocks of 6. **Development tables only.** |
 | `dev-allocation-table-MICA-ONLY.csv` | Arms 2 and 3 only, so every test participant reaches a session. Deliberately unusable as a randomization schedule — it has no Standard Care allocations. |
+| `dev-allocation-table-STRATIFIED-TESTING-ONLY.csv` | Stratified on `rand_strata`: 15 slots per stratum (0 and 1), 5 per group, permuted blocks of 3. Uses REDCap's template columns `redcap_randomization_number, redcap_randomization_group, rand_strata` and uploads through the Randomization page. **Development tables only.** |
+| `seed-strata-test.php` | `<pid> <record> high\|low\|incomplete`. Seeds a participant up to `tsr` (screening, contact, all AUDIT items; `audit9`/`audit10` coded 0/2/4) so the `tsr` survey's `@IF/@SETVALUE` sets `rand_strata` when it loads: `high` → 1, `low` → 0, `incomplete` (no `audit10`) → blank. Never writes `rand_strata`, `tsr_complete` or `study_group`. Prints the `tsr` link. Development only. Drives `e2e/rand-strata.js` |
+| `apply-rand-trigger-tsr-complete.php` | `[pid] [--apply]`. Dry run by default. Sets 271's trigger logic to `[calc_screen_result]=1 AND [tsr_complete]='2'` through `Randomization::saveRealtimeOption()` (the setup page's own function, so the change is logged), after writing a rollback `.sql`. Refuses anything that is not trigger option 2 on `tsr`. See [`../../randomization/TRIGGER_TSR_COMPLETE_OR_MANUAL.md`](../../randomization/TRIGGER_TSR_COMPLETE_OR_MANUAL.md). |
+
+## Screening eligibility
+
+Supporting [`../../screening/ELIGIBILITY_CALC_PI_XML_2026-09-25.md`](../../screening/ELIGIBILITY_CALC_PI_XML_2026-09-25.md).
+
+| File | Purpose |
+|---|---|
+| `verify-eligibility-calc.php` | `<pid>`. Development projects only; writes ~1,000 `TT-*` records. Saves every combination of the screening inputs through `REDCap::saveData()`, **one record per call**. A 100-record batch left the chained `audit_c_score` uncomputed for 73 of 1,011 records. REDCap's own engine computes and stores `calc_screen_result`, and each stored value is compared with the eligibility rules written separately in PHP (exit 1 on any mismatch). Also lists every input class where the result differs from the equation that worked on PID 271. |
+
+`e2e-admin-form-user.php` (above) also takes `--randomize` (grants `random_perform`, for the manual Randomize button) and `--create-projects` (sets `allow_create_db`, so the account can build a scratch project from a REDCap XML file). Teardown removes the account's rights on every project, including any it created.
 
 ## Before running against another project
 
