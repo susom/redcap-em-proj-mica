@@ -78,32 +78,6 @@
             "type": "text"
         },
         {
-            "key": "chatbot_intro_text",
-            "name": "Raw text to show in the UI on session start",
-            "required": false,
-            "type": "textarea"
-        },
-        {
-            "key": "session_length_days",
-            "name": "Number of days in a session (default = 14)",
-            "required": false,
-            "type": "number",
-            "default": 14
-        },
-        {
-            "key": "number_session_callback",
-            "name": "Number of previous sessions to hold in memory (default = 1)",
-            "required": false,
-            "type": "number",
-            "default": 1
-        },
-        {
-            "key": "chatbot_end_session_text",
-            "name": "Raw text to show in the UI to remind participant to 'end session'",
-            "required": false,
-            "type": "textarea"
-        },
-        {
             "key": "chatbot_redcap_inject",
             "name": "Comma delimited list of instruments to inject into the Chat Context",
             "required": false,
@@ -129,43 +103,7 @@
         },
         {
             "key": "chatbot_system_context_booster",
-            "name": "<b>Booster session context</b><br><i>Raw text to tune the chatbot for a <b>booster</b> session (R01). Used when the chat host maps to <code>booster</code> in the session host map. The pilot's <code>session_2</code>…<code>session_7</code> settings below are its 14-day cadence and are not used on an R01 project — they trigger a catch-up summary built from <code>baseline_arm_1</code> events, which an R01 project does not have.</i>",
-            "required": false,
-            "type": "textarea"
-        },
-        {
-            "key": "chatbot_system_context_session_2",
-            "name": "Raw text to inject into and tune the chatbot's 2nd session system context",
-            "required": false,
-            "type": "textarea"
-        },
-        {
-            "key": "chatbot_system_context_session_3",
-            "name": "Raw text to inject into and tune the chatbot's 3rd session system context",
-            "required": false,
-            "type": "textarea"
-        },
-        {
-            "key": "chatbot_system_context_session_4",
-            "name": "Raw text to inject into and tune the chatbot's 4th session system context",
-            "required": false,
-            "type": "textarea"
-        },
-        {
-            "key": "chatbot_system_context_session_5",
-            "name": "Raw text to inject into and tune the chatbot's 5th session system context",
-            "required": false,
-            "type": "textarea"
-        },
-        {
-            "key": "chatbot_system_context_session_6",
-            "name": "Raw text to inject into and tune the chatbot's 6th session system context",
-            "required": false,
-            "type": "textarea"
-        },
-        {
-            "key": "chatbot_system_context_session_7",
-            "name": "Raw text to inject into and tune the chatbot's 7th session system context",
+            "name": "<b>Booster session context</b><br><i>Raw text to tune the chatbot for a <b>booster</b> session (R01). Used when the chat host maps to <code>booster</code> in the session host map.</i>",
             "required": false,
             "type": "textarea"
         },

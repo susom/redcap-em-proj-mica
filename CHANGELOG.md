@@ -55,6 +55,35 @@ against `platform.php = 8.2` rather than the developer's PHP.
 `php-ml` and `twilio/sdk` were dropped: 2,598 files and 17.5 MB with zero
 references anywhere in the codebase. `vendor/` is 235 files / 1.3 MB.
 
+### Ten leftover settings removed from the configuration dialog
+
+The dialog carried settings that do nothing on an R01 project (2026-09-30). None of them changes what
+a participant sees today.
+- **`chatbot_system_context_session_2`…`_7`:** the pilot's 14-day cadence. `SessionHostMap` allows
+  only `baseline` and `booster`, so an R01 host never reaches a `session_N` key. On PID 279 all six
+  held "Session 2. DEV PLACEHOLDER."
+- **`session_length_days` and `number_session_callback`:** read only by the pilot branch, and by a
+  catch-up that only `session_N` keys trigger. They are now the constants
+  `MICA::PILOT_SESSION_LENGTH_DAYS = 14` and `PILOT_CATCHUP_SESSIONS = 1`, which were their defaults.
+- **`chatbot_intro_text` and `chatbot_end_session_text`:** never delivered. Their getters had no caller,
+  even at `pilot-final`, and the bootstrap never passes them to the chat. So the chat's greeting and
+  "End Session" reminder have always been the SPA's built-in text. Both getters are deleted. The
+  SPA's fallbacks are untouched, so `dist` needs no rebuild.
+
+**Kept on purpose:**
+- `chatbot_system_context_baseline` / `_booster`, which are read through the concatenated key.
+- The hidden `e2e-fixture-saved-roles`.
+- The pilot code branch, which still holds the session gates (18 §5.1). It now runs with the
+  constants. A pilot data dictionary would get no session 2–7 context, and the pilot runs from
+  `pilot-final` anyway.
+
+**Stored rows purged locally:** 32 rows on 257, 268, 271 and 279. Rollback:
+`docs/phase-3-handoff/scripts/rollback-vestigial-settings-20260930-125402.sql`.
+- `verify-settings.php` §9 now reports any stored row for these ten keys, with the `DELETE` to run.
+- The inert pilot-cadence check and the intro/end-text check are gone.
+- **Owed on prod:** purge the same rows. Its Database Query Tool runs `SELECT` only, so this needs an
+  admin with database access. The rows are harmless text, not credentials.
+
 ### SafetyScan model alias is a dropdown, not free text
 
 On 2026-09-28 prod's alias was typed `gpt-5.6-sol`, which is the model's version name. The registry

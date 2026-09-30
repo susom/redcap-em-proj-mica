@@ -27,6 +27,17 @@ const PID = process.env.MICA_PID || '257';
 const ALIAS_CHOICES = ['gpt-5-6-sol', 'gpt-5-6-luna', 'gpt-5-6-terra', 'gpt-5-4', 'gpt-4-1'];
 const EXPECTED_ALIAS = process.env.MICA_EXPECTED_ALIAS || 'gpt-5-6-sol';
 const EM_PATH = `/redcap_v17.2.3/ExternalModules/manager/project.php?pid=${PID}`;
+// Undeclared on 2026-09-30 (CHANGELOG "Ten leftover settings"): the dialog must not offer them, and a
+// Save must not write them back. KEPT are their neighbours that the same cleanup deliberately left.
+const REMOVED_KEYS = [
+  ...[2, 3, 4, 5, 6, 7].map((n) => `chatbot_system_context_session_${n}`),
+  'session_length_days', 'number_session_callback', 'chatbot_intro_text', 'chatbot_end_session_text',
+];
+const KEPT_KEYS = ['chat_host_instruments', 'chatbot_system_context_general',
+  'chatbot_system_context_baseline', 'chatbot_system_context_booster'];
+const sql = (q) => require('child_process').execSync(
+  `docker exec redcap_2023_1_db mysql -uredcap -predcap123 redcap -N -e ${JSON.stringify(q)} 2>/dev/null`,
+).toString().trim();
 
 // The pin itself. Hard-coded on purpose: reading it from handoff/manifest.json would make the spec
 // agree with whatever the manifest currently says, which is the one thing it is here to check.
@@ -175,6 +186,15 @@ async function run(mobile) {
   check(`C26 ${label}: the saved alias is the one shown as selected`, selected === EXPECTED_ALIAS,
     `selected "${selected}", saved "${EXPECTED_ALIAS}"`);
 
+  const shown = [];
+  for (const k of REMOVED_KEYS) if (await modal.locator(`[name="${k}"]`).count()) shown.push(k);
+  check(`C27 ${label}: none of the ${REMOVED_KEYS.length} removed settings is offered`, shown.length === 0,
+    shown.join(', ') || 'none shown');
+  const missing = [];
+  for (const k of KEPT_KEYS) if (!(await modal.locator(`[name="${k}"]`).count())) missing.push(k);
+  check(`C28 ${label}: the settings kept beside them still render`, missing.length === 0,
+    missing.join(', ') || KEPT_KEYS.join(', '));
+
   await p.screenshot({ path: `${SHOTS}/module-config-${label}.png` });
   check(`C20 ${label}: no page JS errors`, errs.length === 0, errs.join(' | '));
 
@@ -231,6 +251,12 @@ async function saveRoundTrip() {
   await openConfig(p);
   check('C23 the original addendum value is restored', (await field().inputValue()) === original,
     original === '' ? 'was blank, left blank' : `${original.length} chars`);
+
+  // REDCap's save posts every field the dialog rendered, so a removed key could only come back if the
+  // dialog still rendered it; this reads the table after two real saves. (`s.key`, table-qualified,
+  // needs no backticks - which the shell would otherwise run as a command.)
+  const back = sql(`SELECT GROUP_CONCAT(s.key) FROM redcap_external_module_settings s JOIN redcap_external_modules m ON m.external_module_id=s.external_module_id WHERE m.directory_prefix='proj_mica' AND s.project_id=${Number(PID)} AND s.key IN ('${REMOVED_KEYS.join("','")}')`);
+  check('C29 two saves wrote none of the removed settings back', back === '' || back === 'NULL', back || 'no rows');
 
   await browser.close();
 }

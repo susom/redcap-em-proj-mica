@@ -79,6 +79,15 @@ class MICA extends \ExternalModules\AbstractExternalModule {
     const BUILD_FILE_DIR = 'mica-chatbot/dist/assets';
     const SecureChatInstanceModuleName = 'secure_chat_ai';
 
+    /**
+     * The pilot cadence, as constants. These were the `session_length_days` / `number_session_callback`
+     * settings, undeclared on 2026-09-30 because only the pilot branch reads them (a `baseline_arm_1`
+     * project, see hasPilotSessionScaffolding()) and the pilot runs from `pilot-final`, not this line.
+     * The values are the settings' old defaults, so that branch behaves as it did with them unset.
+     */
+    const PILOT_SESSION_LENGTH_DAYS = 14;
+    const PILOT_CATCHUP_SESSIONS    = 1;
+
     private \Stanford\SecureChatAI\SecureChatAI $secureChatInstance;
     public $system_context_session;
     public $system_context_global;
@@ -126,13 +135,6 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         return new EntitySchemaManager(new RedcapEntityPlatform($this));
     }
 
-    public function getIntroText(){
-        return $this->getProjectSetting('chatbot_intro_text');
-    }
-
-    public function getEndSessionText(){
-        return $this->getProjectSetting('chatbot_end_session_text');
-    }
 
     public function generateAssetFiles(): array {
         $cwd = $this->getModulePath();
@@ -2609,7 +2611,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             ? $currentSession
             : "session_{$currentSession}";
 
-        $backN = $this->getProjectSetting("number_session_callback") ?? 1;
+        $backN = self::PILOT_CATCHUP_SESSIONS;
         $sys_ctx = $this->initSystemContexts($recordId, $contextKey, $backN);
 
         $eventId = array_search($eventName, $events);
@@ -2627,7 +2629,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                 throw new \Exception("Session already completed. Thank you.");
             } else {
                 $nextSessionStart = clone $sessionStart;
-                $session_length_days = $this->getProjectSetting("session_length_days") ?? 14;
+                $session_length_days = self::PILOT_SESSION_LENGTH_DAYS;
                 $nextSessionStart->modify("+$session_length_days days");
                 $today = new \DateTime();
                 $daysUntilNext = max(0, $today->diff($nextSessionStart)->days) + 1;
@@ -2823,7 +2825,8 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             );
         }
 
-        $backN = $this->getProjectSetting('number_session_callback') ?? 1;
+        // Only the pilot's `session_N` keys trigger the catch-up that uses this; baseline/booster never do.
+        $backN = self::PILOT_CATCHUP_SESSIONS;
 
         return [
             'system_context'     => $this->initSystemContexts($recordId, $sessionKey, $backN),
@@ -2951,7 +2954,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             return null;
         }
 
-        $session_length_days = $this->getProjectSetting("session_length_days") ?? 14;
+        $session_length_days = self::PILOT_SESSION_LENGTH_DAYS;
         $sessionNum = (int) min(7, floor($days_since_consent / $session_length_days));
 
         $sessionStart = clone $consentDate;

@@ -82,7 +82,7 @@ Must have events such as `baseline_arm_1`, `session_2_arm_1`, ..., `session_7_ar
 ## Project Settings
 
 - `chatbot_system_context_general` – default global system prompt  
-- `chatbot_system_context_session_X` – optional session-specific overrides  
+- `chatbot_system_context_baseline` / `chatbot_system_context_booster` – optional overrides for the Day-1 (baseline) and Month-3 (booster) sessions, chosen through the session host map  
 - `chatbot_end_session_url_override` – optional redirect override for post-survey  
 
 ---

@@ -14,17 +14,19 @@
  *   1. declared and never read;
  *   2. read, but the value names something that does not exist (a model alias absent from the
  *      SecureChatAI registry, a REDCap role id that was deleted, an instrument that was renamed);
- *   3. read, valid, and inert on THIS project (the pilot's `session_2`..`session_7` contexts on an
- *      R01 project, `reasoning-effort` on a Claude model);
+ *   3. read, valid, and inert on THIS project (`reasoning-effort` on a Claude model; the pilot's
+ *      `session_2`..`session_7` contexts were the other example until they were undeclared);
  *   4. read behind an early return, so it is configured, correct, and never consulted - which is how
  *      `chatbot_system_context_general` was set for weeks while the chatbot introduced itself as
  *      Claude;
  *   5. its own label disagrees with its `required` flag, so the form demands a value the code treats
  *      as optional.
  *
- * The static direction is already covered: no setting is read that config.json does not declare, and
- * the `chatbot_system_context_*` keys that appear unreferenced are read through a concatenated key at
- * `MICA.php` (`"chatbot_system_context_" . $session_key`). This script covers the other four.
+ * The static direction was audited by hand (2026-09-30), not by a test: no setting is read that
+ * config.json does not declare. `chatbot_system_context_baseline` / `_booster` look unreferenced
+ * because they are read through a concatenated key at `MICA.php`
+ * (`"chatbot_system_context_" . $session_key`). This script covers the other four, and in §9 the
+ * settings that were undeclared but may still hold a stored value.
  */
 
 $PID = (int) ($argv[1] ?? getenv('MICA_PID') ?: 257);
@@ -120,13 +122,6 @@ $missingHosts === []
         . 'name that does not exist means the chatbot never appears on it.'
     );
 
-foreach (['chatbot_intro_text' => 'the first thing a participant reads',
-          'chatbot_end_session_text' => 'the End Session reminder'] as $key => $what) {
-    $str($key) !== ''
-        ? ok_($key, substr($str($key), 0, 48))
-        : note_($key, "unset - a built-in default is used ($what)");
-}
-
 $override = $str('chatbot_end_session_url_override');
 if ($override === '') {
     note_(
@@ -215,27 +210,6 @@ if ($sampleRecord === null) {
             note_("via $host", 'gated: ' . substr($e->getMessage(), 0, 60));
         }
     }
-}
-
-// The pilot's cadence contexts, which an R01 project can never reach.
-$pilotEvent = (bool) array_search('baseline_arm_1', \REDCap::getEventNames(true, false), true);
-$setCadence = [];
-for ($i = 2; $i <= 7; $i++) {
-    if ($str("chatbot_system_context_session_$i") !== '') {
-        $setCadence[] = "session_$i";
-    }
-}
-if (!$pilotEvent && $setCadence !== []) {
-    inert_(
-        'chatbot_system_context_session_*',
-        sprintf(
-            '%s configured, but this project has no baseline_arm_1 event so the pilot cadence is '
-            . 'unreachable. Booster sessions use chatbot_system_context_booster.',
-            implode(', ', $setCadence)
-        )
-    );
-} elseif (!$pilotEvent) {
-    note_('chatbot_system_context_session_*', 'unset, and unreachable on this project - correct');
 }
 
 // ------------------------------------------------------------------ the model
@@ -558,7 +532,7 @@ $get('enable-project-debug-logging')
 
 // ------------------------------------------------------------------ system settings
 
-echo "\n9. System settings\n";
+echo "\n9. System settings, and settings removed from config.json\n";
 
 /**
  * The `twilio-*` settings were REMOVED from config.json along with the commented-out `sendSMS()`.
@@ -597,6 +571,46 @@ if ($twilioOrphans !== []) {
 } else {
     ok_('twilio-*', 'no orphaned rows - the settings and sendSMS() are both gone');
 }
+
+/**
+ * The same residue, per project, for the settings undeclared on 2026-09-30:
+ *   - the pilot's cadence contexts `chatbot_system_context_session_2`..`_7`, which only the pilot
+ *     branch's `session_N` keys can reach (SessionHostMap allows `baseline` and `booster` only);
+ *   - `session_length_days` and `number_session_callback`, now MICA::PILOT_* constants;
+ *   - `chatbot_intro_text` and `chatbot_end_session_text`, which no code has ever delivered to the
+ *     chat - their getters had no caller even at `pilot-final`, so the SPA's own defaults are what
+ *     participants have always seen.
+ * Read from the table itself, as the descriptive check below does: a stored empty string is residue
+ * too, and getProjectSetting() cannot tell it from absent.
+ */
+$undeclared = [
+    'chatbot_system_context_session_2', 'chatbot_system_context_session_3',
+    'chatbot_system_context_session_4', 'chatbot_system_context_session_5',
+    'chatbot_system_context_session_6', 'chatbot_system_context_session_7',
+    'session_length_days', 'number_session_callback',
+    'chatbot_intro_text', 'chatbot_end_session_text',
+];
+$rows = $module->query(
+    'SELECT s.`key` FROM redcap_external_module_settings s
+       JOIN redcap_external_modules m ON m.external_module_id = s.external_module_id
+      WHERE m.directory_prefix = ? AND s.project_id = ? AND s.`key` IN ('
+        . implode(',', array_fill(0, count($undeclared), '?')) . ')',
+    array_merge([$module->PREFIX, $PID], $undeclared)
+);
+$leftover = [];
+while ($r = $rows->fetch_assoc()) {
+    $leftover[] = $r['key'];
+}
+$leftover === []
+    ? ok_('undeclared settings', 'no stored rows for the 10 settings removed from config.json on 2026-09-30')
+    : bad_(
+        'undeclared settings (orphaned)',
+        'still stored, but no longer in config.json: ' . implode(', ', $leftover),
+        'Invisible in the dialog and read by nothing. Purge them: DELETE FROM '
+        . "redcap_external_module_settings WHERE project_id = $PID AND `key` IN ('"
+        . implode("','", $leftover) . "') AND external_module_id = (SELECT external_module_id FROM "
+        . "redcap_external_modules WHERE directory_prefix='proj_mica');"
+    );
 
 // ------------------------------------------------------------------ config.json self-consistency
 
@@ -706,5 +720,5 @@ if ($problems === []) {
 
 printf("%d setting(s) need attention: %s\n", count($problems), implode(', ', array_unique($problems)));
 echo "\nLines marked INERT are configured and valid but do nothing on this project. They are not\n";
-echo "counted as failures - a pilot cadence context on an R01 project is clutter, not a defect.\n";
+echo "counted as failures - reasoning-effort on a Claude model is clutter, not a defect.\n";
 exit(1);
