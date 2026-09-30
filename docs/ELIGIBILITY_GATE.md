@@ -2,6 +2,10 @@
 
 **Applied on localhost PID 257: 2026-08-27. Verified. Not yet on prod.**
 
+> On the R01 structure the eligibility field is `calc_screen_result`, and the gate reads
+> `[calc_screen_result] = '1'`. For the equation that fits the PI's 2026-09-25 workflow, see
+> [`screening/ELIGIBILITY_CALC_PI_XML_2026-09-25.md`](screening/ELIGIBILITY_CALC_PI_XML_2026-09-25.md).
+
 ---
 
 ## What was wrong

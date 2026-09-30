@@ -8,6 +8,29 @@ Supersedes the "randomization is disabled, so the allocation field had to be inv
 [../phase-3-handoff/15-arm-materialization.md](../phase-3-handoff/15-arm-materialization.md), which
 was written against PID 257 before the built-in module was turned on.
 
+> **If a copied project randomizes nobody, read
+> [ALLOCATION_TABLE_DOES_NOT_COPY.md](ALLOCATION_TABLE_DOES_NOT_COPY.md) first.** The allocation
+> list does not travel with a project copy — the setup row and trigger do, so everything *looks*
+> configured. The symptom is not an error: the participant finishes the battery and reads
+> "Someone from the study team will be with you shortly to continue." Hit on PID 271, 2026-09-22.
+>
+> **Prod PID 35968 has a different setup (stratified on `rand_strata`, trigger option 1)** and fails
+> for two more reasons. See [PROD_35968_RANDOMIZATION_CONFIG.md](PROD_35968_RANDOMIZATION_CONFIG.md).
+>
+> **PID 271 randomizes on `tsr` Complete *or* a coordinator's Randomize click** (2026-09-25):
+> trigger option 2, logic `[calc_screen_result]=1 AND [tsr_complete]='2'`. Both paths are E2E-verified.
+> See [TRIGGER_TSR_COMPLETE_OR_MANUAL.md](TRIGGER_TSR_COMPLETE_OR_MANUAL.md).
+>
+> **Go-live, 2026-09-28:** prod randomizes now. Both strata were tested end to end on replica PID
+> 278. What's left before the move (production allocation table, trigger with eligibility and
+> consent, date stamp) is in
+> [../phase-3-handoff/30-go-live-readiness.md](../phase-3-handoff/30-go-live-readiness.md).
+>
+> **"Why are screens logged under an arm?"** is answered for the PI in
+> [2026-09-25-pi-reply-screens-in-arm-1.md](2026-09-25-pi-reply-screens-in-arm-1.md). It covers
+> renaming arm 1 (safe: display name only) and the per-arm public screening link. That link skips
+> eligibility and consent and was reproduced in a browser.
+
 ---
 
 ## The two halves

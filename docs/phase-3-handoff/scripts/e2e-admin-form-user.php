@@ -3,9 +3,18 @@
  * Creates (and removes) a throwaway REDCap account with plain data-entry rights, so the `admin`
  * form's branching-logic/calculation banner can be checked in a real browser.
  *
- *   php e2e-admin-form-user.php [pid] setup|teardown
+ *   php e2e-admin-form-user.php [pid] setup|teardown [--randomize] [--create-projects]
  *
  * Defaults: pid=257, mode=setup. Prints a username, password and the data-entry URL.
+ *
+ * `--randomize` also grants Randomize rights (`random_perform`), so the manual Randomize button on
+ * `admin` can be exercised as a coordinator would. A super user always gets that right
+ * (UserRights::getSuperUserPrivileges), which is exactly why the check must not run as one.
+ *
+ * `--create-projects` also sets `allow_create_db`, so the account can build a scratch project from
+ * a REDCap XML file through Home/index.php?action=create - the same page a PI would use. Teardown
+ * removes the account's rights on EVERY project, including any it created; the projects themselves
+ * are left in place.
  *
  * WHY A DEDICATED USER. Verifying that the banner changed requires REDCap's own DataEntry page -
  * SQL showing that the tokens now resolve does not exercise `LogicTester`, which is what actually
@@ -26,6 +35,8 @@
 
 $pid  = (int)    ($argv[1] ?? 257);
 $mode = (string) ($argv[2] ?? 'setup');
+$randomize = in_array('--randomize', array_slice($argv, 1), true);
+$createProjects = in_array('--create-projects', array_slice($argv, 1), true);
 
 $_GET['pid'] = $pid;
 define('NOAUTH', true);
@@ -51,7 +62,8 @@ $u = db_escape(USER);
 
 if ($mode === 'teardown') {
     echo "\n=== removing the throwaway account " . USER . " ===\n";
-    db_query("delete from redcap_user_rights where project_id = $pid and username = '$u'");
+    // Every project, not just $pid: a --create-projects run owns the project it built.
+    db_query("delete from redcap_user_rights where username = '$u'");
     db_query("delete from redcap_auth where username = '$u'");
     db_query("delete from redcap_user_information where username = '$u'");
     out('removed', USER);
@@ -67,7 +79,7 @@ $Proj = new Project($pid, true);
 if (!isset($Proj->forms['admin'])) fail("project $pid has no 'admin' form");
 
 // Recreate from scratch so a half-finished previous run cannot leave a stale password behind.
-db_query("delete from redcap_user_rights where project_id = $pid and username = '$u'");
+db_query("delete from redcap_user_rights where username = '$u'");
 db_query("delete from redcap_auth where username = '$u'");
 db_query("delete from redcap_user_information where username = '$u'");
 
@@ -89,10 +101,10 @@ out('password', 'verified via Authentication::verifyTableUsernamePassword()');
 if (!db_query("insert into redcap_user_information
         (username, user_email, user_firstname, user_lastname, user_creation, super_user,
          account_manager, allow_create_db)
-        values ('$u', '" . $u . "@example.invalid', 'E2E', 'AdminForm', now(), 0, 0, 0)")) {
+        values ('$u', '" . $u . "@example.invalid', 'E2E', 'AdminForm', now(), 0, 0, " . ($createProjects ? 1 : 0) . ")")) {
     fail('redcap_user_information insert failed: ' . db_error());
 }
-out('user', USER . ' (super_user=0)');
+out('user', USER . ' (super_user=0' . ($createProjects ? ', allow_create_db=1' : '') . ')');
 
 // Form rights, in REDCap's own `[form,level]` encoding - level 1 = view & edit.
 $dataEntry = '';
@@ -100,11 +112,12 @@ foreach (array_keys($Proj->forms) as $formName) $dataEntry .= "[$formName,1]";
 
 if (!db_query("insert into redcap_user_rights
         (project_id, username, role_id, expiration, group_id, design, user_rights,
-         record_create, data_export_tool, data_entry)
-        values ($pid, '$u', null, null, null, 0, 0, 1, 1, '" . db_escape($dataEntry) . "')")) {
+         record_create, data_export_tool, data_entry, random_perform)
+        values ($pid, '$u', null, null, null, 0, 0, 1, 1, '" . db_escape($dataEntry) . "', " . ($randomize ? 1 : 0) . ")")) {
     fail('redcap_user_rights insert failed: ' . db_error());
 }
-out('rights', count($Proj->forms) . ' instrument(s) at view+edit, no design, no user-rights');
+out('rights', count($Proj->forms) . ' instrument(s) at view+edit, no design, no user-rights'
+    . ($randomize ? ', Randomize' : ''));
 
 $base  = rtrim((string) db_result(db_query("select value from redcap_config where field_name='redcap_base_url'"), 0), '/');
 $event = (int) db_result(db_query("select ef.event_id from redcap_events_forms ef
