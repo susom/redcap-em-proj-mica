@@ -1,7 +1,24 @@
 # Arm 3 weekly SMS — actual state, 2026-09-15
 
+> ## ⚠️ SUPERSEDED 2026-09-21 — it is built now
+>
+> Read [`ARM3_WEEKLY_SMS_BUILD.md`](ARM3_WEEKLY_SMS_BUILD.md) instead. The weekly SMS was built on
+> PID 268 and verified end to end on a real handset on 2026-09-21. Keep this document only for the
+> PID 257 survey of what was wrong; **four of its conclusions do not hold**, and the build doc's §1
+> lists them with evidence. The two biggest:
+>
+> - **The mechanism is not REDCap's Twilio.** It is the **Enhanced SMS Conversation** external
+>   module, triggered by `@ESMS` in an ASI's email subject. §5's "add the sender" plan below is
+>   aimed at the wrong machinery.
+> - **The cross-event prefix is `[day_1_ed_arm_1]`, not `[day_1_ed_arm_3]`.** §5 step 2 below would
+>   have resolved every piped field to blank.
+>
+> Also stale: `calc_esms_valid` is already repaired in 268 (`s_sex`, not `birth_sex`), and the
+> branching damage is far worse than §2 reports — all twelve `sd_*` and all twelve `bd_*` were
+> gated on week 12, and all 24 goal messages on week 1.
+
 **Asked for:** a PI-facing test document for the Arm 3 weekly SMS.
-**Found:** there is nothing to test yet. The weekly SMS has **no sender** and the `sunday`
+**Found (2026-09-15):** there was nothing to test yet. The weekly SMS has **no sender** and the `sunday`
 instrument is an **unported ASPIRE/TRAM artifact** that REDCap itself refuses to run.
 
 The PI deliverable built from this is
