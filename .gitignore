@@ -45,3 +45,6 @@ docs/project-structure
 
 # E2E screenshots
 e2e/shots/
+
+# SecureChatAI registry dumps carry live AI Hub api-token values - never commit them
+docs/phase-3-handoff/scripts/rollback-securechat-registry-*.json
