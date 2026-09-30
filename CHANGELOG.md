@@ -55,6 +55,29 @@ against `platform.php = 8.2` rather than the developer's PHP.
 `php-ml` and `twilio/sdk` were dropped: 2,598 files and 17.5 MB with zero
 references anywhere in the codebase. `vendor/` is 235 files / 1.3 MB.
 
+### A mistyped inject instrument put the whole record into the Day-1 prompt
+
+On PIDs 271 and 279 (2026-09-30), `chatbot_redcap_inject` was `DDQ, AUDIT, BSCQ, SIP-2R`. Those are
+display names; the forms are `ddq, audit, bscq, sip2r`.
+- **Why that leaked:** for an unknown name, `REDCap::getFieldNames()` returns `false`, and
+  `getData()` reads a false `fields` as every field.
+- **What the model got:** each Day-1 turn carried the participant's whole record once per name:
+  first name, phone, email, room and age, about 33 K characters on record 1.
+
+**Fix:** `InjectInstruments::resolve()` splits the list into instruments the project has and names it
+doesn't, matched exactly.
+- Unknown names are skipped and logged with `emError`, and never fetched.
+- Both inject paths use it. The booster path already skipped unknown names inline.
+- Both also skip an instrument whose field list comes back empty.
+- Verified on 279, record 1:
+  - the current value now injects nothing (0 chars, down from 33,218);
+  - the form names inject the four instruments only (4,529 chars) and no contact field;
+  - a mixed list keeps the valid names.
+- `InjectInstrumentsTest` has 8 cases, including 279's list as configured.
+
+**Still owed:** the setting values on 271, 279 and prod. Until they're form names, the Day-1 counselor
+gets no instrument data at all. `verify-settings.php` flags it, with the fix.
+
 ### Ten leftover settings removed from the configuration dialog
 
 The dialog carried settings that do nothing on an R01 project (2026-09-30). None of them changes what

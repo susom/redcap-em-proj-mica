@@ -153,7 +153,14 @@ if ($inject === []) {
     $missing = array_values(array_diff($inject, $forms));
     $missing === []
         ? ok_('chatbot_redcap_inject', implode(', ', $inject))
-        : bad_('chatbot_redcap_inject', 'names instrument(s) that do not exist: ' . implode(', ', $missing));
+        : bad_(
+            'chatbot_redcap_inject',
+            'names instrument(s) that do not exist: ' . implode(', ', $missing),
+            'Use form names (the Designer\'s "variable" names, e.g. ddq), not display names (DDQ). Since '
+            . '2026-09-30 an unknown name is skipped, so its data is simply missing from the Day-1 '
+            . 'context. Before that, each one injected the WHOLE record - contact details included - '
+            . 'because getData() reads the `false` field list as "every field".'
+        );
 }
 
 // ------------------------------------------------------------------ the persona

@@ -19,6 +19,8 @@ require_once "classes/ArtifactRegistry.php";
 require_once "classes/PinnedPromptView.php";
 // Resolves which arm's event hosts a record's Day-1 session, for the link written at randomization.
 require_once "classes/EdSessionLink.php";
+// Which configured inject instruments exist; an unknown one must be skipped, never fetched.
+require_once "classes/InjectInstruments.php";
 // Same reason, plus one of its own: redcap_module_system_enable() runs while the module is being
 // enabled, and an unloadable class there is reported as a bare fatal with no cause attached.
 require_once "classes/EntitySchemaManager.php";
@@ -2116,7 +2118,17 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         if (empty($instrumentsString)) {
             return null;
         }
-        $instruments = array_map('trim', explode(',', $instrumentsString));
+        // Only instruments the project has. An unknown name must not reach getData(): its field list
+        // is `false`, which getData() treats as every field - see InjectInstruments.
+        $resolved = InjectInstruments::resolve(
+            $instrumentsString,
+            $this->projectFor((int) $this->getProjectId())->forms
+        );
+        if ($resolved['unknown'] !== []) {
+            $this->emError('inject: chatbot_redcap_inject names instrument(s) this project does not have, skipped',
+                $resolved['unknown']);
+        }
+        $instruments = $resolved['known'];
 
         // Get metadata once
         $metadata = \REDCap::getDataDictionary('array');
@@ -2127,6 +2139,9 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         foreach ($instruments as $instrument) {
             // Fetch field names and participant's data for the instrument
             $fields = \REDCap::getFieldNames($instrument);
+            if (empty($fields)) {
+                continue;   // an empty list would read as "all fields", as above
+            }
             $recordData = \REDCap::getData([
                 'records' => $participant_id,
                 'fields' => $fields,
@@ -2207,10 +2222,16 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             return null;
         }
 
-        $instruments = array_values(array_filter(array_map('trim', explode(',', $raw))));
         $metadata = \REDCap::getDataDictionary('array');
         $decode   = $this->choiceDecoder($metadata);
         $proj     = $this->projectFor((int) $this->getProjectId());
+
+        $resolved = InjectInstruments::resolve($raw, $proj->forms);
+        if ($resolved['unknown'] !== []) {
+            $this->emError('inject (booster): the inject list names instrument(s) this project does not have, skipped',
+                $resolved['unknown']);
+        }
+        $instruments = $resolved['known'];
 
         // Structural keys getData returns alongside the fields. They are not answers and must not be
         // formatted as though a participant gave them.
@@ -2219,9 +2240,9 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
         $out = '';
         foreach ($instruments as $instrument) {
-            if (!isset($proj->forms[$instrument])) {
-                $this->emDebug("inject (booster): no such instrument '$instrument', skipped");
-                continue;
+            $fields = \REDCap::getFieldNames($instrument);
+            if (empty($fields)) {
+                continue;   // getData() would read an empty list as "all fields"
             }
 
             /*
@@ -2237,7 +2258,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             $data = \REDCap::getData([
                 'project_id'    => $this->getProjectId(),
                 'records'       => [$participant_id],
-                'fields'        => \REDCap::getFieldNames($instrument),
+                'fields'        => $fields,
                 'return_format' => 'array',
             ]);
 
