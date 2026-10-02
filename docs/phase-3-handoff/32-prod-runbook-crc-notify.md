@@ -8,6 +8,9 @@ What to do on prod so that a critical disclosure in a MICA session reaches the C
 CRC in the reviewer role, all 7 launch gates pass. A participant's End Session reached the CRC's
 inbox in 22–65 s, as "highest urgency: critical".
 
+**That run (09-28) predates *Reviewer notification addresses* (2026-10-02)**, so the email went to
+the role. The named list (steps 3 and 4) is unit-tested, but has not been through a participant run.
+
 **One exception.** 271 ran with *Close sessions when their window ends* **off**, and this runbook
 turns it **on**. The gates and the End Session path don't depend on that setting. But the path where
 an abandoned session is closed, scanned and emailed was **not** run here.
@@ -54,8 +57,10 @@ Checked in the 09-28 11:11 export:
     export.
 - **`mica_ed_session`** is on Day 1 (ED) of Arms 2 and 3. **`mica_booster_session`** is on Month 3 of
   Arms 2 and 3.
-- **Roles on prod today:** Data Entry, Export w/o Identifiers, Project Admins and Read Only. None of
-  them is for CRCs.
+- **Roles on prod in that export:** Data Entry, Export w/o Identifiers, Project Admins and Read Only.
+  None of them is for CRCs.
+  - **Since then (2026-10-02):** role 135783 `CRC (MICA reviewer)` exists and is mapped as Reviewer.
+    Its only member is ihabz, the developer. Project Admins (134858) is mapped as PI-lead.
 
 The session instruments lack the optional transcript-pointer fields (`mica_session_status`,
 `mica_transcript_ref`…). That only adds a warning line to the module log; it doesn't block the scan.
@@ -79,24 +84,35 @@ The session instruments lack the optional transcript-pointer fields (`mica_sessi
 
 ---
 
-## 3. Put the CRCs in a role
+## 3. Put the CRCs in the role, then name who is emailed
 
-The "findings ready" email goes to **every user in the REDCap role(s) mapped as MICA Reviewer**. That
-same role is what lets someone open the transcripts on the review dashboard. The recipient list is
-worked out at send time from REDCap's own user rights, so adding or removing a CRC is only a role
-change.
+**Two settings, two jobs (2026-10-02).** The PI asked for the scan results to go to named people
+rather than a group:
+- **The REDCap role mapped as MICA Reviewer** decides who can open the transcripts on the review
+  dashboard. Second-review requests, and any policy digest addressed to `research_assistant`, still
+  go to it.
+- **Reviewer notification addresses** (step 4) is who is emailed. When it has any entry, the
+  "findings ready" email, the "could not be screened" email and the overdue reminder go to those
+  addresses **instead of** the role. Blank keeps the old behaviour: every user in the role.
 
-1. **User Rights → create a role**, for example `CRC (MICA reviewer)`. Give it the rights your CRCs
-   already have; REDCap's copy-role option works.
-2. **Assign each CRC to that role.**
-   - A user on custom rights with **no role gets nothing**: no email and no dashboard.
-   - Each CRC needs an **email address** in their REDCap profile.
-   - The account must **not be suspended**; suspended users are skipped.
-3. **Why a separate role:**
-   - Don't map Project Admins. Everyone in it would get every findings email and could read
-     transcripts, and that is how the local copy is set up.
-   - If Brian should also get the emails, map his role as a **second** Reviewer role in step 4. A user
-     can hold only one role.
+The role's members are read from REDCap's user rights at send time, but the list is typed by hand.
+So **removing a CRC means taking them out of the role and off the list.**
+
+The role already exists on prod: 135783 `CRC (MICA reviewer)`, mapped as Reviewer, with one member
+(ihabz, the developer).
+
+1. **Assign each CRC to 135783 `CRC (MICA reviewer)`** with their own account.
+   - A user on custom rights with **no role can't open the findings**. If their address is on the
+     list they are still emailed, and the Launch readiness gate names them.
+   - Each CRC needs an **email address** in their REDCap profile, and it must be the address you put
+     on the list in step 4. The gate matches the two, ignoring case.
+   - The account must **not be suspended**; suspended users don't count.
+2. **Then fill in Reviewer notification addresses** (step 4) with the CRCs' and Brian's addresses.
+   In the other order, a CRC on the list but not yet in the role is emailed findings they can't open.
+3. **Brian: his address on the list, not his role in Reviewer.**
+   - He is in Project Admins, which is mapped as PI-lead, so he can already open findings.
+   - Don't map Project Admins as a Reviewer role to get him the emails. It has 8 users, and all of them
+     would become reviewers. (The local copy is mapped that way; prod shouldn't be.)
 
 ---
 
@@ -134,9 +150,20 @@ there. Anything not listed, leave as it is.
 - **Concern types to keep out of the review queue:** none.
 
 **Who reviews**
-- **Reviewer role(s):** `CRC (MICA reviewer)`, plus Brian's role if he wants the emails.
-- **PI / protocol-lead role(s):** the role Brian is in. It gives him the dashboard and the audit trail.
-  It does **not** send him the findings email.
+- **Reviewer role(s):** `CRC (MICA reviewer)` only.
+- **Reviewer notification addresses** (2026-10-02, directly under *Reviewer role(s)*): the CRCs' and
+  Brian's addresses. Comma, semicolon or newline separated; `Name <address>`, as pasted from Outlook,
+  is accepted.
+  - **Only there once the release containing it is deployed** (step 2). Prod's module shows v0.0.0;
+    the deploy is blocker 8 in [30](30-go-live-readiness.md).
+  - Filled in, it replaces the role for the "findings ready", "could not be screened" and
+    overdue-reminder emails. Blank sends them to the role.
+  - **On a Production project a red gate stops new sessions, so open Launch readiness (step 5) right
+    after saving.** The gate fails on a list with no valid address (it does not fall back to the
+    role), and on a list where nobody is an active member of the Reviewer or PI role.
+- **PI / protocol-lead role(s):** the role Brian is in (Project Admins, 134858, on prod). It gives him
+  the dashboard and the audit trail. On its own it does **not** send him the findings email; his
+  address on the list does.
   - **Set this before step 5.** Only this role and super users can see the Launch readiness tab.
   - Everyone in the role can read transcripts, the same trade-off as the Reviewer role.
 - **Auditor role(s):** optional.
@@ -195,18 +222,26 @@ there. Anything not listed, leave as it is.
 and super users can see it. All 7 gates should be green.
 
 - **Critical-finding acknowledgment target** — red until the JSON in step 4 is saved with a number.
-- **Reviewers configured** — shows how many users are in the Reviewer role. **Zero is how the 09-22
-  notice on the local copy reached nobody** ("No recipient addresses were given").
+- **Reviewers configured** — shows how many users are in the Reviewer role and, with a named list,
+  how many addresses are on it. **Zero users, with no list, is how the 09-22 notice on the local copy
+  reached nobody** ("No recipient addresses were given"). With a list (2026-10-02) it also fails when:
+  - the list has no valid address. The role is not used as a fallback, so the notices would reach
+    nobody;
+  - no address on it is the profile email of an active member of the Reviewer or PI role.
+
+  When only some match, it passes and names the others: they are emailed but can't open the findings.
 - **Hash-pinned handoff artifacts** — red means the deployed module files were altered. Redeploy; don't
   edit.
 - **Model aliases resolve** — both aliases must be in **SecureChatAI's registry** (Control Center, a
   REDCap admin). An alias missing from the registry doesn't error; the model just returns an apology.
 - **Notification policy is valid** — red means the JSON didn't validate.
-- **Recipient lists are valid addresses** — a typo in any address list.
+- **Recipient lists are valid addresses** — a typo in any address list, Reviewer notification
+  addresses included.
 - **Scan mock mode is off.**
 
 In Development status a red gate only shows a banner. **In Production status any red gate stops
-every session from starting**, so all 7 must be green before the move.
+every session from starting**, so all 7 must be green before the move. After it, re-check this tab
+every time you edit a setting it checks, such as Reviewer notification addresses (2026-10-02).
 
 ---
 
@@ -229,7 +264,8 @@ every session from starting**, so all 7 must be green before the move.
    experiencing network difficulties"**. That is Azure's content filter refusing the counselor's reply
    ([31](31-critical-finding-crc-notify.md)), not the test failing. Carry on: the scan still runs.
 5. **Click End Session** and note the time.
-6. **Within 5 minutes** each CRC should receive
+6. **Within 5 minutes** each address in *Reviewer notification addresses* (or, if it is blank, each
+   CRC in the role) should receive
    `[MICA] N SafetyScan finding(s) ready for review - highest urgency: critical`.
 7. **Open the link in the email as a CRC.** The session should be in the queue with a critical
    `self_harm` finding and the quoted evidence.
@@ -284,10 +320,12 @@ every session from starting**, so all 7 must be green before the move.
      - **`cURL error: …`** — the server can't reach the AI Hub.
 - **No email at all**, not even "could not be screened". The dashboard doesn't show whether a notice
   was sent or to whom, so check:
-  - **The *Reviewers configured* gate.** The email goes **only** to users in the role mapped as
-    Reviewer, so you get it only if you are in that role. A super user or Project Admin outside it gets
-    nothing.
-  - **The CRC's profile email**, and their spam or quarantine folder.
+  - **The *Reviewers configured* gate.** The email goes **only** to the addresses in *Reviewer
+    notification addresses*, or, when that is blank, to users in the role mapped as Reviewer. With the
+    list filled in, being in the role doesn't get you the email; being a super user or Project Admin
+    never does (2026-10-02).
+  - **The address on the list** (or the CRC's profile email when the list is blank), and their spam or
+    quarantine folder.
   - **That *Finalize transcripts and queue safety scans* is on.**
 - **For a REDCap admin:** [`scripts/diagnose-scan-notify.sql`](scripts/diagnose-scan-notify.sql). One
   read-only query per question, with no transcript text, for the test record:
@@ -313,8 +351,11 @@ every session from starting**, so all 7 must be green before the move.
   - **`SafetyScan gave up on a session; a manual-review task was created`** — the scan failed on every
     attempt ("NOT SCREENED").
   - **`reviewers could not be told`** — its `reason` says why no email came. "No recipient addresses
-    were given" means nobody is in the Reviewer role; "REDCap::email() refused…" means the send failed.
-  - **No such line** — a notice was sent to whoever is in the Reviewer role.
+    were given" means nobody was left to email: *Reviewer notification addresses* has entries but none
+    is valid, or it is blank and nobody is in the Reviewer role. "REDCap::email() refused…" means the
+    send failed.
+  - **No such line** — a notice was sent to the named addresses, or, when the list is blank, to whoever
+    is in the Reviewer role.
   - **`mica_scan_worker cron failed for one project`** — the worker crashed; its `error` says why.
 
   These lines never contain the provider's error text. That is in View Logs or the SQL above.
@@ -340,4 +381,4 @@ The full list is in [31](31-critical-finding-crc-notify.md). In short:
 **Still Brian's to decide:**
 - the acknowledgement minutes
 - whether to shorten the 24-hour window
-- who the CRCs are
+- who the CRCs are, and which addresses go on Reviewer notification addresses

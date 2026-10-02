@@ -38,6 +38,15 @@ interface LaunchEnvironmentInterface
     public function reviewerUsernames(): array;
 
     /**
+     * The named reviewer list (`notify-reviewer-emails`) that replaces the role as the notice audience.
+     *
+     * @return array{configured: bool, addresses: list<string>, unmatched: list<string>} `configured` is
+     *         true when the setting has any entry; `unmatched` are valid addresses that are not an
+     *         active reviewer or PI in REDCap (emailed, but unable to open the findings)
+     */
+    public function namedReviewerList(): array;
+
+    /**
      * @return string[] problems in the configured recipient lists; empty means clean
      *
      * A malformed address is dropped at send time rather than failing the whole message, so without

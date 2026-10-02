@@ -21,8 +21,10 @@ select j.id as job, j.status, j.attempts, from_unixtime(j.created) as queued_at,
 --    fallback), and on prod 35968 it is not registered, so every scan failed in ~80 ms.
 select r.job_id, r.attempt, from_unixtime(r.created) as at, r.run_status, r.latency_ms, r.model_alias, r.resolved_model, json_extract(r.model_output_json, '$.provider_schema_withheld') as withheld, json_extract(r.model_output_json, '$.schema_was_sent') as schema_sent from redcap_entity_mica_scan_run r join redcap_entity_mica_scan_job j on j.id = r.job_id where j.project_id = 35968 and j.record = '130' order by r.id
 
--- 3. The notices. failed + "No recipient addresses were given" = nobody in the Reviewer role;
---    sent + recipient_count = how many reviewers it went to (check their inboxes and spam).
+-- 3. The notices. failed + "No recipient addresses were given" = nobody in the Reviewer role, or (when
+--    Reviewer notification addresses is filled in) no valid entry in that list (2026-10-02);
+--    sent + recipient_count = how many addresses it went to: the named list when set, otherwise the
+--    role's members (check their inboxes and spam).
 select n.notification_type, n.status, n.recipient_count, from_unixtime(n.sent_at) as at, left(n.subject, 90) as subject, left(n.error, 150) as error from redcap_entity_mica_notification n where n.project_id = 35968 and n.record = '130' order by n.id
 
 -- 3b. Every notice on the project, newest first. Empty = the notice step has never recorded anything

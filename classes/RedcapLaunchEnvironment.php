@@ -166,6 +166,11 @@ class RedcapLaunchEnvironment implements LaunchEnvironmentInterface
         return $usernames;
     }
 
+    public function namedReviewerList(): array
+    {
+        return $this->directory->namedReviewerList();
+    }
+
     public function recipientProblems(): array
     {
         return $this->directory->configurationProblems();

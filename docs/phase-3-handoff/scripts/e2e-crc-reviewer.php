@@ -8,10 +8,16 @@
  *
  * WHY. `reviewers_ready` is addressed to everyone whose `redcap_user_rights.role_id` is one of the
  * roles in the module's `role-ra-reviewer` setting, resolved at send time
- * (RedcapRecipientDirectory::addressesForMicaRole). A mapped role with nobody in it is not an
+ * (RedcapRecipientDirectory::reviewerAddresses). A mapped role with nobody in it is not an
  * error until a finding exists: the notice is then recorded as failed with "No recipient addresses
  * were given", which is what happened on PID 271 on 2026-09-22. This is the same step a real CRC
  * needs on prod, done with a throwaway account.
+ *
+ * (2026-10-02) When Reviewer notification addresses (`notify-reviewer-emails`) is filled in, the
+ * notice goes to that list INSTEAD of the role's members. The CRC still needs the role, to open the
+ * findings. Setup reads the setting and says who the notice will actually reach; if crc-e2e@example.org
+ * is not on the list, critical-notify.js will not find the email. Blank the setting for the run, add
+ * that address to it, or run critical-notify.js with MICA_CRC_EMAIL set to a named address.
  *
  * The account never logs in, so it has no password: it exists only to hold the role and an address.
  * The address is at example.org (reserved, RFC 2606), so nothing can leave even without a mail sink.
@@ -122,4 +128,40 @@ while ($row = db_fetch_assoc($q)) {
 if (!in_array(EMAIL, $addresses, true)) {
     fail('the reviewer query does not resolve ' . EMAIL);
 }
-out('"findings ready" would reach', implode(', ', $addresses));
+out('Reviewer role members', implode(', ', $addresses));
+
+// (2026-10-02) A filled-in Reviewer notification addresses replaces the role as the audience. Resolved
+// with the module's own send-time rule, so this cannot disagree with what the module does.
+require_once dirname(__DIR__, 3) . '/classes/RedcapRecipientDirectory.php';
+$namedRaw = (string) \ExternalModules\ExternalModules::getProjectSetting(
+    'proj_mica',
+    $pid,
+    \Stanford\MICA\RedcapRecipientDirectory::REVIEWER_ADDRESS_SETTING
+);
+$usedRole = false;
+$reach = \Stanford\MICA\RedcapRecipientDirectory::chooseReviewerAddresses(
+    $namedRaw,
+    static function () use ($addresses, &$usedRole): array {
+        $usedRole = true;
+        return $addresses;
+    }
+);
+
+if ($usedRole) {
+    out('"findings ready" would reach', implode(', ', $reach));
+    exit(0);
+}
+if (in_array(strtolower(EMAIL), array_map('strtolower', $reach), true)) {
+    out('"findings ready" would reach', implode(', ', $reach) . ' (Reviewer notification addresses)');
+    exit(0);
+}
+
+echo "  [!!] Reviewer notification addresses is filled in, so \"findings ready\" goes to that list\n"
+    . "       INSTEAD of the role's members. It will reach:\n"
+    . '         ' . ($reach === []
+        ? '(nobody - no entry is a valid address; the notice will fail with "No recipient addresses were given")'
+        : implode(', ', $reach)) . "\n"
+    . '       ' . EMAIL . " is not on it, so critical-notify.js will not find the email in the mail sink\n"
+    . "       (A8/A9 fail). For the e2e run, blank the setting (MICA > Configure) or add " . EMAIL . " to it"
+    . ($reach === [] ? ".\n" : ",\n       or run critical-notify.js with MICA_CRC_EMAIL=<one of the named addresses>.\n")
+    . "       The account above is in place either way; teardown removes it.\n";

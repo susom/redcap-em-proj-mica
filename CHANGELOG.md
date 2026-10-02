@@ -55,6 +55,50 @@ against `platform.php = 8.2` rather than the developer's PHP.
 `php-ml` and `twilio/sdk` were dropped: 2,598 files and 17.5 MB with zero
 references anywhere in the codebase. `vendor/` is 235 files / 1.3 MB.
 
+### Safety scan results can go to named people instead of the Reviewer role (PI, 2026-10-02)
+
+The PI asked for the safety scan results to go to individual email addresses, not a group. On prod
+35968 the Reviewer role held only the developer, so he was the one receiving them.
+
+**New setting** "Reviewer notification addresses" (`notify-reviewer-emails`), directly under
+"Reviewer role(s)". When it has any entry, it **replaces** the role's members as the audience of:
+- "findings ready for review";
+- "could not be screened";
+- the overdue-acknowledgement reminder.
+
+Blank keeps the role. A second-review request still goes to the role, because it asks someone to
+open the finding; so does a policy digest addressed to research assistants.
+
+**Guardrails.** This is the parallel address list the recipient directory was written to avoid, so:
+- **No fallback.** An all-invalid list reaches nobody (recorded as a failed notice). The *recipients*
+  and *reviewers* launch gates both say so.
+- **Reviewers gate refuses** a list where nobody is an active member of the Reviewer or PI role:
+  those people would be emailed findings they cannot open (`pages/review.php` checks the role). If
+  only some names are unmatched, the gate passes and lists them.
+- **Mail-client pastes:** `Name <address>` entries are accepted. On a Production project a failed
+  gate stops new sessions, so a paste must not be what trips it.
+
+**Code:**
+- `RedcapRecipientDirectory`: `reviewerAddresses()` (named list or role),
+  `roleReviewerAddresses()`, `namedReviewerList()`, and the pure `chooseReviewerAddresses()` /
+  `unmatchedAddresses()`.
+- `NotificationService::resolveRoles()` sends `second_reviewer` to the role only.
+- `LaunchReadiness::reviewersGate()` and its messages.
+
+**Tests:** `RedcapRecipientDirectoryTest` is new (10 cases); `LaunchReadinessTest` has 6 new cases;
+`NotificationServiceTest` has 1. Suite: 1,106 tests.
+
+**Verified live** with `verify-notifications.php` on scratch PID 280:
+- the notice went to exactly the two named addresses, not the role;
+- the guardrail reported both as unable to review;
+- an all-invalid list resolved to nobody;
+- cleanup left nothing behind.
+
+**On prod:** the setting appears once this release is deployed. Then, in this order:
+1. Put each CRC in "CRC (MICA reviewer)".
+2. Fill in the addresses (the CRCs' and Brian's).
+3. Check the Launch readiness tab.
+
 ### A mistyped inject instrument put the whole record into the Day-1 prompt
 
 On PIDs 271 and 279 (2026-09-30), `chatbot_redcap_inject` was `DDQ, AUDIT, BSCQ, SIP-2R`. Those are

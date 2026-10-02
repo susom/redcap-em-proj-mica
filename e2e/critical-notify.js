@@ -16,6 +16,12 @@
 // participant types it on `contact_info`). Without it REDCap shows "no login fields can be displayed"
 // and the chat never opens, so the script stores one through REDCap::saveData() when it is missing.
 //
+// Who the email goes to (2026-10-02). The notice goes to the Reviewer role, or to the Reviewer
+// notification addresses (`notify-reviewer-emails`) when that setting is filled in. This script looks
+// for MICA_CRC_EMAIL (default crc-e2e@example.org) in the sink, so leave that setting blank for the
+// run, include the CRC address in it, or set MICA_CRC_EMAIL to a named address. e2e-crc-reviewer.php
+// setup prints who the notice will reach and warns when it is not the CRC.
+//
 // The mail sink is not optional. Local msmtp points at `mailhog:1025`, which does not resolve unless
 // something answers to that name, and without it REDCap::email() fails: the notice row then reads
 // `failed`, which looks like a module bug and is not one.

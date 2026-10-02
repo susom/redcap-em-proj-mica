@@ -23,6 +23,8 @@ final class FakeLaunchEnvironment implements LaunchEnvironmentInterface
     public ?string $safetyScan = 'gemini-2.5-flash';
     public bool $mockMode = false;
     public array $reviewers = ['ra_alice'];
+    /** @var array{configured: bool, addresses: list<string>, unmatched: list<string>} */
+    public array $namedReviewers = ['configured' => false, 'addresses' => [], 'unmatched' => []];
     public string $fallbackText = 'The study team has been notified.';
     public array $roleMapping = [RoleService::RA => ['660']];
     public array $recipientProblems = [];
@@ -102,6 +104,11 @@ final class FakeLaunchEnvironment implements LaunchEnvironmentInterface
     public function reviewerUsernames(): array
     {
         return $this->reviewers;
+    }
+
+    public function namedReviewerList(): array
+    {
+        return $this->namedReviewers;
     }
 
     public function recipientProblems(): array

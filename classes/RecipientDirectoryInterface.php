@@ -19,12 +19,23 @@ interface RecipientDirectoryInterface
     public function addressesForRole(string $policyRole): array;
 
     /**
-     * Addresses for everyone in the mapped MICA reviewer role.
+     * Addresses for the "findings ready" / "could not be screened" and overdue-acknowledgement notices.
      *
-     * The reviewer role IS the assignment - see LaunchReadiness::reviewersGate() on why there is no
-     * per-finding assignee field.
+     * Everyone in the mapped MICA reviewer role, unless the study listed named reviewer addresses
+     * (`notify-reviewer-emails`), which then replace the role as the audience. The reviewer role IS
+     * the assignment for dashboard access either way - see LaunchReadiness::reviewersGate() on why
+     * there is no per-finding assignee field.
      *
      * @return list<string>
      */
     public function reviewerAddresses(): array;
+
+    /**
+     * Everyone in the mapped MICA reviewer role, ignoring any named list.
+     *
+     * For notices whose recipient must act in the dashboard, such as a second-review request.
+     *
+     * @return list<string>
+     */
+    public function roleReviewerAddresses(): array;
 }

@@ -498,6 +498,41 @@ foreach (['care_team' => 'notify-care-team-emails', 'protocol_lead' => 'notify-p
     $addrs === [] ? note_($key, 'unset - this recipient role resolves to nobody') : ok_($key, implode(', ', $addrs));
 }
 
+// Reviewer notification addresses, the PI's request (2026-10-02). When filled in, these replace the
+// Reviewer role as the audience of "findings ready", "could not be screened" and the overdue
+// reminder. The role still governs the dashboard. Same branches as LaunchReadiness::reviewersGate(),
+// so this exit code and the Launch readiness tab cannot disagree.
+$namedKey = \Stanford\MICA\RedcapRecipientDirectory::REVIEWER_ADDRESS_SETTING;
+$named = $directory->namedReviewerList();
+if (!$named['configured']) {
+    note_($namedKey, "unset - reviewer notices go to the Reviewer role's members");
+} elseif ($named['addresses'] === []) {
+    bad_(
+        $namedKey,
+        'filled in but no entry is a valid address - reviewer notices reach nobody',
+        'The Reviewer role is not used as a fallback. Correct the list or clear it. On Production the '
+        . 'reviewers launch gate fails, which stops new sessions.'
+    );
+} elseif (count($named['unmatched']) === count($named['addresses'])) {
+    bad_(
+        $namedKey,
+        'nobody named is an active Reviewer or PI, so nobody emailed can open the findings: '
+        . implode(', ', $named['unmatched']),
+        'Put each person in the Reviewer role under User Rights, with a REDCap account email that '
+        . 'matches the address, or clear the list. The reviewers launch gate fails until then.'
+    );
+} else {
+    ok_(
+        $namedKey,
+        'replaces the Reviewer role as the notice audience (second-review requests still go to the '
+        . 'role): ' . implode(', ', $named['addresses'])
+    );
+    if ($named['unmatched'] !== []) {
+        note_($namedKey, 'emailed but not an active Reviewer or PI, so unable to open the findings: '
+            . implode(', ', $named['unmatched']));
+    }
+}
+
 $from = $str('notification-from-email');
 if ($from === '') {
     note_('notification-from-email', "unset - REDCap's own configured sender is used, which is SPF-aligned");

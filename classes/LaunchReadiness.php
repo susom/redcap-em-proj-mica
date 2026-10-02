@@ -210,19 +210,31 @@ class LaunchReadiness
      * mapped reviewer role**. There is no per-finding assignee field and there should not be one: an
      * assignment that can go stale is a finding that can end up assigned to somebody who left. The
      * role IS the assignment, and it is managed where study access is managed.
+     *
+     * Since 2026-10-02 the study can name the people who are *emailed* (`notify-reviewer-emails`,
+     * the PI's request). That changes who is told, not who can review, so the role checks below
+     * stand either way. A named list adds two refusals of its own: one with no valid address reaches
+     * nobody, and one where nobody is an active reviewer or PI sends a critical-finding email to
+     * people who cannot open it - a departed colleague's address is exactly that case.
      */
     private function reviewersGate(): GateResult
     {
         $mappedRoles = $this->env->roles()->mappedRedcapRoles(RoleService::RA);
         $reviewers = $this->env->reviewerUsernames();
+        $named = $this->env->namedReviewerList();
+        $fixNamed = 'Correct Reviewer notification addresses under External Modules > MICA > Configure, '
+            . 'or clear it so the Reviewer role is notified again.';
 
         if ($mappedRoles === []) {
             return new GateResult(
                 'reviewers',
                 'Reviewers configured',
                 false,
-                'No REDCap user role is mapped as a MICA reviewer, so no finding could ever be '
-                . 'reviewed and no "findings ready" notice would have a recipient.',
+                $named['configured']
+                    ? 'No REDCap user role is mapped as a MICA reviewer. The named reviewer addresses '
+                      . 'would be emailed, but nobody could open the findings to review them.'
+                    : 'No REDCap user role is mapped as a MICA reviewer, so no finding could ever be '
+                      . 'reviewed and no "findings ready" notice would have a recipient.',
                 'Map a REDCap role under External Modules > MICA > Configure, in the Reviewer setting.'
             );
         }
@@ -233,20 +245,67 @@ class LaunchReadiness
                 'Reviewers configured',
                 false,
                 sprintf(
-                    'A reviewer role is mapped (%s) but no user is in it, so findings would reach '
-                    . 'a queue nobody is notified about.',
+                    $named['configured']
+                        ? 'A reviewer role is mapped (%s) but no user is in it. The named reviewer '
+                          . 'addresses will be emailed, but nobody can open the findings to review them.'
+                        : 'A reviewer role is mapped (%s) but no user is in it, so findings would reach '
+                          . 'a queue nobody is notified about.',
                     implode(', ', $mappedRoles)
                 ),
                 'Assign at least one user to that REDCap role under User Rights.'
             );
         }
 
-        return new GateResult(
-            'reviewers',
-            'Reviewers configured',
-            true,
-            sprintf('%d user(s) in the mapped reviewer role(s).', count($reviewers)),
+        if (!$named['configured']) {
+            return new GateResult(
+                'reviewers',
+                'Reviewers configured',
+                true,
+                sprintf('%d user(s) in the mapped reviewer role(s).', count($reviewers)),
+            );
+        }
+
+        if ($named['addresses'] === []) {
+            return new GateResult(
+                'reviewers',
+                'Reviewers configured',
+                false,
+                'Reviewer notification addresses is filled in but has no valid address, so "findings '
+                . 'ready" notices would reach nobody. The Reviewer role is not used as a fallback.',
+                $fixNamed
+            );
+        }
+
+        if (count($named['unmatched']) === count($named['addresses'])) {
+            return new GateResult(
+                'reviewers',
+                'Reviewers configured',
+                false,
+                sprintf(
+                    'None of the named reviewer addresses (%s) belongs to an active member of the '
+                    . 'Reviewer or PI role, so the people emailed about a finding could not open it.',
+                    implode(', ', $named['unmatched'])
+                ),
+                'Put those people in the Reviewer role under User Rights (their REDCap account email '
+                . 'must match the address), or ' . lcfirst($fixNamed)
+            );
+        }
+
+        $detail = sprintf(
+            '%d user(s) in the mapped reviewer role(s); "findings ready" notices go to the %d named '
+            . 'reviewer address(es) instead of the role.',
+            count($reviewers),
+            count($named['addresses'])
         );
+
+        if ($named['unmatched'] !== []) {
+            $detail .= sprintf(
+                ' Emailed but not an active reviewer or PI in REDCap, so unable to open the findings: %s.',
+                implode(', ', $named['unmatched'])
+            );
+        }
+
+        return new GateResult('reviewers', 'Reviewers configured', true, $detail);
     }
 
     /** Gate 3 - the prompt and schemas are the validated ones. */
@@ -377,8 +436,8 @@ class LaunchReadiness
     /**
      * Gate 6 - the configured recipient lists are addresses.
      *
-     * Separate from the reviewers gate because it is a different failure: reviewers come from REDCap
-     * roles and cannot be mistyped, whereas the care-team and on-call lists are free text. A malformed
+     * Separate from the reviewers gate because it is a different failure: the reviewer role cannot be
+     * mistyped, whereas the care-team, on-call and named reviewer lists are free text. A malformed
      * entry is dropped at send time rather than failing the whole message - correct at send time, but
      * it means the symptom is a care team that never heard about a confirmed critical finding, months
      * later, with nothing in the trail saying anyone was left out. This is the gate that turns that
@@ -395,7 +454,8 @@ class LaunchReadiness
                 false,
                 implode(' ', $problems),
                 'Correct the address lists under External Modules > MICA > Configure. An entry that '
-                . 'is not a valid address is skipped silently at send time.'
+                . 'is not a valid address is skipped silently at send time, and a reviewer list with no '
+                . 'valid entry means those notices reach nobody.'
             );
         }
 

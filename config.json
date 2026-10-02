@@ -216,10 +216,16 @@
         },
         {
             "key": "role-ra-reviewer",
-            "name": "<b>Reviewer role(s)</b><br><i>Which <b>REDCap user role</b> reviews SafetyScan findings. Under the RA-first policy these users are the ones who actually decide - nothing reaches a care team, PI or protocol lead until one of them confirms a finding.<br>Assign people by putting them in the REDCap role, as you already do; this only says which role counts. A user with <b>no</b> REDCap role gets no MICA access.</i>",
+            "name": "<b>Reviewer role(s)</b><br><i>Which <b>REDCap user role</b> reviews SafetyScan findings. Under the RA-first policy these users are the ones who actually decide - nothing reaches a care team, PI or protocol lead until one of them confirms a finding.<br>Assign people by putting them in the REDCap role, as you already do; this only says which role counts. A user with <b>no</b> REDCap role gets no MICA access. Its members also receive the \"findings ready\" email, unless Reviewer notification addresses below is filled in.</i>",
             "required": false,
             "type": "user-role-list",
             "repeatable": true
+        },
+        {
+            "key": "notify-reviewer-emails",
+            "name": "<b>Reviewer notification addresses</b><br><i>Optional. Who receives the \"findings ready for review\" email (sent when a safety scan finds something), the \"could not be screened\" email, and the overdue-acknowledgement reminder. <b>When filled in, these addresses are used instead of the members of the Reviewer role</b> for those emails; blank keeps the role. A second-review request still goes to the Reviewer role, and so does any policy digest addressed to research assistants. Comma, semicolon or newline separated; <code>Name &lt;address&gt;</code> is accepted. The Reviewer role still decides who can open the review dashboard, so put every named person in that role too: Launch readiness refuses a list where nobody can open the findings, and names anyone who cannot. On a Production project an invalid list stops new sessions, so check Launch readiness after saving.</i>",
+            "required": false,
+            "type": "textarea"
         },
         {
             "key": "role-pi-lead",

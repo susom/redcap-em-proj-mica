@@ -163,11 +163,13 @@ class NotificationService
     // ------------------------------------------------------------------ 1. findings are ready
 
     /**
-     * Tell the reviewer role that a session has findings waiting.
+     * Tell the reviewers that a session has findings waiting.
      *
      * The only notice that fires without any human involvement, and the reason that is acceptable is
      * that its audience is the people whose job is to review: telling an RA there is something in
-     * their queue is not a disclosure, it is the queue working.
+     * their queue is not a disclosure, it is the queue working. The audience is the reviewer role, or
+     * the named `notify-reviewer-emails` list when the study set one (PI, 2026-10-02); the launch gate
+     * refuses a named list in which nobody is an active reviewer or PI.
      */
     public function notifyReviewersReady(
         int $jobId,
@@ -1037,8 +1039,10 @@ class NotificationService
         $addresses = [];
 
         foreach ($roles as $role) {
+            // The role, not the named results list: a second-review request asks someone to open the
+            // finding, so it goes to people who can (RecipientDirectoryInterface::roleReviewerAddresses).
             $found = $role === self::REVIEWERS
-                ? $this->directory->reviewerAddresses()
+                ? $this->directory->roleReviewerAddresses()
                 : $this->directory->addressesForRole($role);
 
             foreach ($found as $address) {

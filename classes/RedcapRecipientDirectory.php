@@ -16,6 +16,12 @@ require_once __DIR__ . "/RoleService.php";
  * removed from the project stops receiving notices the moment their rights are removed. A separate
  * address list would keep emailing them, and that is the failure nobody notices.
  *
+ * The one exception is deliberate: the PI asked (2026-10-02) for the "findings ready" notice to go to
+ * named people rather than to a group, so `notify-reviewer-emails` can replace the reviewer role as
+ * that notice's audience. That list IS the parallel list warned about above, so it carries its own
+ * guardrail: namedReviewerList() reports any named address that is not an active reviewer or PI in
+ * REDCap, and the launch gate refuses a list where none is. The role still governs dashboard access.
+ *
  * `care_team`, `on_call_research_staff`, `protocol_lead` and `data_safety_reviewer` are not REDCap
  * users at all - a care team is a clinical service, and giving it a REDCap account to receive an
  * email would be worse than a settings field. Those come from explicit address settings.
@@ -41,6 +47,9 @@ class RedcapRecipientDirectory implements RecipientDirectoryInterface
         'protocol_lead'          => 'notify-protocol-lead-emails',
         'data_safety_reviewer'   => 'notify-data-safety-emails',
     ];
+
+    /** Named reviewer addresses that replace the reviewer role as the notice audience when set. */
+    public const REVIEWER_ADDRESS_SETTING = 'notify-reviewer-emails';
 
     private MICA $module;
     private RoleService $roles;
@@ -72,14 +81,105 @@ class RedcapRecipientDirectory implements RecipientDirectoryInterface
             return $this->cache[$policyRole] = [];
         }
 
-        return $this->cache[$policyRole] = $this->parseAddresses(
+        return $this->cache[$policyRole] = self::parseAddresses(
             (string) $this->module->getProjectSetting($setting, $this->projectId)
         );
     }
 
+    /**
+     * Who hears that findings are ready, that a session could not be screened, and about overdue
+     * acknowledgements.
+     *
+     * The members of the mapped reviewer role, unless the study has listed named addresses in
+     * `notify-reviewer-emails` - then those addresses, **instead of** the role (the PI asked for the
+     * results to go to named people rather than to a group, 2026-10-02). The role still decides who
+     * can open the review dashboard; this only changes who is emailed.
+     */
     public function reviewerAddresses(): array
     {
+        return self::chooseReviewerAddresses(
+            $this->namedReviewerRaw(),
+            fn(): array => $this->addressesForMicaRole(RoleService::RA)
+        );
+    }
+
+    /**
+     * The reviewer role's members only, ignoring the named list.
+     *
+     * For notices whose recipient has to act in the dashboard - a second-review request is a request to
+     * open the finding, so it goes to people who can, not to whoever was named for the results email.
+     */
+    public function roleReviewerAddresses(): array
+    {
         return $this->addressesForMicaRole(RoleService::RA);
+    }
+
+    /**
+     * The named reviewer list as the launch gate needs to see it.
+     *
+     * `configured` follows the same test chooseReviewerAddresses() uses (any entry at all), so the gate
+     * and the send can never disagree about who the audience is. `unmatched` is every valid named
+     * address that is not the email of an active member of the reviewer or PI role: those people are
+     * emailed but cannot open the findings, and a departed colleague would be one of them.
+     *
+     * @return array{configured: bool, addresses: list<string>, unmatched: list<string>}
+     */
+    public function namedReviewerList(): array
+    {
+        $raw = $this->namedReviewerRaw();
+        $addresses = self::parseAddresses($raw);
+
+        return [
+            'configured' => self::split($raw) !== [],
+            'addresses'  => $addresses,
+            'unmatched'  => $addresses === [] ? [] : self::unmatchedAddresses(
+                $addresses,
+                array_merge(
+                    $this->addressesForMicaRole(RoleService::RA),
+                    $this->addressesForMicaRole(RoleService::PI)
+                )
+            ),
+        ];
+    }
+
+    /**
+     * The rule, kept free of REDCap so it can be unit tested.
+     *
+     * A setting that has *anything* in it is used as-is, even when every entry fails to parse: falling
+     * back to the role would send a safety notice to people the study deliberately took off the list,
+     * which is the silent substitution this class refuses everywhere else. An all-invalid list
+     * resolves to nobody, NotificationService records that as a failure, and the launch gates
+     * (configurationProblems, and the reviewers gate) say so.
+     *
+     * @param callable(): list<string> $roleAddresses
+     * @return list<string>
+     */
+    public static function chooseReviewerAddresses(string $namedRaw, callable $roleAddresses): array
+    {
+        if (self::split($namedRaw) !== []) {
+            return self::parseAddresses($namedRaw);
+        }
+
+        return $roleAddresses();
+    }
+
+    /**
+     * Named addresses that match none of the given account emails, compared case-insensitively.
+     *
+     * @param list<string> $named
+     * @param list<string> $accounts
+     * @return list<string>
+     */
+    public static function unmatchedAddresses(array $named, array $accounts): array
+    {
+        $known = array_flip(array_map('strtolower', $accounts));
+
+        return array_values(array_filter($named, static fn(string $a): bool => !isset($known[strtolower($a)])));
+    }
+
+    private function namedReviewerRaw(): string
+    {
+        return (string) $this->module->getProjectSetting(self::REVIEWER_ADDRESS_SETTING, $this->projectId);
     }
 
     /**
@@ -131,9 +231,21 @@ class RedcapRecipientDirectory implements RecipientDirectoryInterface
     {
         $problems = [];
 
-        foreach (self::ADDRESS_SETTINGS as $policyRole => $setting) {
+        $lists = self::ADDRESS_SETTINGS + ['reviewer_notification' => self::REVIEWER_ADDRESS_SETTING];
+
+        foreach ($lists as $policyRole => $setting) {
             $raw = (string) $this->module->getProjectSetting($setting, $this->projectId);
-            $rejected = $this->rejected($raw);
+            $rejected = self::rejected($raw);
+
+            if ($rejected !== [] && $setting === self::REVIEWER_ADDRESS_SETTING && self::parseAddresses($raw) === []) {
+                // Not "skipped": with no valid entry the whole reviewer notice reaches nobody.
+                $problems[] = sprintf(
+                    'The reviewer notification list has no valid address, so "findings ready" notices '
+                    . 'would reach nobody: %s',
+                    implode(', ', $rejected)
+                );
+                continue;
+            }
 
             if ($rejected !== []) {
                 $problems[] = sprintf(
@@ -158,11 +270,11 @@ class RedcapRecipientDirectory implements RecipientDirectoryInterface
      *
      * @return list<string>
      */
-    private function parseAddresses(string $raw): array
+    private static function parseAddresses(string $raw): array
     {
         $addresses = [];
 
-        foreach ($this->split($raw) as $part) {
+        foreach (array_map([self::class, 'bare'], self::split($raw)) as $part) {
             // Validated rather than trusted: an unparseable address makes REDCap::email() fail for
             // the whole send, so one typo would suppress a notice to everyone else on the list.
             // configurationProblems() is what stops that being silent.
@@ -175,16 +287,28 @@ class RedcapRecipientDirectory implements RecipientDirectoryInterface
     }
 
     /** @return list<string> the entries parseAddresses() would throw away */
-    private function rejected(string $raw): array
+    private static function rejected(string $raw): array
     {
         return array_values(array_filter(
-            $this->split($raw),
-            static fn(string $part): bool => !filter_var($part, FILTER_VALIDATE_EMAIL)
+            self::split($raw),
+            static fn(string $part): bool => !filter_var(self::bare($part), FILTER_VALIDATE_EMAIL)
         ));
     }
 
+    /**
+     * `Brian Smith <brian@example.org>` -> `brian@example.org`.
+     *
+     * Address lists get pasted from a mail client, and on a Production project an all-invalid list is
+     * a failed launch gate - which stops new sessions - so the common paste shape is accepted rather
+     * than refused. Anything else is returned unchanged and validated as it is.
+     */
+    private static function bare(string $part): string
+    {
+        return preg_match('/<\s*([^<>\s]+@[^<>\s]+)\s*>\s*$/', $part, $m) ? $m[1] : $part;
+    }
+
     /** @return list<string> non-empty trimmed parts */
-    private function split(string $raw): array
+    private static function split(string $raw): array
     {
         return array_values(array_filter(
             array_map('trim', preg_split('/[,;\r\n]+/', $raw) ?: []),

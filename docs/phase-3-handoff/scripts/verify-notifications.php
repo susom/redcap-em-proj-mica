@@ -179,6 +179,12 @@ final class CaptureChannel implements NotificationChannelInterface
             return;
         }
 
+        if ($recipients === []) {
+            // The real channel refuses an empty list; redirecting it would mail the tester a notice
+            // production never sends.
+            return;
+        }
+
         try {
             $this->real->send($channel, [$this->redirectTo], $subject, $body);
         } catch (\Throwable $e) {
@@ -259,6 +265,7 @@ $REVIEWER = getenv('MICA_REVIEWER') ?: 'ihabz';
 $originalRa = $module->getProjectSetting('role-ra-reviewer', $PID);
 $originalCare = $module->getProjectSetting('notify-care-team-emails', $PID);
 $originalPolicy = $module->getProjectSetting('notification-policy-json', $PID);
+$originalNamedReviewers = $module->getProjectSetting(RedcapRecipientDirectory::REVIEWER_ADDRESS_SETTING, $PID);
 
 $module->query('DELETE FROM redcap_user_roles WHERE project_id = ? AND role_name = ?', [$PID, 'Verify MICA Notify']);
 $module->query(
@@ -282,6 +289,8 @@ $module->query(
 );
 $module->setProjectSetting('role-ra-reviewer', [(string) $verifyRoleId], $PID);
 $module->setProjectSetting('notify-care-team-emails', 'care-team@example.org, not an address', $PID);
+// Blank, so the project's own named list (if any) cannot redirect the probe notices or add a problem.
+$module->setProjectSetting(RedcapRecipientDirectory::REVIEWER_ADDRESS_SETTING, '', $PID);
 
 $results = new RedcapScanResultStore($module);
 $reviewStore = new RedcapFindingReviewStore($module);
@@ -704,6 +713,48 @@ try {
         'yes'
     );
 
+    // Named reviewer addresses (notify-reviewer-emails): when set, they replace the reviewer role as
+    // the audience of "findings ready". Set temporarily, restored even if a check throws.
+    $originalNamed = $module->getProjectSetting(RedcapRecipientDirectory::REVIEWER_ADDRESS_SETTING, $PID);
+    try {
+        $module->setProjectSetting(
+            RedcapRecipientDirectory::REVIEWER_ADDRESS_SETTING,
+            "crc.one@example.org;\ncrc.two@example.org",
+            $PID
+        );
+        $named = $digestService->notifyReviewersReady(999_003, $RECORD, $EVENT, $instance, 'baseline', 1, 'critical');
+        check('with named reviewer addresses set, the notice sends', $named->outcome, NotificationResult::SENT);
+        check(
+            'to exactly the named addresses, not the role',
+            implode(',', $channel->last()['recipients']),
+            'crc.one@example.org,crc.two@example.org'
+        );
+        $list = $directory->namedReviewerList();
+        check(
+            'named addresses with no reviewer account are reported as unable to review',
+            implode(',', $list['unmatched']),
+            'crc.one@example.org,crc.two@example.org'
+        );
+
+        $module->setProjectSetting(RedcapRecipientDirectory::REVIEWER_ADDRESS_SETTING, 'crc at example dot org', $PID);
+        $digestService->notifyReviewersReady(999_004, $RECORD, $EVENT, $instance, 'baseline', 1, 'critical');
+        // The capture records whatever it is handed; the real RedcapEmailChannel refuses an empty list
+        // ("No recipient addresses were given"), so in production this is a recorded failure. What
+        // matters here is that the list resolved to nobody rather than to the role.
+        check(
+            'an all-invalid named list resolves to nobody, not to the role',
+            implode(',', $channel->last()['recipients']) ?: '(nobody)',
+            '(nobody)'
+        );
+        check(
+            'and is named as a launch problem',
+            str_contains(implode(' ', $directory->configurationProblems()), 'reviewer notification') ? 'yes' : 'no',
+            'yes'
+        );
+    } finally {
+        $module->setProjectSetting(RedcapRecipientDirectory::REVIEWER_ADDRESS_SETTING, $originalNamed, $PID);
+    }
+
     $digests = $digestService->sendDigests('daily', $now - 86400, $now);
     check('a digest sends', $digests[0]->outcome, NotificationResult::SENT);
     // Space-padded columns collapse in HTML, so the body must not rely on them for alignment.
@@ -802,7 +853,7 @@ if ($instance !== null) {
 // widened: delete by digest_id as well, and count everything this probe could have created.
 $module->query(
     'DELETE FROM redcap_entity_mica_notification WHERE project_id = ? '
-    . 'AND (record = ? OR job_id IN (999001, 999002) OR digest_id = ?)',
+    . 'AND (record = ? OR job_id IN (999001, 999002, 999003, 999004) OR digest_id = ?)',
     [$PID, $RECORD, 'probe_daily']
 );
 check(
@@ -827,6 +878,7 @@ $module->query('DELETE FROM redcap_user_roles WHERE project_id = ? AND role_name
 $module->setProjectSetting('role-ra-reviewer', $originalRa, $PID);
 $module->setProjectSetting('notify-care-team-emails', $originalCare, $PID);
 $module->setProjectSetting('notification-policy-json', $originalPolicy, $PID);
+$module->setProjectSetting(RedcapRecipientDirectory::REVIEWER_ADDRESS_SETTING, $originalNamedReviewers, $PID);
 echo "  ...  role, rights and settings restored\n";
 
 if ($REAL_EMAIL !== null) {

@@ -9,7 +9,8 @@
   **22 s, 42 s and 65 s** over three runs.
 - **Not yet on prod** (35968). Prod needs two things:
   1. The D23 fix deployed. It is in the working tree, not committed.
-  2. The CRCs placed in the reviewer role.
+  2. The CRCs placed in the reviewer role, and (2026-10-02) the CRCs' and Brian's addresses in
+     *Reviewer notification addresses* (below).
 
 Until the fix is deployed, **no session on prod is ever screened**. Every session reaches the
 reviewers as "could not be screened", about 7.5 minutes after it ends.
@@ -25,7 +26,7 @@ in the loop. What was broken was the scan in front of it ([14 D23](14-live-defec
 | 2 | `mica_scan_worker` (every 60 s) claims it | wait for the next minute: 0–60 s |
 | 3 | SafetyScan call, `gpt-5-6-sol` | 5.6–10.4 s measured |
 | 4 | The answer is checked against the pinned schema, and every quote against the transcript. Findings are written to `mica_safety_finding` | < 1 s |
-| 5 | **Same cron pass:** the `reviewers_ready` email goes to every user in the REDCap role mapped as MICA **Reviewer** | < 1 s + mail delivery |
+| 5 | **Same cron pass:** the `reviewers_ready` email goes to the addresses in *Reviewer notification addresses*, or, when that is blank, to every user in the REDCap role mapped as MICA **Reviewer** (2026-10-02; the runs below predate the list and used the role) | < 1 s + mail delivery |
 
 The email ([screenshot](../../e2e/shots/critical-notify-email-mobile.png), gitignored):
 - **Subject:** `[MICA] 2 SafetyScan finding(s) ready for review - highest urgency: critical`
@@ -124,15 +125,42 @@ Step by step, with every MICA setting by its dialog label: [32](32-prod-runbook-
 
 1. **Deploy the D23 fix.** It is part of blocker 8 in [30](30-go-live-readiness.md): prod runs
    whatever MICA code it was given.
-2. **Put every CRC in the reviewer role.** MICA → Configure → *Reviewer* names one or more REDCap
-   roles, and the notice goes to everyone holding one of them:
-   - The CRC must be **assigned the role**. Custom rights don't count.
-   - The account must **not be suspended**.
-   - The account must have an **email address**.
+2. **Put every CRC in the reviewer role, then name who is emailed (2026-10-02).** The PI asked for
+   the results to go to named people, not a group. Two settings in MICA → Configure now do two jobs:
+   - **Reviewer role(s)** decides who can open the findings on the review dashboard. Second-review
+     requests still go to it.
+   - **Reviewer notification addresses**, directly under it: when it has any entry, the "findings
+     ready" email, the "could not be screened" email and the overdue reminder go to these addresses
+     **instead of** the role. Blank keeps the role. Comma, semicolon or newline separated;
+     `Name <address>` (an Outlook paste) is accepted.
 
-   The Launch readiness tab's "Reviewers configured" gate shows the head count. A mapped role with
-   nobody in it is exactly how the 09-22 notice on 271 went nowhere: "No recipient addresses were
-   given".
+   On prod, in this order:
+   1. Put each CRC in role 135783 `CRC (MICA reviewer)` with their own account. Today its only member
+      is ihabz, the developer.
+      - The CRC must be **assigned the role**. Custom rights don't count.
+      - The account must **not be suspended**.
+      - Its REDCap **profile email** must be the address you put on the list. That is how the gate
+        matches the two.
+   2. Fill in *Reviewer notification addresses* with the CRCs' and Brian's addresses. Brian is in
+      Project Admins, mapped as PI-lead, so he can already open findings. Don't map Project Admins
+      as a Reviewer role to get him the emails: it has 8 users, and all of them would become
+      reviewers.
+   3. Open the Launch readiness tab straight away and confirm *Reviewers configured* and *Recipient
+      lists are valid addresses* pass. On a Production project a red gate stops new sessions.
+
+   The "Reviewers configured" gate shows the role's head count and, with a list, how many addresses
+   are on it. With a list it fails if:
+   - the list has no valid address. The role is **not** a fallback, so the notices would reach nobody;
+   - nobody on the list is an active member of the Reviewer or PI role.
+
+   When only some match, it passes and names the others: they are emailed but can't open the findings.
+
+   **Removing a CRC** now means taking them out of the role **and** off the list.
+
+   A mapped role with nobody in it, and the list blank, is how the 09-22 notice on 271 went nowhere:
+   "No recipient addresses were given". A list with no valid address now ends the same way.
+
+   The setting exists on prod only once a release containing it is deployed (step 1).
 3. **REDCap's cron runs every minute.** This is standard on the Stanford server, and the 60 s step
    above depends on it.
 4. **Prove it on prod once.** Run one synthetic critical session on a test record, click End Session,
@@ -178,11 +206,13 @@ Step by step, with every MICA setting by its dialog label: [32](32-prod-runbook-
   is called only by a verifier script, and no dashboard action calls it. So once N is set, every
   `reviewers_ready` notice gets that reminder N minutes later, whatever its urgency and whether or not
   someone has already reviewed it. What the PI is choosing is **when that one reminder goes out**, not
-  a tracked deadline.
-- **Only the reviewer role hears first.** The notice goes to that role for any finding, with the
-  urgency in the subject. Care team, PI and protocol lead are told only after a reviewer confirms the
-  finding and chooses to alert them. The "pre-review" path that would tell them sooner is disabled by
-  policy, and nothing calls it.
+  a tracked deadline. The reminder goes to the same people as the findings email: the named list, or
+  the role when the list is blank (2026-10-02).
+- **Only the reviewers hear first.** The notice goes to *Reviewer notification addresses*, or to the
+  Reviewer role when that is blank (2026-10-02), for any finding, with the urgency in the subject.
+  Anyone else (care team, protocol lead, and the PI unless his address is on the list) is told only
+  after a reviewer confirms the finding and chooses to alert them. The "pre-review" path that would
+  tell them sooner is disabled by policy, and nothing calls it.
 
 ## Reproduce
 

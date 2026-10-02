@@ -252,6 +252,20 @@ final class NotificationServiceTest extends TestCase
         );
     }
 
+    public function testNamedReviewerAddressesTakeTheResultsNoticeButNotTheSecondReviewRequest(): void
+    {
+        // The PI's named list (notify-reviewer-emails) replaces the role for "findings ready". A
+        // second-review request asks someone to open the finding, so it stays with the role.
+        $this->directory->reviewers = ['crc@example.org', 'pi@example.org'];
+        $this->directory->roleReviewers = ['ra@example.org', 'ra2@example.org'];
+
+        $this->service()->notifyReviewersReady(7, self::RECORD, self::EVENT, 1, 'baseline', 1, 'critical');
+        $this->assertSame(['crc@example.org', 'pi@example.org'], $this->channel->last()['recipients']);
+
+        $this->deliver(['second_reviewer']);
+        $this->assertSame(['ra@example.org', 'ra2@example.org'], $this->channel->last()['recipients']);
+    }
+
     public function testTheGatedAndUngatedSetsTogetherCoverEveryActionTheInstrumentOffers(): void
     {
         // If a choice is added to action_types and not classified here, deliverActions() throws on it

@@ -23,8 +23,11 @@ final class FakeRecipientDirectory implements RecipientDirectoryInterface
         'data_safety_reviewer'   => ['dsmb@example.org'],
     ];
 
-    /** @var list<string> */
+    /** @var list<string> what reviewerAddresses() returns (the named list when one is set) */
     public array $reviewers = ['ra@example.org', 'ra2@example.org'];
+
+    /** @var list<string> the reviewer role's own members */
+    public array $roleReviewers = ['ra@example.org', 'ra2@example.org'];
 
     public function addressesForRole(string $policyRole): array
     {
@@ -34,5 +37,10 @@ final class FakeRecipientDirectory implements RecipientDirectoryInterface
     public function reviewerAddresses(): array
     {
         return $this->reviewers;
+    }
+
+    public function roleReviewerAddresses(): array
+    {
+        return $this->roleReviewers;
     }
 }
