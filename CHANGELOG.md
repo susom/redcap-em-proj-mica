@@ -55,6 +55,34 @@ against `platform.php = 8.2` rather than the developer's PHP.
 `php-ml` and `twilio/sdk` were dropped: 2,598 files and 17.5 MB with zero
 references anywhere in the codebase. `vendor/` is 235 files / 1.3 MB.
 
+### With a named reviewer list, the Reviewer role is optional (2026-10-02)
+
+The PI wants a list of emails and no reviewer role. Removing the role on prod 35968 failed the
+*reviewers* launch gate. On a Production project a failed gate refuses every session, so participants
+saw "This session cannot start right now" instead of the chat.
+- **Reproduced:** scratch PID 280, set to Production, with the Reviewer role removed and two named
+  addresses.
+
+**Fix:** a Reviewer notification addresses list with at least one valid address now satisfies the gate
+on its own.
+- **The role is optional.** It only decides who can open the review dashboard, together with the
+  PI-lead role.
+- **Not blocking any more:** named people outside both roles are listed as "emailed but unable to open
+  the review dashboard". This replaces the earlier refusal of a list where nobody could review.
+- **Still failing:** a filled-in list with no valid address (it emails nobody); and, when the list is
+  blank, the old role checks.
+- **Second-review requests** go to the role when it has members, otherwise to the named list.
+- **`verify-settings.php`** reports the same way.
+
+**Verified:**
+- On 280: the gates pass, and the same participant gets the MICA chat on desktop and iPhone.
+- Tests: `LaunchReadinessTest` covers role removed, role empty, nobody able to open the dashboard and
+  an invalid list; `NotificationServiceTest` covers the second-review fallback. Suite: 1,108 pass.
+
+**On prod:** deploy, fill in the addresses (the CRCs' and Brian's), then check Launch readiness. The
+Reviewer role can stay or go. With it gone, only PI-lead members (Project Admins) can open and confirm
+findings.
+
 ### Safety scan results can go to named people instead of the Reviewer role (PI, 2026-10-02)
 
 The PI asked for the safety scan results to go to individual email addresses, not a group. On prod
@@ -72,9 +100,8 @@ open the finding; so does a policy digest addressed to research assistants.
 **Guardrails.** This is the parallel address list the recipient directory was written to avoid, so:
 - **No fallback.** An all-invalid list reaches nobody (recorded as a failed notice). The *recipients*
   and *reviewers* launch gates both say so.
-- **Reviewers gate refuses** a list where nobody is an active member of the Reviewer or PI role:
-  those people would be emailed findings they cannot open (`pages/review.php` checks the role). If
-  only some names are unmatched, the gate passes and lists them.
+- **Reviewers gate refused** a list where nobody is an active member of the Reviewer or PI role.
+  *Superseded the same day by the entry above:* those people are now listed, not refused.
 - **Mail-client pastes:** `Name <address>` entries are accepted. On a Production project a failed
   gate stops new sessions, so a paste must not be what trips it.
 
@@ -94,10 +121,7 @@ open the finding; so does a policy digest addressed to research assistants.
 - an all-invalid list resolved to nobody;
 - cleanup left nothing behind.
 
-**On prod:** the setting appears once this release is deployed. Then, in this order:
-1. Put each CRC in "CRC (MICA reviewer)".
-2. Fill in the addresses (the CRCs' and Brian's).
-3. Check the Launch readiness tab.
+**On prod:** the setting appears once this release is deployed. The prod order is in the entry above.
 
 ### A mistyped inject instrument put the whole record into the Day-1 prompt
 

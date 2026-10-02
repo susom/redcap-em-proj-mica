@@ -168,8 +168,8 @@ class NotificationService
      * The only notice that fires without any human involvement, and the reason that is acceptable is
      * that its audience is the people whose job is to review: telling an RA there is something in
      * their queue is not a disclosure, it is the queue working. The audience is the reviewer role, or
-     * the named `notify-reviewer-emails` list when the study set one (PI, 2026-10-02); the launch gate
-     * refuses a named list in which nobody is an active reviewer or PI.
+     * the named `notify-reviewer-emails` list when the study set one (PI, 2026-10-02), in which case no
+     * reviewer role is needed; the launch gate reports named people who cannot open the dashboard.
      */
     public function notifyReviewersReady(
         int $jobId,
@@ -1039,10 +1039,11 @@ class NotificationService
         $addresses = [];
 
         foreach ($roles as $role) {
-            // The role, not the named results list: a second-review request asks someone to open the
-            // finding, so it goes to people who can (RecipientDirectoryInterface::roleReviewerAddresses).
+            // The role first: a second-review request asks someone to open the finding, so it goes to
+            // people who can. A study that dropped the role for a named list (PI, 2026-10-02) gets the
+            // list instead of nobody.
             $found = $role === self::REVIEWERS
-                ? $this->directory->roleReviewerAddresses()
+                ? ($this->directory->roleReviewerAddresses() ?: $this->directory->reviewerAddresses())
                 : $this->directory->addressesForRole($role);
 
             foreach ($found as $address) {

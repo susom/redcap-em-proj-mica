@@ -24,7 +24,7 @@ end to end on 271 ([31](31-critical-finding-crc-notify.md)).
 | 3 | **`randomization_date` is often blank.** It anchors the weekly SMS, the ED-session reminders and the follow-up dates. | 4 of the 8 randomized since 09-24 have none (95, 117, 120, 128) | *(settings)* MICA → "Stamp the randomization date into this field" = `randomization_date`, **and remove `@TODAY`** from the field. The module only stamps an empty field, so if staff open `admin` before randomization, `@TODAY` fills in an earlier date and the stamp never fires. The stamp has never been exercised: it was off on 271, where every log line reads `randomization_date_stamped=no`. So randomize one test record on prod and confirm the date | `@TODAY` removal needs Draft Mode |
 | 4 | **All 22 alerts are deactivated**, including 01 (the phone-verification passcode used during enrolment), 15 (consent PDF) and the CRC notifications. | `email_deleted = 1` on all 22 | Re-activate the ones the protocol needs and re-test them **on fresh records**. The test records share phone numbers, so re-activating alerts now could text those phones. Check Twilio's scope is "Surveys and Alerts" | Editable |
 | 5 | **No production allocation table.** | Tables don't travel between statuses | See Randomization, below | **Admin only** |
-| 6 | *(settings)* **MICA launch gates.** In Production status, a session won't start unless all 7 pass. The acknowledgement time is blank on purpose, so leadership must set it. | `LaunchReadiness.php` | Review dashboard → **Launch readiness** tab: all green. **Reviewers (updated 2026-10-02):** the PI wants the CRC told of a critical finding within 5 minutes. That is the "findings ready" email. It goes to *Reviewer notification addresses* when that has any entry, and to the REDCap role mapped as MICA *Reviewer* only when it is blank. The role still decides who can open the findings, so every CRC must be in it (not custom rights), unsuspended, with the profile email that is on the list. Order: CRCs into the role, then the list, then this tab straight away, because on Production a red gate stops new sessions (item 3 below, [32](32-prod-runbook-crc-notify.md) step 3). **Acknowledgement:** nothing in the module records an acknowledgement, so N only sets when one reminder email goes out after each notice ([31](31-critical-finding-crc-notify.md)) | Editable |
+| 6 | *(settings)* **MICA launch gates.** In Production status, a session won't start unless all 7 pass. The acknowledgement time is blank on purpose, so leadership must set it. | `LaunchReadiness.php`. On 2026-10-02 the Reviewer role was removed on prod, and every participant session was then refused. Reproduced on scratch PID 280 (Production status): before the 2026-10-02 change, the participant saw "This session cannot start right now"; after it, the MICA chat loads, desktop and iPhone | Review dashboard → **Launch readiness** tab: all green. **Reviewers (updated 2026-10-02):** the PI wants the CRC told of a critical finding within 5 minutes. That is the "findings ready" email. It goes to *Reviewer notification addresses* when that has any entry, and to the REDCap role mapped as MICA *Reviewer* only when it is blank. With at least one valid address on the list, the *Reviewers configured* gate passes on the list alone, and the Reviewer role is optional: it can be removed. The gate still fails on a filled-in list with no valid address, and, with the list blank, on no role mapped or an empty role. Only members of the Reviewer or PI-lead role can open the findings; the gate lists anyone else named as "emailed but unable to open the review dashboard", a note, not a failure. Order: deploy (blocker 8), fill in the list, optionally remove the Reviewer role, then this tab straight away, because on Production a red gate stops new sessions (item 3 below, [32](32-prod-runbook-crc-notify.md) step 3). **Acknowledgement:** nothing in the module records an acknowledgement, so N only sets when one reminder email goes out after each notice ([31](31-critical-finding-crc-notify.md)) | Editable |
 | 7 | **Test data and ID reuse.** Deleting all records does **not** remove the modules' own per-record state. REDCap then numbers new records from max + 1, so **the first real participant is record 1 again**. | MICA keeps transcripts, turns and closed-session markers in the module log (`sessionWasClosedBefore()` looks up `mica_session_closed` by record), and scan jobs, runs, findings and notifications in `redcap_entity` tables. Enhanced SMS keeps conversations by record (its README warns a new record can inherit them) | Delete all records in the move dialog, **and** either purge the per-record state of both modules for PID 35968 (Enhanced SMS: Conversations → "Delete All Conversations"; MICA: a REDCap admin, since the module has no purge page), or keep real IDs clear of test IDs. Otherwise a real participant can be refused a session as "already closed" | — |
 | 8 | *(deploy)* **Confirm prod runs the current MICA code.** | Branch `mica-phase-3` is 84 commits ahead of `main`, including the session fixes (white page, arm-1 redirect loop, closing sessions) | Compare the module version on prod with this branch, and deploy if it's behind. Prod's module shows v0.0.0 (2026-10-02). The *Reviewer notification addresses* setting (item 3 below) only exists on prod after this deploy | — |
 | 9 | *(deploy)* **No session is ever safety-screened.** The provider refuses the scan's output schema (`uniqueItems`, HTTP 400), so every scan fails 3 times and the session goes to manual review, never as a finding ([14 D23](14-live-defects.md)) | Reproduced 09-28 as a participant on 271: an overdose plan for tonight produced only "could not be screened", **457 s** after End Session. With the fix: a critical finding, and the CRC's email at 22–65 s | Fixed in the working tree (not committed). Commit and deploy it with blocker 8, then run **one synthetic critical session on prod** and time the CRC's email. The preflight script is not evidence: it said PASS on 271 throughout | — |
@@ -100,24 +100,32 @@ setting, is [32](32-prod-runbook-crc-notify.md).
 2. **"Close sessions when their window ends" (`close-expired-sessions`).**
    - Off on 271. Off means a session the participant never ends with End Session is **never** scanned.
    - On, it is scanned when the window (`ed-session-window-hours`, 24 h) runs out.
-3. **Reviewer role members and Reviewer notification addresses (2026-10-02).**
-   - **What changed:** the PI asked for the scan results to go to named people, not a group. When
+3. **Reviewer notification addresses, and the now-optional Reviewer role (2026-10-02).**
+   - **What changed:** the PI asked for the scan results to go to a list of emails, not a group. When
      *Reviewer notification addresses* has any entry, the "findings ready", "could not be screened"
-     and overdue-reminder emails go to those addresses **instead of** the Reviewer role. Blank keeps
-     the role. Second-review requests still go to the role.
-   - **The role still decides who can open the findings**, so everyone on the list who should confirm
-     or dismiss them must be in it too.
-   - **Prod today:** role 135783 `CRC (MICA reviewer)` is mapped as Reviewer, and its only member is
-     ihabz, the developer. Project Admins (134858) is mapped as PI-lead.
+     and overdue-reminder emails go to those addresses **instead of** the Reviewer role. With at least
+     one valid address on it, the Reviewer role is optional: it can be removed. Blank keeps the role.
+     A second-review request goes to the Reviewer role if one is mapped and has members, otherwise to
+     the list.
+   - **Who can open the findings is unchanged:** members of the Reviewer or PI-lead role. On prod,
+     Project Admins (134858) is PI-lead: 8 users, including Brian. With the Reviewer role removed, only
+     they can open and confirm findings; everyone else on the list just gets the emails. The gate (and
+     `verify-settings.php`) lists those people as "emailed but unable to open the review dashboard", a
+     note, not a failure.
+   - **Prod, 2026-10-02:** role 135783 `CRC (MICA reviewer)` was mapped as Reviewer, with ihabz, the
+     developer, as its only member. When the Reviewer role was removed, Launch readiness refused every
+     participant session (blocker 6).
    - **In this order:**
-     1. Put each CRC in role 135783 `CRC (MICA reviewer)`, with their own account and email.
-     2. Fill in *Reviewer notification addresses* with the CRCs' and Brian's addresses. Brian is in
-        Project Admins, the PI-lead role, so he can already open findings. Don't map Project Admins as
-        a Reviewer role to get him the emails: it has 8 users, and all of them would become reviewers.
-     3. Open Launch readiness at once and confirm the *Reviewers configured* and *Recipient lists*
+     1. Deploy the release (blocker 8). The setting appears on prod only after it.
+     2. Fill in *Reviewer notification addresses* with the CRCs' and Brian's addresses.
+     3. Optionally remove the Reviewer role, or keep it. Not before step 2: with the list blank and no
+        role, the gate fails.
+     4. Open Launch readiness at once and confirm the *Reviewers configured* and *Recipient lists*
         gates pass. On Production a red gate stops new sessions.
-   - **Removing a CRC** now means taking them out of the role **and** off the list.
-   - The setting appears on prod only once a release containing it is deployed (blocker 8).
+   - **A CRC needs a role only to open the dashboard.** Then put them in the role mapped as Reviewer,
+     with their own account. Don't map Project Admins as a Reviewer role: its 8 users can already open
+     findings as PI-lead, and every second-review request would go to all of them.
+   - **Removing a CRC** means taking them off the list, and out of the role if they are in one.
 
 ## Before the move, or it needs an admin
 

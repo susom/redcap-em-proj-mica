@@ -266,6 +266,16 @@ final class NotificationServiceTest extends TestCase
         $this->assertSame(['ra@example.org', 'ra2@example.org'], $this->channel->last()['recipients']);
     }
 
+    public function testWithoutAReviewerRoleASecondReviewRequestGoesToTheNamedList(): void
+    {
+        // The PI removed the role for a named list; a second-review request must not reach nobody.
+        $this->directory->reviewers = ['crc@example.org'];
+        $this->directory->roleReviewers = [];
+
+        $this->deliver(['second_reviewer']);
+        $this->assertSame(['crc@example.org'], $this->channel->last()['recipients']);
+    }
+
     public function testTheGatedAndUngatedSetsTogetherCoverEveryActionTheInstrumentOffers(): void
     {
         // If a choice is added to action_types and not classified here, deliverActions() throws on it

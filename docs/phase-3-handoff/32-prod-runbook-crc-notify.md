@@ -9,7 +9,9 @@ CRC in the reviewer role, all 7 launch gates pass. A participant's End Session r
 inbox in 22–65 s, as "highest urgency: critical".
 
 **That run (09-28) predates *Reviewer notification addresses* (2026-10-02)**, so the email went to
-the role. The named list (steps 3 and 4) is unit-tested, but has not been through a participant run.
+the role. The named list with no Reviewer role (steps 3 and 4) was checked on scratch PID 280, in
+Production status, as far as the session starting: the MICA chat loads, desktop and iPhone. The email
+to the list is unit-tested, but has not been timed in a participant run.
 
 **One exception.** 271 ran with *Close sessions when their window ends* **off**, and this runbook
 turns it **on**. The gates and the End Session path don't depend on that setting. But the path where
@@ -39,8 +41,8 @@ For reference only, what changed:
 
 Uncommitted on `mica-phase-3` as of 2026-09-28.
 
-**Per project — steps 1–6.** The SecureChatAI registry (a system setting), one REDCap role, and the
-MICA settings.
+**Per project — steps 1–6.** The SecureChatAI registry (a system setting), the MICA settings, and,
+optionally, a REDCap role for anyone who should open the review dashboard.
 
 ---
 
@@ -59,8 +61,9 @@ Checked in the 09-28 11:11 export:
   Arms 2 and 3.
 - **Roles on prod in that export:** Data Entry, Export w/o Identifiers, Project Admins and Read Only.
   None of them is for CRCs.
-  - **Since then (2026-10-02):** role 135783 `CRC (MICA reviewer)` exists and is mapped as Reviewer.
-    Its only member is ihabz, the developer. Project Admins (134858) is mapped as PI-lead.
+  - **Since then (2026-10-02):** role 135783 `CRC (MICA reviewer)` was created and mapped as
+    Reviewer, with ihabz, the developer, as its only member. The Reviewer role was then removed, which
+    a named list now allows (step 3). Project Admins (134858) is mapped as PI-lead.
 
 The session instruments lack the optional transcript-pointer fields (`mica_session_status`,
 `mica_transcript_ref`…). That only adds a warning line to the module log; it doesn't block the scan.
@@ -84,35 +87,47 @@ The session instruments lack the optional transcript-pointer fields (`mica_sessi
 
 ---
 
-## 3. Put the CRCs in the role, then name who is emailed
+## 3. Name who is emailed; the Reviewer role is optional
 
-**Two settings, two jobs (2026-10-02).** The PI asked for the scan results to go to named people
-rather than a group:
-- **The REDCap role mapped as MICA Reviewer** decides who can open the transcripts on the review
-  dashboard. Second-review requests, and any policy digest addressed to `research_assistant`, still
-  go to it.
+**A list of emails, and an optional role (2026-10-02).** The PI asked for the scan results to go to a
+list of emails rather than a group:
 - **Reviewer notification addresses** (step 4) is who is emailed. When it has any entry, the
   "findings ready" email, the "could not be screened" email and the overdue reminder go to those
-  addresses **instead of** the role. Blank keeps the old behaviour: every user in the role.
+  addresses **instead of** the role. With at least one valid address on it, no Reviewer role is
+  needed. Blank keeps the old behaviour: every user in the role.
+- **The REDCap role mapped as MICA Reviewer** is optional with a list, and can be removed. If one is
+  mapped and has members, they can open the transcripts on the review dashboard, and second-review
+  requests (and any policy digest addressed to `research_assistant`) go to them; otherwise those go
+  to the list.
+- **Who can open the dashboard is unchanged:** members of the Reviewer or PI-lead role. On prod,
+  Project Admins (134858) is PI-lead: 8 users, including Brian. With the Reviewer role removed, only
+  they can open and confirm findings; everyone else on the list just gets the emails.
 
-The role's members are read from REDCap's user rights at send time, but the list is typed by hand.
-So **removing a CRC means taking them out of the role and off the list.**
+1. **Deploy first** (step 2). The setting exists on prod only after it.
+2. **Fill in Reviewer notification addresses** (step 4) with the CRCs' and Brian's addresses. Brian
+   is in Project Admins, mapped as PI-lead, so he can already open findings.
+3. **Then, optionally, remove the Reviewer role, or keep it.** On prod it was 135783 `CRC (MICA
+   reviewer)`, with one member (ihabz, the developer). Not before step 2: with the list blank and no
+   role, the *Reviewers configured* gate fails.
+4. **Open Launch readiness at once** (step 5). On a Production project a red gate refuses every new
+   session. That happened on prod on 2026-10-02, when the Reviewer role was removed. Reproduced on
+   scratch PID 280 (Production status): before this change, the participant saw "This session cannot
+   start right now"; after it, the MICA chat loads, desktop and iPhone.
 
-The role already exists on prod: 135783 `CRC (MICA reviewer)`, mapped as Reviewer, with one member
-(ihabz, the developer).
+**A CRC needs a role only if they should open the dashboard.** Then:
+- **Assign them to the role mapped as Reviewer** with their own account. A user on custom rights with
+  **no role can't open the findings**. If their address is on the list they are still emailed, and
+  the Launch readiness gate names them.
+- Their REDCap **profile email** should be the address on the list. The gate matches the two, ignoring
+  case, so someone in the role under a different profile email can open the dashboard but is still
+  listed as unable to.
+- The account must **not be suspended**; suspended users don't count.
+- Don't map Project Admins as a Reviewer role. Its 8 users can already open findings as PI-lead, and
+  every second-review request would go to all of them. (The local copy is mapped that way; prod
+  shouldn't be.)
 
-1. **Assign each CRC to 135783 `CRC (MICA reviewer)`** with their own account.
-   - A user on custom rights with **no role can't open the findings**. If their address is on the
-     list they are still emailed, and the Launch readiness gate names them.
-   - Each CRC needs an **email address** in their REDCap profile, and it must be the address you put
-     on the list in step 4. The gate matches the two, ignoring case.
-   - The account must **not be suspended**; suspended users don't count.
-2. **Then fill in Reviewer notification addresses** (step 4) with the CRCs' and Brian's addresses.
-   In the other order, a CRC on the list but not yet in the role is emailed findings they can't open.
-3. **Brian: his address on the list, not his role in Reviewer.**
-   - He is in Project Admins, which is mapped as PI-lead, so he can already open findings.
-   - Don't map Project Admins as a Reviewer role to get him the emails. It has 8 users, and all of them
-     would become reviewers. (The local copy is mapped that way; prod shouldn't be.)
+The list is typed by hand, so **removing a CRC means taking them off the list**, and out of the role
+if they are in one.
 
 ---
 
@@ -150,20 +165,23 @@ there. Anything not listed, leave as it is.
 - **Concern types to keep out of the review queue:** none.
 
 **Who reviews**
-- **Reviewer role(s):** `CRC (MICA reviewer)` only.
+- **Reviewer role(s):** optional once *Reviewer notification addresses* is filled in. Leave it empty,
+  or set `CRC (MICA reviewer)` only if CRCs should open the dashboard (step 3). Never Project Admins.
 - **Reviewer notification addresses** (2026-10-02, directly under *Reviewer role(s)*): the CRCs' and
   Brian's addresses. Comma, semicolon or newline separated; `Name <address>`, as pasted from Outlook,
   is accepted.
   - **Only there once the release containing it is deployed** (step 2). Prod's module shows v0.0.0;
     the deploy is blocker 8 in [30](30-go-live-readiness.md).
   - Filled in, it replaces the role for the "findings ready", "could not be screened" and
-    overdue-reminder emails. Blank sends them to the role.
+    overdue-reminder emails, and no Reviewer role is needed. Blank sends them to the role.
   - **On a Production project a red gate stops new sessions, so open Launch readiness (step 5) right
-    after saving.** The gate fails on a list with no valid address (it does not fall back to the
-    role), and on a list where nobody is an active member of the Reviewer or PI role.
+    after saving.** *Reviewers configured* fails on a list with no valid address (it does not fall
+    back to the role), and *Recipient lists* fails on any entry that isn't a valid address. Named
+    people outside the Reviewer and PI-lead roles are listed, not refused.
 - **PI / protocol-lead role(s):** the role Brian is in (Project Admins, 134858, on prod). It gives him
-  the dashboard and the audit trail. On its own it does **not** send him the findings email; his
-  address on the list does.
+  the dashboard and the audit trail. With no Reviewer role, its members (8 on prod) are the only
+  people who can open and confirm findings. On its own it does **not** send him the findings email;
+  his address on the list does.
   - **Set this before step 5.** Only this role and super users can see the Launch readiness tab.
   - Everyone in the role can read transcripts, the same trade-off as the Reviewer role.
 - **Auditor role(s):** optional.
@@ -222,14 +240,15 @@ there. Anything not listed, leave as it is.
 and super users can see it. All 7 gates should be green.
 
 - **Critical-finding acknowledgment target** — red until the JSON in step 4 is saved with a number.
-- **Reviewers configured** — shows how many users are in the Reviewer role and, with a named list,
-  how many addresses are on it. **Zero users, with no list, is how the 09-22 notice on the local copy
-  reached nobody** ("No recipient addresses were given"). With a list (2026-10-02) it also fails when:
-  - the list has no valid address. The role is not used as a fallback, so the notices would reach
-    nobody;
-  - no address on it is the profile email of an active member of the Reviewer or PI role.
-
-  When only some match, it passes and names the others: they are emailed but can't open the findings.
+- **Reviewers configured** — with a named list (2026-10-02), it passes on the list alone and shows how
+  many addresses are on it; no Reviewer role is needed. Anyone named who is not in the Reviewer or
+  PI-lead role is listed as "emailed but unable to open the review dashboard", a note, not a failure.
+  It fails:
+  - with a list that has no valid address. The role is not used as a fallback, so the notices would
+    reach nobody;
+  - with the list blank, when no role is mapped as Reviewer, or the mapped role has nobody in it.
+    **Zero users, with no list, is how the 09-22 notice on the local copy reached nobody** ("No
+    recipient addresses were given").
 - **Hash-pinned handoff artifacts** — red means the deployed module files were altered. Redeploy; don't
   edit.
 - **Model aliases resolve** — both aliases must be in **SecureChatAI's registry** (Control Center, a
@@ -241,7 +260,8 @@ and super users can see it. All 7 gates should be green.
 
 In Development status a red gate only shows a banner. **In Production status any red gate stops
 every session from starting**, so all 7 must be green before the move. After it, re-check this tab
-every time you edit a setting it checks, such as Reviewer notification addresses (2026-10-02).
+every time you change something it checks, such as Reviewer notification addresses or the Reviewer
+role. On 2026-10-02, removing the Reviewer role on prod refused every session (step 3).
 
 ---
 
@@ -267,8 +287,9 @@ every time you edit a setting it checks, such as Reviewer notification addresses
 6. **Within 5 minutes** each address in *Reviewer notification addresses* (or, if it is blank, each
    CRC in the role) should receive
    `[MICA] N SafetyScan finding(s) ready for review - highest urgency: critical`.
-7. **Open the link in the email as a CRC.** The session should be in the queue with a critical
-   `self_harm` finding and the quoted evidence.
+7. **Open the link in the email as someone in the Reviewer or PI-lead role** (with no Reviewer role,
+   a Project Admin such as Brian). The session should be in the queue with a critical `self_harm`
+   finding and the quoted evidence.
 
 **If something else happens:**
 - **First, check which model the scan actually used:** query 2 in `scripts/diagnose-scan-notify.sql`,
@@ -322,8 +343,8 @@ every time you edit a setting it checks, such as Reviewer notification addresses
   was sent or to whom, so check:
   - **The *Reviewers configured* gate.** The email goes **only** to the addresses in *Reviewer
     notification addresses*, or, when that is blank, to users in the role mapped as Reviewer. With the
-    list filled in, being in the role doesn't get you the email; being a super user or Project Admin
-    never does (2026-10-02).
+    list filled in, being in a role doesn't get you the email, and no role is needed; being a super
+    user or Project Admin never does (2026-10-02).
   - **The address on the list** (or the CRC's profile email when the list is blank), and their spam or
     quarantine folder.
   - **That *Finalize transcripts and queue safety scans* is on.**
@@ -352,8 +373,8 @@ every time you edit a setting it checks, such as Reviewer notification addresses
     attempt ("NOT SCREENED").
   - **`reviewers could not be told`** — its `reason` says why no email came. "No recipient addresses
     were given" means nobody was left to email: *Reviewer notification addresses* has entries but none
-    is valid, or it is blank and nobody is in the Reviewer role. "REDCap::email() refused…" means the
-    send failed.
+    is valid, or it is blank and no role is mapped as Reviewer or nobody is in it. "REDCap::email()
+    refused…" means the send failed.
   - **No such line** — a notice was sent to the named addresses, or, when the list is blank, to whoever
     is in the Reviewer role.
   - **`mica_scan_worker cron failed for one project`** — the worker crashed; its `error` says why.
@@ -382,3 +403,4 @@ The full list is in [31](31-critical-finding-crc-notify.md). In short:
 - the acknowledgement minutes
 - whether to shorten the 24-hour window
 - who the CRCs are, and which addresses go on Reviewer notification addresses
+- whether any CRC should open the dashboard, and so be in a role

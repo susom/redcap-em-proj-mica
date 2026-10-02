@@ -18,9 +18,10 @@ require_once __DIR__ . "/RoleService.php";
  *
  * The one exception is deliberate: the PI asked (2026-10-02) for the "findings ready" notice to go to
  * named people rather than to a group, so `notify-reviewer-emails` can replace the reviewer role as
- * that notice's audience. That list IS the parallel list warned about above, so it carries its own
- * guardrail: namedReviewerList() reports any named address that is not an active reviewer or PI in
- * REDCap, and the launch gate refuses a list where none is. The role still governs dashboard access.
+ * that notice's audience - and then no reviewer role is needed at all. That list IS the parallel list
+ * warned about above, so it is made visible instead: namedReviewerList() reports every named address
+ * that is not an active reviewer or PI in REDCap (emailed, but unable to open the dashboard), and the
+ * launch gate shows them. The roles still govern dashboard access.
  *
  * `care_team`, `on_call_research_staff`, `protocol_lead` and `data_safety_reviewer` are not REDCap
  * users at all - a care team is a clinical service, and giving it a REDCap account to receive an

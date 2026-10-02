@@ -6,18 +6,25 @@
  *
  *   php e2e-crc-reviewer.php <pid> setup|teardown
  *
- * WHY. `reviewers_ready` is addressed to everyone whose `redcap_user_rights.role_id` is one of the
- * roles in the module's `role-ra-reviewer` setting, resolved at send time
- * (RedcapRecipientDirectory::reviewerAddresses). A mapped role with nobody in it is not an
- * error until a finding exists: the notice is then recorded as failed with "No recipient addresses
- * were given", which is what happened on PID 271 on 2026-09-22. This is the same step a real CRC
- * needs on prod, done with a throwaway account.
+ * WHY. When Reviewer notification addresses is blank, `reviewers_ready` is addressed to everyone
+ * whose `redcap_user_rights.role_id` is one of the roles in the module's `role-ra-reviewer` setting,
+ * resolved at send time (RedcapRecipientDirectory::reviewerAddresses). A mapped role with nobody in
+ * it is not an error until a finding exists: the notice is then recorded as failed with "No recipient
+ * addresses were given", which is what happened on PID 271 on 2026-09-22.
  *
  * (2026-10-02) When Reviewer notification addresses (`notify-reviewer-emails`) is filled in, the
- * notice goes to that list INSTEAD of the role's members. The CRC still needs the role, to open the
- * findings. Setup reads the setting and says who the notice will actually reach; if crc-e2e@example.org
+ * notice goes to that list INSTEAD of the role's members, and the Reviewer role becomes optional: the
+ * reviewers launch gate passes on a list with at least one valid address alone. A role then only
+ * decides who can open the review dashboard (Reviewer or PI-lead). So on prod, with the list filled in
+ * (the prod plan), a real CRC needs to be on the list, and in a role only if they should open the
+ * dashboard; this script is not a prod step.
+ * Setup reads the setting and says who the notice will actually reach; if crc-e2e@example.org
  * is not on the list, critical-notify.js will not find the email. Blank the setting for the run, add
  * that address to it, or run critical-notify.js with MICA_CRC_EMAIL set to a named address.
+ *
+ * The script itself still needs a role mapped as `role-ra-reviewer`, because it puts the test
+ * account into that role, and fails without one. That is fine for the e2e; on a project whose
+ * Reviewer role was removed, map a scratch role for the run.
  *
  * The account never logs in, so it has no password: it exists only to hold the role and an address.
  * The address is at example.org (reserved, RFC 2606), so nothing can leave even without a mail sink.

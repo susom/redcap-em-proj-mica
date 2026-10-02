@@ -9,8 +9,8 @@
   **22 s, 42 s and 65 s** over three runs.
 - **Not yet on prod** (35968). Prod needs two things:
   1. The D23 fix deployed. It is in the working tree, not committed.
-  2. The CRCs placed in the reviewer role, and (2026-10-02) the CRCs' and Brian's addresses in
-     *Reviewer notification addresses* (below).
+  2. (2026-10-02) The CRCs' and Brian's addresses in *Reviewer notification addresses* (below). With
+     that list filled in, the Reviewer role is optional.
 
 Until the fix is deployed, **no session on prod is ever screened**. Every session reaches the
 reviewers as "could not be screened", about 7.5 minutes after it ends.
@@ -125,42 +125,51 @@ Step by step, with every MICA setting by its dialog label: [32](32-prod-runbook-
 
 1. **Deploy the D23 fix.** It is part of blocker 8 in [30](30-go-live-readiness.md): prod runs
    whatever MICA code it was given.
-2. **Put every CRC in the reviewer role, then name who is emailed (2026-10-02).** The PI asked for
-   the results to go to named people, not a group. Two settings in MICA → Configure now do two jobs:
-   - **Reviewer role(s)** decides who can open the findings on the review dashboard. Second-review
-     requests still go to it.
-   - **Reviewer notification addresses**, directly under it: when it has any entry, the "findings
-     ready" email, the "could not be screened" email and the overdue reminder go to these addresses
-     **instead of** the role. Blank keeps the role. Comma, semicolon or newline separated;
-     `Name <address>` (an Outlook paste) is accepted.
+2. **Name who is emailed; the Reviewer role is optional (2026-10-02).** The PI asked for the results
+   to go to a list of emails, not a group. In MICA → Configure:
+   - **Reviewer notification addresses**: when it has any entry, the "findings ready" email, the
+     "could not be screened" email and the overdue reminder go to these addresses **instead of** the
+     role. With at least one valid address on it, no Reviewer role is needed. Blank keeps the role.
+     Comma, semicolon or newline separated; `Name <address>` (an Outlook paste) is accepted.
+   - **Reviewer role(s)**, directly above it, is optional with a list. If a role is mapped and has
+     members, they can open the findings, and second-review requests go to them; otherwise those
+     requests go to the list.
 
    On prod, in this order:
-   1. Put each CRC in role 135783 `CRC (MICA reviewer)` with their own account. Today its only member
-      is ihabz, the developer.
-      - The CRC must be **assigned the role**. Custom rights don't count.
-      - The account must **not be suspended**.
-      - Its REDCap **profile email** must be the address you put on the list. That is how the gate
-        matches the two.
-   2. Fill in *Reviewer notification addresses* with the CRCs' and Brian's addresses. Brian is in
-      Project Admins, mapped as PI-lead, so he can already open findings. Don't map Project Admins
-      as a Reviewer role to get him the emails: it has 8 users, and all of them would become
-      reviewers.
-   3. Open the Launch readiness tab straight away and confirm *Reviewers configured* and *Recipient
-      lists are valid addresses* pass. On a Production project a red gate stops new sessions.
+   1. Deploy the release (step 1). The setting exists on prod only after it.
+   2. Fill in *Reviewer notification addresses* with the CRCs' and Brian's addresses.
+   3. Optionally remove the Reviewer role (135783 `CRC (MICA reviewer)`, whose only member was ihabz,
+      the developer), or keep it. Not before step 2: with the list blank and no role, the gate fails.
+   4. Open the Launch readiness tab straight away and confirm *Reviewers configured* and *Recipient
+      lists are valid addresses* pass. On a Production project a red gate refuses every new session.
+      That happened on prod on 2026-10-02, when the Reviewer role was removed. Reproduced on scratch
+      PID 280 (Production status): before this change, the participant saw "This session cannot start
+      right now"; after it, the MICA chat loads, desktop and iPhone.
 
-   The "Reviewers configured" gate shows the role's head count and, with a list, how many addresses
-   are on it. With a list it fails if:
-   - the list has no valid address. The role is **not** a fallback, so the notices would reach nobody;
-   - nobody on the list is an active member of the Reviewer or PI role.
+   **Who can open the findings is unchanged:** members of the Reviewer or PI-lead role. On prod,
+   Project Admins (134858) is PI-lead: 8 users, including Brian. With the Reviewer role removed, only
+   they can open and confirm findings; everyone else on the list just gets the emails. A CRC needs a
+   role only if they should open the dashboard. Then:
+   - The CRC must be **assigned the role**. Custom rights don't count.
+   - The account must **not be suspended**.
+   - Its REDCap **profile email** should be the address on the list. The gate matches the two,
+     ignoring case, so someone in the role under a different profile email can open the dashboard but
+     is still listed as unable to.
+   - Don't map Project Admins as a Reviewer role: its 8 users can already open findings as PI-lead,
+     and every second-review request would go to all of them.
 
-   When only some match, it passes and names the others: they are emailed but can't open the findings.
+   With a list, the "Reviewers configured" gate passes on the list alone and shows how many addresses
+   are on it. Anyone named who is not in the Reviewer or PI-lead role is listed as "emailed but unable
+   to open the review dashboard": a note, not a failure (`verify-settings.php` prints the same). It
+   still fails:
+   - with a list that has no valid address. The role is **not** a fallback, so the notices would reach
+     nobody;
+   - with the list blank, when no role is mapped as Reviewer, or the mapped role has nobody in it.
 
-   **Removing a CRC** now means taking them out of the role **and** off the list.
+   **Removing a CRC** means taking them off the list, and out of the role if they are in one.
 
    A mapped role with nobody in it, and the list blank, is how the 09-22 notice on 271 went nowhere:
    "No recipient addresses were given". A list with no valid address now ends the same way.
-
-   The setting exists on prod only once a release containing it is deployed (step 1).
 3. **REDCap's cron runs every minute.** This is standard on the Stanford server, and the 60 s step
    above depends on it.
 4. **Prove it on prod once.** Run one synthetic critical session on a test record, click End Session,

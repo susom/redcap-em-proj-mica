@@ -514,21 +514,19 @@ if (!$named['configured']) {
         . 'reviewers launch gate fails, which stops new sessions.'
     );
 } elseif (count($named['unmatched']) === count($named['addresses'])) {
-    bad_(
-        $namedKey,
-        'nobody named is an active Reviewer or PI, so nobody emailed can open the findings: '
-        . implode(', ', $named['unmatched']),
-        'Put each person in the Reviewer role under User Rights, with a REDCap account email that '
-        . 'matches the address, or clear the list. The reviewers launch gate fails until then.'
-    );
+    // Not a failure since 2026-10-02: the PI wants a list of emails and no reviewer role, so the emails
+    // going out is what matters. Shown so nobody expects these people to open the dashboard.
+    ok_($namedKey, 'replaces the Reviewer role (no role needed): ' . implode(', ', $named['addresses']));
+    note_($namedKey, 'nobody named is in the Reviewer or PI-lead role, so the people emailed cannot open '
+        . 'the review dashboard: ' . implode(', ', $named['unmatched']));
 } else {
     ok_(
         $namedKey,
-        'replaces the Reviewer role as the notice audience (second-review requests still go to the '
-        . 'role): ' . implode(', ', $named['addresses'])
+        'replaces the Reviewer role as the notice audience (no role needed; second-review requests go to '
+        . 'the role if one is mapped): ' . implode(', ', $named['addresses'])
     );
     if ($named['unmatched'] !== []) {
-        note_($namedKey, 'emailed but not an active Reviewer or PI, so unable to open the findings: '
+        note_($namedKey, 'emailed but not in the Reviewer or PI-lead role, so unable to open the dashboard: '
             . implode(', ', $named['unmatched']));
     }
 }

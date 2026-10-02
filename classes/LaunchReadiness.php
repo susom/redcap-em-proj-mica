@@ -204,38 +204,41 @@ class LaunchReadiness
     }
 
     /**
-     * Gate 2 - somebody can actually review, and somebody can actually be told.
+     * Gate 2 - somebody can actually be told, and (with the role) somebody can actually review.
      *
      * "The assigned RA" the policy's `notify_assigned_ra_when_ready` refers to is **everyone in the
      * mapped reviewer role**. There is no per-finding assignee field and there should not be one: an
      * assignment that can go stale is a finding that can end up assigned to somebody who left. The
      * role IS the assignment, and it is managed where study access is managed.
      *
-     * Since 2026-10-02 the study can name the people who are *emailed* (`notify-reviewer-emails`,
-     * the PI's request). That changes who is told, not who can review, so the role checks below
-     * stand either way. A named list adds two refusals of its own: one with no valid address reaches
-     * nobody, and one where nobody is an active reviewer or PI sends a critical-finding email to
-     * people who cannot open it - a departed colleague's address is exactly that case.
+     * Since 2026-10-02 the study can instead name the people who are emailed
+     * (`notify-reviewer-emails`). The PI wants exactly that - a list of emails, no reviewer role - so
+     * a named list with at least one valid address satisfies this gate on its own and the role becomes
+     * optional. It still matters for one thing: who can open the review dashboard (the Reviewer and
+     * PI-lead roles). Named people outside both are reported, not blocked, because the emails reach
+     * them either way and a failed gate on a Production project refuses every participant's session.
+     * A named list with no valid address does fail: it emails nobody, and there is no fallback.
      */
     private function reviewersGate(): GateResult
     {
+        $named = $this->env->namedReviewerList();
+
+        if ($named['configured']) {
+            return $this->namedReviewersGate($named);
+        }
+
         $mappedRoles = $this->env->roles()->mappedRedcapRoles(RoleService::RA);
         $reviewers = $this->env->reviewerUsernames();
-        $named = $this->env->namedReviewerList();
-        $fixNamed = 'Correct Reviewer notification addresses under External Modules > MICA > Configure, '
-            . 'or clear it so the Reviewer role is notified again.';
 
         if ($mappedRoles === []) {
             return new GateResult(
                 'reviewers',
                 'Reviewers configured',
                 false,
-                $named['configured']
-                    ? 'No REDCap user role is mapped as a MICA reviewer. The named reviewer addresses '
-                      . 'would be emailed, but nobody could open the findings to review them.'
-                    : 'No REDCap user role is mapped as a MICA reviewer, so no finding could ever be '
-                      . 'reviewed and no "findings ready" notice would have a recipient.',
-                'Map a REDCap role under External Modules > MICA > Configure, in the Reviewer setting.'
+                'No REDCap user role is mapped as a MICA reviewer and no Reviewer notification addresses '
+                . 'are set, so no "findings ready" notice would have a recipient.',
+                'Either list the people to email under External Modules > MICA > Configure > Reviewer '
+                . 'notification addresses, or map a REDCap role in the Reviewer setting.'
             );
         }
 
@@ -245,26 +248,30 @@ class LaunchReadiness
                 'Reviewers configured',
                 false,
                 sprintf(
-                    $named['configured']
-                        ? 'A reviewer role is mapped (%s) but no user is in it. The named reviewer '
-                          . 'addresses will be emailed, but nobody can open the findings to review them.'
-                        : 'A reviewer role is mapped (%s) but no user is in it, so findings would reach '
-                          . 'a queue nobody is notified about.',
+                    'A reviewer role is mapped (%s) but no user is in it, so findings would reach '
+                    . 'a queue nobody is notified about.',
                     implode(', ', $mappedRoles)
                 ),
-                'Assign at least one user to that REDCap role under User Rights.'
+                'Assign at least one user to that REDCap role under User Rights, or list the people to '
+                . 'email under Reviewer notification addresses.'
             );
         }
 
-        if (!$named['configured']) {
-            return new GateResult(
-                'reviewers',
-                'Reviewers configured',
-                true,
-                sprintf('%d user(s) in the mapped reviewer role(s).', count($reviewers)),
-            );
-        }
+        return new GateResult(
+            'reviewers',
+            'Reviewers configured',
+            true,
+            sprintf('%d user(s) in the mapped reviewer role(s).', count($reviewers)),
+        );
+    }
 
+    /**
+     * The gate when a named reviewer list is in force: the list is what has to work.
+     *
+     * @param array{configured: bool, addresses: list<string>, unmatched: list<string>} $named
+     */
+    private function namedReviewersGate(array $named): GateResult
+    {
         if ($named['addresses'] === []) {
             return new GateResult(
                 'reviewers',
@@ -272,35 +279,20 @@ class LaunchReadiness
                 false,
                 'Reviewer notification addresses is filled in but has no valid address, so "findings '
                 . 'ready" notices would reach nobody. The Reviewer role is not used as a fallback.',
-                $fixNamed
-            );
-        }
-
-        if (count($named['unmatched']) === count($named['addresses'])) {
-            return new GateResult(
-                'reviewers',
-                'Reviewers configured',
-                false,
-                sprintf(
-                    'None of the named reviewer addresses (%s) belongs to an active member of the '
-                    . 'Reviewer or PI role, so the people emailed about a finding could not open it.',
-                    implode(', ', $named['unmatched'])
-                ),
-                'Put those people in the Reviewer role under User Rights (their REDCap account email '
-                . 'must match the address), or ' . lcfirst($fixNamed)
+                'Correct Reviewer notification addresses under External Modules > MICA > Configure, or '
+                . 'clear it so the Reviewer role is notified again.'
             );
         }
 
         $detail = sprintf(
-            '%d user(s) in the mapped reviewer role(s); "findings ready" notices go to the %d named '
-            . 'reviewer address(es) instead of the role.',
-            count($reviewers),
+            '"Findings ready" notices go to the %d named reviewer address(es); no reviewer role is needed.',
             count($named['addresses'])
         );
 
         if ($named['unmatched'] !== []) {
             $detail .= sprintf(
-                ' Emailed but not an active reviewer or PI in REDCap, so unable to open the findings: %s.',
+                ' Not in the Reviewer or PI-lead role, so emailed but unable to open the review '
+                . 'dashboard: %s.',
                 implode(', ', $named['unmatched'])
             );
         }

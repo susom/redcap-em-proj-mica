@@ -140,7 +140,10 @@ final class LaunchReadinessTest extends TestCase
         $this->env->roleMapping = [];
 
         $this->assertSame(['reviewers'], $this->failedIds());
-        $this->assertStringContainsString('no finding could ever be reviewed', $this->byId()['reviewers']->detail);
+        $this->assertStringContainsString(
+            'no "findings ready" notice would have a recipient',
+            $this->byId()['reviewers']->detail
+        );
     }
 
     public function testAMappedRoleWithNobodyInItAlsoFails(): void
@@ -185,28 +188,45 @@ final class LaunchReadinessTest extends TestCase
 
         $gate = $this->byId()['reviewers'];
         $this->assertTrue($gate->passed);
-        $this->assertStringContainsString('2 named reviewer address(es) instead of the role', $gate->detail);
+        $this->assertStringContainsString('go to the 2 named reviewer address(es)', $gate->detail);
         $this->assertStringNotContainsString('unable to open', $gate->detail);
     }
 
-    public function testANamedAddressThatCannotReviewIsNamedButDoesNotBlock(): void
+    public function testWithNamedAddressesTheReviewerRoleMayBeRemoved(): void
     {
-        // One CRC not yet in the role is a gap worth showing, not a reason to stop every session.
+        // The PI's setup (2026-10-02): a list of emails and no reviewer role. Failing here refused
+        // every participant's session on a Production project.
+        $this->named(['crc@example.org']);
+        $this->env->roleMapping = [];
+
+        $this->assertSame([], $this->failedIds());
+        $this->assertStringContainsString('no reviewer role is needed', $this->byId()['reviewers']->detail);
+    }
+
+    public function testWithNamedAddressesTheReviewerRoleMayBeEmpty(): void
+    {
+        $this->named(['crc@example.org']);
+        $this->env->reviewers = [];
+
+        $this->assertSame([], $this->failedIds());
+    }
+
+    public function testNamedPeopleWhoCannotOpenTheDashboardAreListedButDoNotBlock(): void
+    {
         $this->named(['crc.a@example.org', 'new.crc@example.org'], ['new.crc@example.org']);
 
         $gate = $this->byId()['reviewers'];
         $this->assertTrue($gate->passed);
-        $this->assertStringContainsString('unable to open the findings: new.crc@example.org', $gate->detail);
+        $this->assertStringContainsString('unable to open the review dashboard: new.crc@example.org', $gate->detail);
     }
 
-    public function testANamedListWhereNobodyCanReviewBlocksLaunch(): void
+    public function testEvenWhenNobodyNamedCanOpenTheDashboardTheEmailsStillGoOut(): void
     {
-        // The departed-colleague case: every critical-finding email goes to people who cannot open it.
-        $this->named(['gone@example.org'], ['gone@example.org']);
+        $this->named(['crc@example.org'], ['crc@example.org']);
+        $this->env->roleMapping = [];
 
-        $this->assertSame(['reviewers'], $this->failedIds());
-        $this->assertStringContainsString('could not open it', $this->byId()['reviewers']->detail);
-        $this->assertStringContainsString('User Rights', $this->byId()['reviewers']->howToFix);
+        $this->assertSame([], $this->failedIds());
+        $this->assertStringContainsString('crc@example.org', $this->byId()['reviewers']->detail);
     }
 
     public function testANamedListWithNoValidAddressReachesNobodyAndSaysSo(): void
@@ -219,25 +239,13 @@ final class LaunchReadinessTest extends TestCase
         $this->assertStringContainsString('not used as a fallback', $gate->detail);
     }
 
-    public function testNamedAddressesDoNotExcuseAnEmptyReviewerRole(): void
+    public function testWithNeitherARoleNorANamedListTheGateNamesBothWaysToFixIt(): void
     {
-        // Who is emailed changed; who can open the findings did not. Nobody in the role means the
-        // named people are told about findings they cannot review.
-        $this->named(['crc@example.org']);
-        $this->env->reviewers = [];
-
-        $this->assertSame(['reviewers'], $this->failedIds());
-        $this->assertStringContainsString('nobody can open the findings', $this->byId()['reviewers']->detail);
-        $this->assertStringContainsString('User Rights', $this->byId()['reviewers']->howToFix);
-    }
-
-    public function testNamedAddressesDoNotExcuseAnUnmappedReviewerRole(): void
-    {
-        $this->named(['crc@example.org']);
         $this->env->roleMapping = [];
 
-        $this->assertSame(['reviewers'], $this->failedIds());
-        $this->assertStringContainsString('nobody could open the findings', $this->byId()['reviewers']->detail);
+        $fix = $this->byId()['reviewers']->howToFix;
+        $this->assertStringContainsString('Reviewer notification addresses', $fix);
+        $this->assertStringContainsString('Reviewer setting', $fix);
     }
 
     // ------------------------------------------------------------- gate 3, artifacts

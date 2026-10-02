@@ -52,9 +52,11 @@ The ordering assertion compares only pending rows for that reason, but re-seedin
 reasoning about it.
 
 The fixture creates a **throwaway REDCap user role** (`E2E MICA Reviewer`), puts a throwaway user
-(`e2e_mica_reviewer`) in it, and maps that *role* in the module settings. That mirrors what a study
-team actually does, because MICA access follows REDCap roles rather than a list of usernames — the
-module configures which role reviews findings, and people are added by being put in the role.
+(`e2e_mica_reviewer`) in it, and maps that *role* in the module settings, because access to the
+review dashboard follows REDCap roles (Reviewer or PI-lead) rather than a list of usernames — the
+module configures which role reviews findings, and people are added by being put in the role. Who is
+*emailed* can be a plain address list instead (Reviewer notification addresses, 2026-10-02), and then
+the Reviewer role is optional, but being on that list grants no dashboard access.
 
 The user has **no design and no user-rights** privileges, deliberately: the dashboard has to work for
 an ordinary reviewer, and running as an admin hid a real bug where the framework's design-rights
