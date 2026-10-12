@@ -297,8 +297,8 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      *
      * It also shapes the model dropdowns for the AI token policy (ModelSelection::applyToConfig):
      * live high-threshold aliases from SecureChatAI, and the switch's show/hide for users who cannot
-     * see the super-users-only switch. Caught here for the same reason: a SecureChatAI that cannot
-     * be read must not cost the administrator the dialog.
+     * see the super-users-only switch. A SecureChatAI that cannot be read only costs the live
+     * aliases, never the dialog or the dropdowns.
      *
      * @param array<int,array<string,mixed>> $settings
      * @return array<int,array<string,mixed>>
@@ -310,23 +310,25 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             return $settings;
         }
 
+        $pid = (int) $project_id;
+        // Only the registry read may fail; the shaping itself always runs, because unshaped settings
+        // hide BOTH model dropdowns from anyone who cannot see the super-users-only switch.
         try {
-            $pid = (int) $project_id;
             $high = $this->secureChatSupportsTokenPolicy()
                 ? (array) $this->getSecureChatInstance()->getAvailableModels(ModelSelection::HIGH, $pid)
                 : [];
-
-            return ModelSelection::applyToConfig(
-                $settings,
-                $this->tokenPolicy($pid),
-                \ExternalModules\ExternalModules::isSuperUser(),
-                array_values(array_map('strval', $high)),
-                SecureChatSafetyScanCaller::OPENAI_SCHEMA_MODELS
-            );
         } catch (\Throwable $e) {
-            $this->emError('Could not shape the model dropdowns for the token policy', $e->getMessage());
-            return $settings;
+            $this->emError('Could not read SecureChatAI\'s high-threshold models for the settings dialog', $e->getMessage());
+            $high = [];
         }
+
+        return ModelSelection::applyToConfig(
+            $settings,
+            $this->tokenPolicy($pid),
+            \ExternalModules\ExternalModules::isSuperUser(),
+            array_values(array_map('strval', $high)),
+            SecureChatSafetyScanCaller::OPENAI_SCHEMA_MODELS
+        );
     }
 
     /**

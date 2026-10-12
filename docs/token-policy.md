@@ -101,15 +101,20 @@ exactly as they were saved.
 
 All local, against SecureChatAI's mock AI Hub with fake keys. Nothing reaches AI Hub.
 
+`$MICA` is this module's folder name: `proj_mica_v9.9.9` normally, or a worktree folder beside it (the
+branch was built in `proj_mica_v9.9.8`). A worktree has no `node_modules` or `tools/vendor` of its own:
+copy `tools/vendor` from the main folder (same `tools/composer.lock`) and run node with
+`NODE_PATH=../proj_mica_v9.9.9/node_modules`.
+
 ```bash
-W=/var/www/html/modules-local
-docker exec -w $W/proj_mica_v9.9.8 redcap_2023_1_web php tools/vendor/bin/phpunit -c phpunit.xml   # 1131 tests OK
-docker exec -w $W/proj_mica_v9.9.8 redcap_2023_1_web php tools/vendor/bin/phpcs                    # clean
+W=/var/www/html/modules-local; MICA=proj_mica_v9.9.9; S=$W/$MICA/docs/phase-3-handoff/scripts
+docker exec -w $W/$MICA redcap_2023_1_web php tools/vendor/bin/phpunit -c phpunit.xml   # 1131 tests OK
+docker exec -w $W/$MICA redcap_2023_1_web php tools/vendor/bin/phpcs                    # exit 0
 docker exec redcap_2023_1_web php $W/secure_chat_ai_v9.9.9/tests/e2e/fixture.php setup
 docker exec -d redcap_2023_1_web php -S 127.0.0.1:8099 $W/secure_chat_ai_v9.9.9/tests/e2e/mock_aihub.php
-docker exec redcap_2023_1_web php $W/proj_mica_v9.9.8/docs/phase-3-handoff/scripts/e2e-token-policy-fixture.php 271 setup
-docker exec redcap_2023_1_web php $W/proj_mica_v9.9.8/docs/phase-3-handoff/scripts/verify-token-policy.php 271   # 32/32
-docker exec redcap_2023_1_web php $W/proj_mica_v9.9.8/docs/phase-3-handoff/scripts/e2e-module-config-user.php 271 setup
+docker exec redcap_2023_1_web php $S/e2e-token-policy-fixture.php 271 setup
+docker exec redcap_2023_1_web php $S/verify-token-policy.php 271                        # 32/32
+docker exec redcap_2023_1_web php $S/e2e-module-config-user.php 271 setup
 node e2e/token-policy.js config     # 39/39, desktop + iPhone 13
 node e2e/token-policy.js session    # 9/9, a real participant turn and its SafetyScan
 # then: reset-test-record.php 271 <record> and delete the record; e2e-module-config-user.php 271 teardown;
