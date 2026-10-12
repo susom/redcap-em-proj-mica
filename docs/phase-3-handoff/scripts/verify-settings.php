@@ -289,8 +289,8 @@ foreach (['gpt-temperature' => [0, 2], 'gpt-top-p' => [0, 1], 'gpt-frequency-pen
 $effort = $str('reasoning-effort');
 $counselor = $module->modelAlias('counselor', $PID);
 if ($effort !== '') {
-    in_array($counselor, ['o1', 'o3-mini', 'gpt-5',
-             'gpt-5-6-sol', 'gpt-5-6-luna', 'gpt-5-6-terra'], true)
+    in_array(\Stanford\MICA\ModelSelection::family($counselor), ['o1', 'o3-mini', 'gpt-5',
+             'gpt-5-5', 'gpt-5-6-sol', 'gpt-5-6-luna', 'gpt-5-6-terra'], true)
         ? ok_('reasoning-effort', "$effort (applies to $counselor)")
         : inert_('reasoning-effort', sprintf(
             '"%s" is set, but SecureChatAI unsets reasoning_effort for every model except '

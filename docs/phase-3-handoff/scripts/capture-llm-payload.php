@@ -181,8 +181,8 @@ function print_shape($mica, $chat, int $PID): void
 
     // Mirrors SecureChatAI::filterDefaultParamsForModel(). Duplicated knowingly, for the same reason
     // SecureChatSafetyScanCaller::SCHEMA_MODELS is: this script must not need the provider to answer.
-    $reasoningModels = ['o1', 'o3-mini', 'o3', 'o4-mini', 'gpt-5', 'gpt-5-6-sol', 'gpt-5-6-luna', 'gpt-5-6-terra'];
-    $isReasoning     = in_array($alias, $reasoningModels, true);
+    $reasoningModels = ['o1', 'o3-mini', 'o3', 'o4-mini', 'gpt-5', 'gpt-5-5', 'gpt-5-6-sol', 'gpt-5-6-luna', 'gpt-5-6-terra'];
+    $isReasoning     = in_array(\Stanford\MICA\ModelSelection::family($alias), $reasoningModels, true);
 
     $micaParams = [];
     foreach ([

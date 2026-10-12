@@ -215,17 +215,33 @@
         },
         {
             "key": "safetyscan-model-alias-high",
-            "name": "<b>SafetyScan model alias (high-threshold)</b><br><i>Used instead of <b>SafetyScan model alias</b> while <b>Use high-threshold AI models</b> is ticked. Lists the SafetyScan-capable models SecureChatAI has registered under the high-threshold policy on this server, then placeholders that stand in for AI Hub's list until it is published - a placeholder is not a real alias, and every scan would fail on it. Only models with enforced structured output are offered. <b>Do not leave it blank:</b> with the switch on, a blank alias means no session is screened.</i>",
+            "name": "<b>SafetyScan model alias (high-threshold)</b><br><i>Used instead of <b>SafetyScan model alias</b> while <b>Use high-threshold AI models</b> is ticked. AI Hub's high-threshold deployments, all verified with enforced structured output (2026-10-12), plus any other high-threshold model SecureChatAI has registered on this server. The model must also be registered in SecureChatAI under the high-threshold policy; the review dashboard's Launch readiness tab checks. <b>Do not leave it blank:</b> with the switch on, a blank alias means no session is screened.</i>",
             "required": false,
             "type": "dropdown",
             "choices": [
                 {
-                    "value": "placeholder-high-model-1",
-                    "name": "PLACEHOLDER - high-threshold model 1 (replace in config.json once AI Hub publishes the list; not a real alias)"
+                    "value": "gpt-5-4-high-threshold-policy",
+                    "name": "GPT-5.4 (high-threshold)"
                 },
                 {
-                    "value": "placeholder-high-model-2",
-                    "name": "PLACEHOLDER - high-threshold model 2 (replace in config.json once AI Hub publishes the list; not a real alias)"
+                    "value": "gpt-5-5-high-threshold-policy",
+                    "name": "GPT-5.5 (high-threshold, reasoning-class - ignores temperature/top-p)"
+                },
+                {
+                    "value": "gpt-5-2-high-threshold-policy",
+                    "name": "GPT-5.2 (high-threshold)"
+                },
+                {
+                    "value": "gpt-5-4-mini-high-threshold-policy",
+                    "name": "GPT-5.4 mini (high-threshold)"
+                },
+                {
+                    "value": "gpt-5-4-nano-high-threshold-policy",
+                    "name": "GPT-5.4 nano (high-threshold)"
+                },
+                {
+                    "value": "gpt-4-1-mini-high-threshold-policy",
+                    "name": "GPT-4.1 mini (high-threshold)"
                 }
             ],
             "branchingLogic": {
@@ -484,17 +500,33 @@
         },
         {
             "key": "llm-model-high",
-            "name": "<b>LLM Model (high-threshold)</b><br><i>Used instead of <b>LLM Model</b> while <b>Use high-threshold AI models</b> is ticked. Lists the models SecureChatAI has registered under the high-threshold policy on this server, then placeholders that stand in for AI Hub's list until it is published - a placeholder is not a real alias, and every counselor turn would be refused on it.</i>",
+            "name": "<b>LLM Model (high-threshold)</b><br><i>Used instead of <b>LLM Model</b> while <b>Use high-threshold AI models</b> is ticked. AI Hub's high-threshold deployments, plus any other high-threshold model SecureChatAI has registered on this server. The model must also be registered in SecureChatAI under the high-threshold policy, or every counselor turn is refused.</i>",
             "required": false,
             "type": "dropdown",
             "choices": [
                 {
-                    "value": "placeholder-high-model-1",
-                    "name": "PLACEHOLDER - high-threshold model 1 (replace in config.json once AI Hub publishes the list; not a real alias)"
+                    "value": "gpt-5-4-high-threshold-policy",
+                    "name": "GPT-5.4 (high-threshold)"
                 },
                 {
-                    "value": "placeholder-high-model-2",
-                    "name": "PLACEHOLDER - high-threshold model 2 (replace in config.json once AI Hub publishes the list; not a real alias)"
+                    "value": "gpt-5-5-high-threshold-policy",
+                    "name": "GPT-5.5 (high-threshold, reasoning-class - ignores temperature/top-p)"
+                },
+                {
+                    "value": "gpt-5-2-high-threshold-policy",
+                    "name": "GPT-5.2 (high-threshold)"
+                },
+                {
+                    "value": "gpt-5-4-mini-high-threshold-policy",
+                    "name": "GPT-5.4 mini (high-threshold)"
+                },
+                {
+                    "value": "gpt-5-4-nano-high-threshold-policy",
+                    "name": "GPT-5.4 nano (high-threshold)"
+                },
+                {
+                    "value": "gpt-4-1-mini-high-threshold-policy",
+                    "name": "GPT-4.1 mini (high-threshold)"
                 }
             ],
             "branchingLogic": {

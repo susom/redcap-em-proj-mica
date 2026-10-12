@@ -60,8 +60,17 @@ references anywhere in the codebase. `vendor/` is 235 files / 1.3 MB.
 - **The switch:** a new super-user setting, **Use high-threshold AI models**, off by default. It sends
   both MICA calls to SecureChatAI's high-threshold model set, on its own AI Hub token.
 - **The dropdowns:** ticking the switch swaps both model dropdowns for high-threshold versions
-  (`llm-model-high`, `safetyscan-model-alias-high`). Each lists what SecureChatAI has registered under
-  high-threshold, then placeholders until AI Hub publishes its list.
+  (`llm-model-high`, `safetyscan-model-alias-high`). Each lists AI Hub's six high-threshold deployments
+  (`gpt-5-4`, `gpt-5-5`, `gpt-5-2`, `gpt-5-4-mini`, `gpt-5-4-nano` and `gpt-4-1-mini`, each with the
+  `-high-threshold-policy` suffix), all probed live with structured output. The list then adds anything
+  else SecureChatAI has registered under high-threshold.
+- **Model families:** names are mapped to their family (`ModelSelection::family()`), so a
+  `-high-threshold-policy` deployment keeps its family's structured output. `gpt-5-5`, `gpt-5-2`,
+  `gpt-5-4-mini` and `gpt-4-1-mini` were added to the mirrored structured-output list, and `gpt-5-5`
+  to the reasoning list.
+- **Verified against the real models** (2026-10-12): a participant turn on
+  `gpt-5-4-high-threshold-policy` and its SafetyScan on `gpt-5-5-high-threshold-policy` both ran under
+  `token_policy: high`, and the scan was schema-valid.
 - **No fallback:** with the switch on, a blank, placeholder or unregistered alias is refused before
   anything is sent, and so is a SecureChatAI too old to honour the policy. A refused scan goes to
   manual review.

@@ -33,9 +33,9 @@ final class ModelSelection
     ];
 
     /**
-     * Dropdown entries in config.json that stand in for the high-threshold aliases until AI Hub
-     * publishes them. Never registered anywhere, so a saved placeholder fails every call and the
-     * models launch gate names it as a placeholder.
+     * Values config.json used to stand in for the high-threshold aliases before AI Hub published
+     * them. Never registered anywhere: one still saved on a project fails every call, and the
+     * models launch gate names it as a placeholder rather than as an unknown model.
      */
     public const PLACEHOLDER_PREFIX = 'placeholder-';
 
@@ -52,6 +52,17 @@ final class ModelSelection
         }
 
         return self::KEYS[$role][$policy];
+    }
+
+    /**
+     * The model family an alias belongs to: AI Hub names its policy deployments
+     * `<family>-high-threshold-policy` (or `-low-threshold-policy`), and capabilities are the
+     * family's. Mirrors SecureChatAI's `TokenPolicy::capabilityAlias()`, which this module cannot
+     * assume is installed.
+     */
+    public static function family(string $alias): string
+    {
+        return preg_replace('/-(high|low)-threshold-policy$/', '', $alias) ?? $alias;
     }
 
     public static function isPlaceholder(?string $alias): bool
@@ -86,7 +97,10 @@ final class ModelSelection
     ): array {
         $live = [
             self::KEYS[self::COUNSELOR][self::HIGH] => array_values($highRegistered),
-            self::KEYS[self::SAFETYSCAN][self::HIGH] => array_values(array_intersect($highRegistered, $schemaCapable)),
+            self::KEYS[self::SAFETYSCAN][self::HIGH] => array_values(array_filter(
+                $highRegistered,
+                static fn($alias): bool => in_array(self::family((string) $alias), $schemaCapable, true)
+            )),
         ];
         $inactive = $policy === self::HIGH ? self::STANDARD : self::HIGH;
         $remove = array_column(self::KEYS, $inactive);

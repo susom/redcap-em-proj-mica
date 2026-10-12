@@ -3,6 +3,7 @@
  * Fixture for the AI token-policy E2E (e2e/token-policy.js, verify-token-policy.php).
  *
  *   docker exec <web> php e2e-token-policy-fixture.php <pid> setup|teardown
+ *   docker exec <web> php e2e-token-policy-fixture.php <pid> setup-real <counselor-alias> <scan-alias>
  *
  * setup:
  *   1. Refuses unless this is a development server AND SecureChatAI's own token-policy fixture is
@@ -16,6 +17,10 @@
  *      with MICA enabled runs this code until teardown.
  *   4. Points the standard aliases at `gpt-5-4` (registered in the mock's standard set) and clears
  *      the switch and the high-threshold aliases, so each test starts from "off".
+ * setup-real: the same backup and version swap, but against the REAL high-threshold models: it
+ *   refuses unless SecureChatAI has a real high-threshold token (not the mock's), leaves the standard
+ *   aliases alone, and turns the switch on with the two given high-threshold aliases. Only synthetic
+ *   text should be sent while it is active - it is a dev server's test project, not a study.
  * teardown: restores the version and the settings exactly, and removes the backup.
  */
 
@@ -26,8 +31,12 @@ if (PHP_SAPI !== 'cli') {
 
 $pid  = (int) ($argv[1] ?? 0);
 $mode = (string) ($argv[2] ?? '');
-if ($pid <= 0 || !in_array($mode, ['setup', 'teardown'], true)) {
-    fwrite(STDERR, "usage: php e2e-token-policy-fixture.php <pid> setup|teardown\n");
+$real = $mode === 'setup-real';
+$counselorHigh = (string) ($argv[3] ?? '');
+$scanHigh = (string) ($argv[4] ?? '');
+if ($pid <= 0 || !in_array($mode, ['setup', 'setup-real', 'teardown'], true) || ($real && ($counselorHigh === '' || $scanHigh === ''))) {
+    fwrite(STDERR, "usage: php e2e-token-policy-fixture.php <pid> setup|teardown\n"
+        . "       php e2e-token-policy-fixture.php <pid> setup-real <counselor-alias> <scan-alias>\n");
     exit(2);
 }
 
@@ -96,9 +105,29 @@ echo "\n=== MICA token-policy E2E fixture, PID $pid ===\n";
 if (is_file($backup)) {
     fail("a backup already exists at $backup - run teardown first");
 }
-$highToken = db_result(q("select value from redcap_external_module_settings where external_module_id = ? and project_id is null and `key` = 'aihub-token-high-threshold'", [$chatId]), 0);
-if ($highToken !== 'e2e-high-key') {
+// Asked of the database without reading the token into this process.
+$isMock = (int) db_result(q("select count(*) from redcap_external_module_settings where external_module_id = ? and project_id is null and `key` = 'aihub-token-high-threshold' and value = 'e2e-high-key'", [$chatId]), 0) === 1;
+if (!$real && !$isMock) {
     fail('SecureChatAI\'s token-policy fixture is not active (run secure_chat_ai tests/e2e/fixture.php setup and start its mock first)');
+}
+if ($real) {
+    // Both aliases must resolve, under high-threshold, to a real token: the system high-threshold
+    // token or the row's own override. Read from SecureChatAI's registry in-process; never printed.
+    if ($isMock) {
+        fail('setup-real: SecureChatAI is still on the mock fixture - run its teardown first');
+    }
+    $chat = \ExternalModules\ExternalModules::getModuleInstance('secure_chat_ai');
+    $init = new \ReflectionMethod($chat, 'initSecureChatAI');
+    $init->setAccessible(true);
+    $init->invoke($chat);
+    $registry = (new \ReflectionProperty($chat, 'modelConfig'))->getValue($chat);
+    foreach ([$counselorHigh, $scanHigh] as $alias) {
+        $token = (string) ($registry['high'][$alias]['api_token'] ?? '');
+        if ($token === '' || $token === 'e2e-high-key') {
+            fail("setup-real: '$alias' is not registered under high-threshold with a real token");
+        }
+    }
+    unset($registry, $token);
 }
 if ((int) db_result(q("select count(*) from redcap_external_module_settings where external_module_id = ? and project_id = ? and `key` = 'token-policy-default'", [$chatId, $pid]), 0) > 0) {
     fail("PID $pid already has a SecureChatAI Minimum Token Policy; this fixture would delete it on teardown");
@@ -122,11 +151,24 @@ q("update redcap_external_module_settings set value = ? where external_module_id
     [$m[1], $moduleId]);
 out('active MICA version', "{$m[1]} (was $version) - every MICA project runs this folder until teardown");
 
-q("delete from redcap_external_module_settings where external_module_id = ? and project_id = ? and `key` in ($in)",
-    array_merge([$moduleId, $pid], KEYS));
-foreach (['llm-model' => 'gpt-5-4', 'safetyscan-model-alias' => 'gpt-5-4'] as $key => $value) {
-    q("insert into redcap_external_module_settings (external_module_id, project_id, `key`, type, value) values (?, ?, ?, 'string', ?)",
-        [$moduleId, $pid, $key, $value]);
+if ($real) {
+    $highKeys = ['use-high-threshold-models', 'llm-model-high', 'safetyscan-model-alias-high'];
+    q("delete from redcap_external_module_settings where external_module_id = ? and project_id = ? and `key` in (?, ?, ?)",
+        array_merge([$moduleId, $pid], $highKeys));
+    q("insert into redcap_external_module_settings (external_module_id, project_id, `key`, type, value) values (?, ?, 'use-high-threshold-models', 'boolean', 'true')",
+        [$moduleId, $pid]);
+    foreach (['llm-model-high' => $counselorHigh, 'safetyscan-model-alias-high' => $scanHigh] as $key => $value) {
+        q("insert into redcap_external_module_settings (external_module_id, project_id, `key`, type, value) values (?, ?, ?, 'string', ?)",
+            [$moduleId, $pid, $key, $value]);
+    }
+    out('REAL high-threshold models', "switch on; counselor $counselorHigh; scan $scanHigh");
+} else {
+    q("delete from redcap_external_module_settings where external_module_id = ? and project_id = ? and `key` in ($in)",
+        array_merge([$moduleId, $pid], KEYS));
+    foreach (['llm-model' => 'gpt-5-4', 'safetyscan-model-alias' => 'gpt-5-4'] as $key => $value) {
+        q("insert into redcap_external_module_settings (external_module_id, project_id, `key`, type, value) values (?, ?, ?, 'string', ?)",
+            [$moduleId, $pid, $key, $value]);
+    }
+    out('standard aliases', 'llm-model = safetyscan-model-alias = gpt-5-4; switch off; high aliases blank');
 }
-out('standard aliases', 'llm-model = safetyscan-model-alias = gpt-5-4; switch off; high aliases blank');
 echo "\n*** DONE - run teardown when finished ***\n";

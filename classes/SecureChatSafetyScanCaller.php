@@ -39,6 +39,7 @@ class SecureChatSafetyScanCaller implements SafetyScanCallerInterface
      */
     public const OPENAI_SCHEMA_MODELS = [
         'gpt-4-1', 'gpt-4-1-nano', 'gpt-5', 'gpt-5-4', 'gpt-5-4-nano', 'gpt-5-6-sol', 'gpt-5-6-luna', 'gpt-5-6-terra',
+        'gpt-5-5', 'gpt-5-2', 'gpt-5-4-mini', 'gpt-4-1-mini',
         'o1', 'o3', 'o3-mini', 'o4-mini',
     ];
 
@@ -322,7 +323,8 @@ class SecureChatSafetyScanCaller implements SafetyScanCallerInterface
      */
     private function schemaWouldBeSent(string $modelAlias): bool
     {
-        return in_array($modelAlias, self::OPENAI_SCHEMA_MODELS, true);
+        // By family, as SecureChatAI does: `gpt-5-4-high-threshold-policy` is a gpt-5-4.
+        return in_array(ModelSelection::family($modelAlias), self::OPENAI_SCHEMA_MODELS, true);
     }
 
     /**

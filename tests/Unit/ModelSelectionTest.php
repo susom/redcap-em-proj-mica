@@ -80,13 +80,40 @@ final class ModelSelectionTest extends TestCase
             $this->assertSame('dropdown', $high['type']);
             $this->assertSame(['field' => ModelSelection::SWITCH_KEY, 'value' => true], $high['branchingLogic']);
             $this->assertArrayNotHasKey('default', $high, 'a blank high alias is refused, never defaulted');
+            $this->assertSame(
+                self::AI_HUB_HIGH,
+                array_column($high['choices'], 'value'),
+                "$role offers AI Hub's list"
+            );
             foreach ($high['choices'] as $choice) {
-                $this->assertTrue(
-                    ModelSelection::isPlaceholder($choice['value']),
-                    'only placeholders until AI Hub publishes the list'
-                );
-                $this->assertStringContainsString('PLACEHOLDER', $choice['name']);
+                $this->assertStringContainsString('(high-threshold', $choice['name']);
             }
+        }
+    }
+
+    /** AI Hub's high-threshold deployments (2026-10-12), each probed with enforced structured output. */
+    private const AI_HUB_HIGH = [
+        'gpt-5-4-high-threshold-policy', 'gpt-5-5-high-threshold-policy', 'gpt-5-2-high-threshold-policy',
+        'gpt-5-4-mini-high-threshold-policy', 'gpt-5-4-nano-high-threshold-policy',
+        'gpt-4-1-mini-high-threshold-policy',
+    ];
+
+    public function testAPolicyDeploymentBelongsToItsFamily(): void
+    {
+        $this->assertSame('gpt-5-4', ModelSelection::family('gpt-5-4-high-threshold-policy'));
+        $this->assertSame('gpt-5-4-nano', ModelSelection::family('gpt-5-4-nano-high-threshold-policy'));
+        $this->assertSame('gpt-4-1-mini', ModelSelection::family('gpt-4-1-mini-low-threshold-policy'));
+        $this->assertSame('gpt-5-6-sol', ModelSelection::family('gpt-5-6-sol'));
+    }
+
+    public function testEveryHighThresholdChoiceIsAStructuredOutputFamilyForTheScan(): void
+    {
+        foreach (self::AI_HUB_HIGH as $alias) {
+            $this->assertContains(
+                ModelSelection::family($alias),
+                \Stanford\MICA\SecureChatSafetyScanCaller::OPENAI_SCHEMA_MODELS,
+                "$alias would lose structured output"
+            );
         }
     }
 
@@ -109,16 +136,20 @@ final class ModelSelectionTest extends TestCase
         return null;
     }
 
-    public function testLiveHighThresholdAliasesAreOfferedAheadOfThePlaceholders(): void
+    public function testOtherRegisteredHighThresholdAliasesAreAddedAfterTheListedOnes(): void
     {
-        $out = ModelSelection::applyToConfig($this->dialog(), 'high', true, ['gpt-5-4', 'claude-x'], ['gpt-5-4']);
+        $registered = ['gpt-5-4-high-threshold-policy', 'gpt-5-4', 'claude-x', 'gpt-4-1-mini-x-high-threshold-policy'];
+        $out = ModelSelection::applyToConfig($this->dialog(), 'high', true, $registered, ['gpt-5-4', 'gpt-4-1-mini-x']);
 
         $counselor = array_column($this->setting($out, 'llm-model-high')['choices'], 'value');
-        $this->assertSame(['gpt-5-4', 'claude-x', 'placeholder-high-model-1', 'placeholder-high-model-2'], $counselor);
+        $this->assertSame(
+            array_merge(self::AI_HUB_HIGH, ['gpt-5-4', 'claude-x', 'gpt-4-1-mini-x-high-threshold-policy']),
+            $counselor
+        );
 
-        // The scan only gets aliases it can be screened with (enforced structured output).
+        // The scan only gets aliases whose family has enforced structured output.
         $scan = array_column($this->setting($out, 'safetyscan-model-alias-high')['choices'], 'value');
-        $this->assertSame(['gpt-5-4', 'placeholder-high-model-1', 'placeholder-high-model-2'], $scan);
+        $this->assertSame(array_merge(self::AI_HUB_HIGH, ['gpt-5-4', 'gpt-4-1-mini-x-high-threshold-policy']), $scan);
 
         // The standard lists are left exactly as config.json has them.
         $this->assertSame($this->setting($this->dialog(), 'llm-model'), $this->setting($out, 'llm-model'));
@@ -126,10 +157,21 @@ final class ModelSelectionTest extends TestCase
 
     public function testAnAliasAlreadyListedIsNotAddedTwice(): void
     {
-        $out = ModelSelection::applyToConfig($this->dialog(), 'high', true, ['placeholder-high-model-1'], []);
+        $out = ModelSelection::applyToConfig($this->dialog(), 'high', true, ['gpt-5-5-high-threshold-policy'], []);
 
         $values = array_column($this->setting($out, 'llm-model-high')['choices'], 'value');
-        $this->assertSame(['placeholder-high-model-1', 'placeholder-high-model-2'], $values);
+        $this->assertSame(self::AI_HUB_HIGH, $values);
+    }
+
+    public function testALiveAliasStillGoesAheadOfALegacyPlaceholder(): void
+    {
+        $settings = [[
+            'key' => 'llm-model-high',
+            'choices' => [['value' => 'a', 'name' => 'A'], ['value' => 'placeholder-high-model-1', 'name' => 'P']],
+        ]];
+        $out = ModelSelection::applyToConfig($settings, 'high', true, ['b'], []);
+
+        $this->assertSame(['a', 'b', 'placeholder-high-model-1'], array_column($out[0]['choices'], 'value'));
     }
 
     public function testASuperUserKeepsBothPairsAndTheLiveSwitch(): void

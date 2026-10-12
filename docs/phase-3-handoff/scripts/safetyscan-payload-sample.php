@@ -234,7 +234,7 @@ $provider = \Stanford\MICA\SecureChatSafetyScanCaller::providerSchema($outputSch
 
 $schemaModels = (new \ReflectionClass(\Stanford\MICA\SecureChatSafetyScanCaller::class))
     ->getConstant('OPENAI_SCHEMA_MODELS');
-$schemaWillBeForwarded = in_array($alias, $schemaModels, true);
+$schemaWillBeForwarded = in_array(\Stanford\MICA\ModelSelection::family($alias), $schemaModels, true);
 
 /*
  * The fallback the caller applies when SecureChatAI would drop `json_schema`: the schema is appended

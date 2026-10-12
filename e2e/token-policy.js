@@ -6,14 +6,19 @@
 //   docker exec <web> php .../scripts/e2e-token-policy-fixture.php 271 setup                 # this folder active
 //   docker exec <web> php .../scripts/e2e-module-config-user.php 271 setup                   # the designer
 //   node e2e/token-policy.js                 # [config] [session]; both by default
+//
+// session-real: the same participant session against the REAL high-threshold models (after
+//   `e2e-token-policy-fixture.php 271 setup-real <counselor> <scan>`, no mock): the counselor
+//   answers, the scan succeeds on the configured alias, and every SecureChatAI log row for the
+//   session's calls says `token_policy: high`. Synthetic, mild text only.
 //   ... e2e-module-config-user.php 271 teardown; e2e-token-policy-fixture.php 271 teardown;
 //       secure_chat_ai fixture.php teardown
 //
 // config, desktop and iPhone 13:
 //   - a SUPER USER sees the switch; ticking it swaps both model dropdowns for the high-threshold
-//     lists live and unticking swaps them back; the lists start with what SecureChatAI has registered
-//     under high-threshold and end with placeholders that say they are placeholders; a Save stores
-//     the switch and both high-threshold aliases and leaves the standard ones alone.
+//     lists live and unticking swaps them back; the lists are AI Hub's high-threshold deployments
+//     (config.json) followed by anything else SecureChatAI has registered under high-threshold; a
+//     Save stores the switch and both high-threshold aliases and leaves the standard ones alone.
 //   - a DESIGNER (design rights, not a super user) never sees the switch. REDCap leaves a
 //     super-users-only field out of the dialog, and a branching condition on a missing field is
 //     false - so without the module's own handling they would see neither model dropdown. They see
@@ -35,8 +40,10 @@ const SCRIPTS = '/var/www/html/modules-local/' + __dirname.split('/').slice(-2, 
 const MOCK_LOG = '/tmp/sca_mock_aihub.jsonl';
 const LAST = 'Testerson';
 const CHAT = '#chatbot_ui_container[data-bootstrap]';
-const HIGH_LIVE = ['gpt-5-4', 'gpt-4-1-nano'];   // the mock's high-threshold registry
-const PLACEHOLDERS = ['placeholder-high-model-1', 'placeholder-high-model-2'];
+const HIGH_LIVE = ['gpt-5-4', 'gpt-4-1-nano'];   // the mock's high-threshold registry, added live
+// config.json's list: AI Hub's high-threshold deployments (2026-10-12).
+const AI_HUB_HIGH = ['gpt-5-4-high-threshold-policy', 'gpt-5-5-high-threshold-policy', 'gpt-5-2-high-threshold-policy',
+  'gpt-5-4-mini-high-threshold-policy', 'gpt-5-4-nano-high-threshold-policy', 'gpt-4-1-mini-high-threshold-policy'];
 const MODES = process.argv.slice(2).length ? process.argv.slice(2) : ['config', 'session'];
 
 const SHOTS = __dirname + '/shots';
@@ -120,15 +127,15 @@ async function superUser(p, label) {
     && !(await shown(modal, 'llm-model')) && !(await shown(modal, 'safetyscan-model-alias')));
   const counselor = await options(modal, 'llm-model-high');
   const scan = await options(modal, 'safetyscan-model-alias-high');
-  check(`A4 ${label}: counselor list is SecureChatAI's high-threshold models, then the placeholders`,
-    JSON.stringify(counselor.map((o) => o.value)) === JSON.stringify([...HIGH_LIVE, ...PLACEHOLDERS]),
+  check(`A4 ${label}: counselor list is AI Hub's high-threshold models, then any other SecureChatAI has registered`,
+    JSON.stringify(counselor.map((o) => o.value)) === JSON.stringify([...AI_HUB_HIGH, ...HIGH_LIVE]),
     JSON.stringify(counselor.map((o) => o.value)));
   check(`A5 ${label}: SafetyScan list is the same, structured-output models only`,
-    JSON.stringify(scan.map((o) => o.value)) === JSON.stringify([...HIGH_LIVE, ...PLACEHOLDERS]),
+    JSON.stringify(scan.map((o) => o.value)) === JSON.stringify([...AI_HUB_HIGH, ...HIGH_LIVE]),
     JSON.stringify(scan.map((o) => o.value)));
-  check(`A6 ${label}: placeholders say they are placeholders, live ones say where they come from`,
-    [...counselor, ...scan].every((o) => (PLACEHOLDERS.includes(o.value)
-      ? /^PLACEHOLDER .*not a real alias/.test(o.text)
+  check(`A6 ${label}: each entry says it is high-threshold, and live ones say where they come from`,
+    [...counselor, ...scan].every((o) => (AI_HUB_HIGH.includes(o.value)
+      ? /\(high-threshold/.test(o.text)
       : /registered in SecureChatAI as high-threshold/.test(o.text))),
     JSON.stringify(counselor));
   const helpText = await row(modal, 'use-high-threshold-models').innerText();
@@ -214,6 +221,15 @@ async function config() {
 
 // ------------------------------------------------------------------------------------- session
 
+// SecureChatAI's own log: one row per model call, with the policy it ran under.
+const SCA_LOG = (since) => sql(
+  `SELECT CONCAT_WS('|', l.log_id, JSON_UNQUOTE(JSON_EXTRACT(l.message, '$.token_policy')), JSON_UNQUOTE(JSON_EXTRACT(l.message, '$.model')))
+   FROM redcap_external_modules_log l JOIN redcap_external_modules m USING (external_module_id)
+   WHERE m.directory_prefix = 'secure_chat_ai' AND l.project_id = ${PID} AND l.log_id > ${since} AND JSON_VALID(l.message)
+   ORDER BY l.log_id`,
+).split('\n').filter(Boolean).map((r) => { const [id, policy, model] = r.split('|'); return { id, policy, model }; });
+const lastScaLog = () => Number(sql(`SELECT IFNULL(MAX(log_id), 0) FROM redcap_external_modules_log`)) || 0;
+
 async function seedRandomized(browser) {
   for (let i = 1; i <= 6; i++) {
     const rec = `TPOL${String(Date.now()).slice(-6)}${i}`;
@@ -237,11 +253,14 @@ async function seedRandomized(browser) {
   throw new Error('no session-arm allocation in 6 tries');
 }
 
-async function session() {
-  console.log('\n=== session, desktop (switch on) ===');
-  check('S0 switch is on with gpt-5-4 for both high-threshold aliases',
-    setting('use-high-threshold-models') === 'true' && setting('llm-model-high') === 'gpt-5-4'
-    && setting('safetyscan-model-alias-high') === 'gpt-5-4');
+async function session(real = false) {
+  const counselorAlias = setting('llm-model-high');
+  const scanAlias = setting('safetyscan-model-alias-high');
+  console.log(`\n=== session${real ? ' (REAL high-threshold models)' : ''}, desktop (switch on) ===`);
+  check(`S0 switch is on; counselor ${counselorAlias}, scan ${scanAlias}`,
+    setting('use-high-threshold-models') === 'true'
+    && (real ? /high-threshold-policy$/.test(counselorAlias) && /high-threshold-policy$/.test(scanAlias)
+      : counselorAlias === 'gpt-5-4' && scanAlias === 'gpt-5-4'));
   const browser = await chromium.launch({ args: [`--host-resolver-rules=${HOST_RULES}`] });
   const { rec, link } = await seedRandomized(browser);
   console.log(`     participant ${rec}`);
@@ -252,7 +271,8 @@ async function session() {
       if ($r['errors']) { fwrite(STDERR, json_encode($r['errors'])); exit(1); }`);
   }
 
-  resetWire();
+  if (!real) resetWire();
+  const since = lastScaLog();
   const p = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
   await p.goto(link, { waitUntil: 'domcontentloaded' });
   await p.waitForTimeout(2500);
@@ -265,7 +285,10 @@ async function session() {
   }
   const composer = p.locator(`${CHAT} textarea, ${CHAT} input:not([type=hidden]), ${CHAT} [contenteditable]`).first();
   check('S1 the chat opens', (await composer.count()) > 0);
-  await composer.fill('E2E token policy: a synthetic first message.');
+  await composer.fill(real
+    ? 'Hi. I had a few drinks at a party last weekend and I would like to talk about cutting back a bit.'
+    : 'E2E token policy: a synthetic first message.');
+  const before = (await p.locator(CHAT).innerText()).length;
   const answered = p.waitForResponse((r) => /prefix=proj_mica/.test(r.url()) && /callAI/.test(r.request().postData() || ''),
     { timeout: 120000 }).catch(() => null);
   const btns = p.locator(`${CHAT} button`);
@@ -275,18 +298,48 @@ async function session() {
   const body = r ? await r.text().catch(() => '') : '';
   check('S2 the counselor answered (no provider_error)',
     !!r && r.status() === 200 && !/provider_error\\?"\s*:\s*true/.test(body), body.slice(0, 200));
-  check('S3 the answer on screen came from the high-threshold set on the high-threshold key',
-    (await p.locator(CHAT).innerText()).includes('path=/high/gpt-5-4 key=e2e-high-key'), body.slice(0, 200));
-  const turn = wire();
-  check('S4 the turn reached AI Hub once, at /high/gpt-5-4 with the high-threshold key',
-    turn.length === 1 && turn[0].path === '/high/gpt-5-4' && turn[0].key === 'e2e-high-key', JSON.stringify(turn));
-  await p.screenshot({ path: `${SHOTS}/token-policy-session.png`, fullPage: true });
+  if (real) {
+    const turn = SCA_LOG(since);
+    const grew = (await p.locator(CHAT).innerText()).length - before;
+    check('S3 the counselor\'s reply is on screen', grew > 40, `chat text grew by ${grew} characters`);
+    // Two rows per turn by design: SecureChatAI's audit row and its conversation row.
+    check('S4 SecureChatAI logged the turn under the high-threshold policy',
+      turn.length >= 1 && turn.every((t) => t.policy === 'high'), JSON.stringify(turn));
+  } else {
+    check('S3 the answer on screen came from the high-threshold set on the high-threshold key',
+      (await p.locator(CHAT).innerText()).includes('path=/high/gpt-5-4 key=e2e-high-key'), body.slice(0, 200));
+    const turn = wire();
+    check('S4 the turn reached AI Hub once, at /high/gpt-5-4 with the high-threshold key',
+      turn.length === 1 && turn[0].path === '/high/gpt-5-4' && turn[0].key === 'e2e-high-key', JSON.stringify(turn));
+  }
+  await p.screenshot({ path: `${SHOTS}/token-policy-session${real ? '-real' : ''}.png`, fullPage: true });
 
   await p.locator('button.end_session').first().click();
   await p.waitForTimeout(1200);
   await p.locator('button', { hasText: /^End session$/ }).first().click();
   await p.waitForTimeout(4000);
   await browser.close();
+
+  if (real) {
+    // The scan runs on MICA's one-minute cron; wait for its first run row.
+    let run = '';
+    const t0 = Date.now();
+    while (Date.now() - t0 < 420000) {
+      run = sql(`SELECT CONCAT_WS('|', r.run_status, r.model_alias, IFNULL(r.resolved_model, ''), j.status)
+        FROM redcap_entity_mica_scan_run r JOIN redcap_entity_mica_scan_job j ON j.id = r.job_id
+        WHERE j.project_id = ${PID} AND j.record = '${rec}' ORDER BY r.id DESC LIMIT 1`);
+      if (run) break;
+      await new Promise((res) => setTimeout(res, 10000));
+    }
+    const [status, alias, resolved, jobStatus] = run.split('|');
+    check('S5 the SafetyScan ran on the high-threshold alias', alias === scanAlias, run);
+    check('S6 the SafetyScan succeeded (structured, schema-valid answer)', status === 'ok', run);
+    const calls = SCA_LOG(since);
+    check('S7 every SecureChatAI call in the session ran under the high-threshold policy',
+      calls.length >= 2 && calls.every((c) => c.policy === 'high'), JSON.stringify(calls));
+    console.log(`     scan: ${status} on ${alias} (resolved ${resolved}); job ${jobStatus}`);
+    return rec;
+  }
 
   // The scan runs on MICA's one-minute cron.
   let scans = [];
@@ -308,9 +361,9 @@ async function session() {
 
 (async () => {
   if (MODES.includes('config')) await config();
-  if (MODES.includes('session')) {
+  if (MODES.includes('session') || MODES.includes('session-real')) {
     try {
-      const rec = await session();
+      const rec = await session(MODES.includes('session-real'));
       console.log(`\n  synthetic participant left for cleanup: ${rec}`);
     } catch (e) {
       check('session run completed', false, String(e).slice(0, 300));
