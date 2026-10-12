@@ -9,7 +9,7 @@
  *
  * Keeping it here is what makes "the CSV patch produces the same instrument the dev build did" a
  * checkable claim instead of a hope. The rationale for every rule is in the docblock of
- * apply-weekly-sms-branching.php and in docs/alerts/ARM3_WEEKLY_SMS_BUILD.md section 4.
+ * apply-weekly-sms-branching.php and in docs/archive/ARM3_WEEKLY_SMS_BUILD_268.md section 4.
  *
  * No REDCap dependency - plain PHP, so the CSV patcher can run anywhere.
  */

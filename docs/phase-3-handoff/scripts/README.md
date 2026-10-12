@@ -1,8 +1,8 @@
 # Auth configuration scripts (Option B)
 
 Reproducible apply + verify for the REDCap-side authentication configuration described in
-[`../08-auth-discovery.md`](../08-auth-discovery.md) and recorded in
-[`../10-auth-implementation-pid257.md`](../10-auth-implementation-pid257.md).
+[`../../topics/auth/08-auth-discovery.md`](../../topics/auth/08-auth-discovery.md) and recorded in
+[`../../topics/auth/10-auth-implementation-pid257.md`](../../topics/auth/10-auth-implementation-pid257.md).
 
 These exist because the correct configuration is **counterintuitive** — one credential slot,
 read from the pre-randomization event, with slots 2 and 3 left empty — and a well-meaning
@@ -13,11 +13,11 @@ bypass (`10 §3`). The verifier asserts that specifically.
 |---|---|
 | `apply-auth-config.php` | Idempotent. Adds the mount-point field to each host instrument, makes each host instrument repeating at every event it is designated to, enables both as surveys with link time limits and "Repeat Survey", and configures scoped Survey Login with a single credential slot. Event ids are derived from the instruments' own designations, not hardcoded. |
 | `verify-auth-config.php` | Independent check of the intended end state. Does not reuse the apply logic. Exit 0 = pass. |
-| `manual-test-auth.php` | Test-participant lifecycle for hand-testing the gate: `setup` \| `links` \| `reset-lockout` \| `teardown`. Creates a participant that satisfies the real preconditions (credential at the pre-randomization event, then randomized into an arm so a link can exist). Walkthrough: [`../11-auth-manual-test-guide.md`](../11-auth-manual-test-guide.md). |
+| `manual-test-auth.php` | Test-participant lifecycle for hand-testing the gate: `setup` \| `links` \| `reset-lockout` \| `teardown`. Creates a participant that satisfies the real preconditions (credential at the pre-randomization event, then randomized into an arm so a link can exist). Walkthrough: [`../../testing/11-auth-manual-test-guide.md`](../../testing/11-auth-manual-test-guide.md). |
 
 ## `admin` form logic-error scripts
 
-Supporting [`../19-admin-form-logic-errors.md`](../19-admin-form-logic-errors.md).
+Supporting [`../../topics/project/19-admin-form-logic-errors.md`](../../topics/project/19-admin-form-logic-errors.md).
 
 | File | Purpose |
 |---|---|
@@ -26,7 +26,7 @@ Supporting [`../19-admin-form-logic-errors.md`](../19-admin-form-logic-errors.md
 
 ## ED Day-1 session handoff
 
-Supporting [`../24-ed-session-handoff.md`](../24-ed-session-handoff.md).
+Supporting [`../../topics/session/24-ed-session-handoff.md`](../../topics/session/24-ed-session-handoff.md).
 
 | File | Purpose |
 |---|---|
@@ -41,7 +41,7 @@ Supporting [`../24-ed-session-handoff.md`](../24-ed-session-handoff.md).
 
 ## Critical finding → CRC
 
-Supporting [`../31-critical-finding-crc-notify.md`](../31-critical-finding-crc-notify.md).
+Supporting [`../../topics/safetyscan/31-critical-finding-crc-notify.md`](../../topics/safetyscan/31-critical-finding-crc-notify.md).
 
 | File | Purpose |
 |---|---|
@@ -51,8 +51,8 @@ Supporting [`../31-critical-finding-crc-notify.md`](../31-critical-finding-crc-n
 
 ## Arm-3 weekly SMS (Enhanced SMS Conversation)
 
-Supporting [`../../alerts/ESMS_REPROMPT_TIMEOUT.md`](../../alerts/ESMS_REPROMPT_TIMEOUT.md) and the
-[`ARM3_WEEKLY_SMS_*`](../../alerts/) docs.
+Supporting [`../../topics/alerts/ESMS_REPROMPT_TIMEOUT.md`](../../topics/alerts/ESMS_REPROMPT_TIMEOUT.md) and the
+[`ARM3_WEEKLY_SMS_*`](../../topics/alerts/) docs.
 
 | File | Purpose |
 |---|---|
@@ -62,18 +62,18 @@ Supporting [`../../alerts/ESMS_REPROMPT_TIMEOUT.md`](../../alerts/ESMS_REPROMPT_
 
 ## LLM request capture
 
-Supporting [`../20-llm-request-capture.md`](../20-llm-request-capture.md).
+Supporting [`../../reference/20-llm-request-capture.md`](../../reference/20-llm-request-capture.md).
 
 | File | Purpose |
 |---|---|
 | `capture-llm-payload.php` | `on` \| `off` \| `status` \| `list` \| `last` \| `shape`. Shows the exact JSON body sent to the provider and emits a runnable curl for it. `shape` derives the envelope from this project's settings without a network call or any prompt text, so it is safe to paste into a ticket; `on`/`last` capture the real bytes. **Off by default and it must stay that way** — the request body is the prompt, which is PHI. Arming needs both a configured directory and that directory to exist; deleting either disarms it. The capture point is one line in `secure_chat_ai_v9.9.9/classes/Models/BaseModelRequest.php`, i.e. **a module outside this repository** — inert unless armed, but it must be carried across when SecureChatAI is updated. It covers six of the seven model classes, every chat path included; text-to-speech runs its own curl and is not captured. The emitted curl never contains the API key. `tests/Unit/ReasoningModelMirrorTest.php` keeps `shape`'s alias list from drifting away from SecureChatAI's. |
-| `safetyscan-payload-sample.php` | `[pid] [--addendum="..."] [--no-addendum]`. Prints the exact SafetyScan request body — the composed system prompt (pinned artifact + the project's addendum, resolved through `ScanRunner` rather than recomposed), the canonical transcript, and the wrapped `response_format` — at all three levels: what MICA hands to `callAI()`, what SecureChatAI's parameter filter leaves, and the body on the wire. Read-only, no network call, and the transcript is **synthetic and validated against the pinned input schema**, because a real one is PHI and the request body *is* the transcript. Every value is derived from live code (four private methods reached by reflection) so the sample cannot drift from what a scan actually sends. Snapshot and commentary: [`../23-safetyscan-payload.md`](../23-safetyscan-payload.md). |
+| `safetyscan-payload-sample.php` | `[pid] [--addendum="..."] [--no-addendum]`. Prints the exact SafetyScan request body — the composed system prompt (pinned artifact + the project's addendum, resolved through `ScanRunner` rather than recomposed), the canonical transcript, and the wrapped `response_format` — at all three levels: what MICA hands to `callAI()`, what SecureChatAI's parameter filter leaves, and the body on the wire. Read-only, no network call, and the transcript is **synthetic and validated against the pinned input schema**, because a real one is PHI and the request body *is* the transcript. Every value is derived from live code (four private methods reached by reflection) so the sample cannot drift from what a scan actually sends. Snapshot and commentary: [`../../reference/23-safetyscan-payload.md`](../../reference/23-safetyscan-payload.md). |
 
 For "just show me the payload" there is no script — `BaseModelRequest::logFullRequest()` appends one
 JSON line per request to `/var/log/apache2/secure_chat_ai.json` on **development servers only**
 (gated on REDCap's `is_development_server`), so `docker exec redcap_2023_1_web tail -f
 /var/log/apache2/secure_chat_ai.json` is the whole workflow. See
-[`../20-llm-request-capture.md`](../20-llm-request-capture.md) §4b, including why the file must be
+[`../../reference/20-llm-request-capture.md`](../../reference/20-llm-request-capture.md) §4b, including why the file must be
 owned by `www-data` or web-path turns silently stop logging.
 
 ### `verify-safetyscan.php` destroys evidence — read the queue first
@@ -118,7 +118,7 @@ Defaults are `pid=257`, `credential_field=last_name`, `credential_event_id=1004`
 
 ## Session lifecycle
 
-Supporting [`../../session-lifecycle/README.md`](../../session-lifecycle/README.md).
+Supporting [`../../topics/session/session-lifecycle.md`](../../topics/session/session-lifecycle.md).
 
 | File | Purpose |
 |---|---|
@@ -126,7 +126,7 @@ Supporting [`../../session-lifecycle/README.md`](../../session-lifecycle/README.
 
 ## Randomization → arm placement
 
-Supporting [`../../randomization/README.md`](../../randomization/README.md).
+Supporting [`../../topics/randomization/README.md`](../../topics/randomization/README.md).
 
 | File | Purpose |
 |---|---|
@@ -135,11 +135,11 @@ Supporting [`../../randomization/README.md`](../../randomization/README.md).
 | `dev-allocation-table-MICA-ONLY.csv` | Arms 2 and 3 only, so every test participant reaches a session. Deliberately unusable as a randomization schedule — it has no Standard Care allocations. |
 | `dev-allocation-table-STRATIFIED-TESTING-ONLY.csv` | Stratified on `rand_strata`: 15 slots per stratum (0 and 1), 5 per group, permuted blocks of 3. Uses REDCap's template columns `redcap_randomization_number, redcap_randomization_group, rand_strata` and uploads through the Randomization page. **Development tables only.** |
 | `seed-strata-test.php` | `<pid> <record> high\|low\|incomplete`. Seeds a participant up to `tsr` (screening, contact, all AUDIT items; `audit9`/`audit10` coded 0/2/4) so the `tsr` survey's `@IF/@SETVALUE` sets `rand_strata` when it loads: `high` → 1, `low` → 0, `incomplete` (no `audit10`) → blank. Never writes `rand_strata`, `tsr_complete` or `study_group`. Prints the `tsr` link. Development only. Drives `e2e/rand-strata.js` |
-| `apply-rand-trigger-tsr-complete.php` | `[pid] [--apply]`. Dry run by default. Sets 271's trigger logic to `[calc_screen_result]=1 AND [tsr_complete]='2'` through `Randomization::saveRealtimeOption()` (the setup page's own function, so the change is logged), after writing a rollback `.sql`. Refuses anything that is not trigger option 2 on `tsr`. See [`../../randomization/TRIGGER_TSR_COMPLETE_OR_MANUAL.md`](../../randomization/TRIGGER_TSR_COMPLETE_OR_MANUAL.md). |
+| `apply-rand-trigger-tsr-complete.php` | `[pid] [--apply]`. Dry run by default. Sets 271's trigger logic to `[calc_screen_result]=1 AND [tsr_complete]='2'` through `Randomization::saveRealtimeOption()` (the setup page's own function, so the change is logged), after writing a rollback `.sql`. Refuses anything that is not trigger option 2 on `tsr`. See [`../../topics/randomization/TRIGGER_TSR_COMPLETE_OR_MANUAL.md`](../../topics/randomization/TRIGGER_TSR_COMPLETE_OR_MANUAL.md). |
 
 ## Screening eligibility
 
-Supporting [`../../screening/ELIGIBILITY_CALC_PI_XML_2026-09-25.md`](../../screening/ELIGIBILITY_CALC_PI_XML_2026-09-25.md).
+Supporting [`../../topics/screening/ELIGIBILITY_CALC_PI_XML_2026-09-25.md`](../../topics/screening/ELIGIBILITY_CALC_PI_XML_2026-09-25.md).
 
 | File | Purpose |
 |---|---|
@@ -162,5 +162,5 @@ Supporting [`../../screening/ELIGIBILITY_CALC_PI_XML_2026-09-25.md`](../../scree
 
 ## Rollback
 
-See [`../10-auth-implementation-pid257.md`](../10-auth-implementation-pid257.md) §5 for the
+See [`../../topics/auth/10-auth-implementation-pid257.md`](../../topics/auth/10-auth-implementation-pid257.md) §5 for the
 revert SQL.

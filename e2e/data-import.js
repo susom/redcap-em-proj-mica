@@ -5,7 +5,7 @@
 // Signs in as the throwaway user from e2e-admin-form-user.php (override with MICA_E2E_USER/PASS).
 // Reports REDCap's own verdict: validation errors on the review page, or "Import Successful!".
 // Used to prove an import file before it is handed to someone for production - see
-// docs/alerts/pi-review/test-6b/.
+// docs/topics/alerts/pi-review/test-6b/.
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');

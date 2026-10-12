@@ -1,10 +1,10 @@
 // Screening-eligibility E2E against a project built from the PI's REDCap XML.
-// See docs/screening/ELIGIBILITY_CALC_PI_XML_2026-09-25.md.
+// See docs/topics/screening/ELIGIBILITY_CALC_PI_XML_2026-09-25.md.
 //
 //   docker exec <web> php .../scripts/e2e-admin-form-user.php 271 setup --create-projects
 //   node e2e/eligibility-calc.js create <xml>       # builds the project, prints its pid
 //   node e2e/eligibility-calc.js run <pid> broken    # reproduce: what a participant sees today
-//   node e2e/eligibility-calc.js fix <pid> docs/screening/calc_screen_result.txt
+//   node e2e/eligibility-calc.js fix <pid> docs/topics/screening/calc_screen_result.txt
 //                                                   # paste the equation in the Online Designer
 //   node e2e/eligibility-calc.js run <pid> fixed     # every screening path, after the fix
 //   node e2e/eligibility-calc.js gate <pid>          # pre_screen auto-continue condition (Survey Settings)

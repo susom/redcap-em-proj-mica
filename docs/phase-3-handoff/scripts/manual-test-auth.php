@@ -11,7 +11,7 @@
  *   php manual-test-auth.php <pid> reset-lockout  # clear failed attempts (REDCap has no admin unlock)
  *   php manual-test-auth.php <pid> teardown       # delete the test participant and all traces
  *
- * Defaults: pid=257. See ../11-auth-manual-test-guide.md for what to click and expect.
+ * Defaults: pid=257. See ../../testing/11-auth-manual-test-guide.md for what to click and expect.
  */
 
 $pid    = (int)   ($argv[1] ?? 257);

@@ -19,7 +19,7 @@
  * WHY THE EVENT IDS ARE ARM 1's DAY 1. `phone-field-event-id` and `sms-opt-out-field-event-id` are
  * where the module reads `phonen` and `sms_stop`. MICA enrols every participant at arm 1's Day 1
  * and materializes only `study_group` into the assigned arm, so contact data is there and nowhere
- * else - see docs/alerts/ALERT_EVENT_PREFIX_BUG.md section 3.
+ * else - see docs/topics/alerts/ALERT_EVENT_PREFIX_BUG.md section 3.
  *
  * WHY `define('CRON', true)`. `ExternalModules::ensureSetSettingIsAllowed()` skips its user-based
  * permission check only when CRON is defined (`ExternalModules.php:2469-2471`), and a CLI run has
@@ -96,7 +96,7 @@ $settings = [
     // --- conversation pacing: the PI's values (2026-09-30), "Re-prompts should be 1 hour. Timeout
     //     message at 24 hours". The re-prompt re-arms on every reply, so each unanswered question gets
     //     one. The timeout counts from the first text. ASPIRE PID 192 uses 60 / 180. See
-    //     docs/alerts/ESMS_REPROMPT_TIMEOUT.md.
+    //     docs/topics/alerts/ESMS_REPROMPT_TIMEOUT.md.
     'default-conversation-reminder-minutes' => '60',
     'reminder-text-warning'                 => 'We missed your response. ',
     'default-conversation-expiry-minutes'   => '1440',

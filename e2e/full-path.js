@@ -16,7 +16,7 @@
 // emits an identically-id'd empty div from redcap_every_page_top, ahead of MICA's in the document.
 // A bare `#chatbot_ui_container` therefore resolves to Cappy's container - which is present even
 // before login, so "A1b chat NOT reachable before login" would fail while nothing at all was wrong.
-// Only MICA's container has data-bootstrap. See docs/phase-3-handoff/21-chatbot-mount-collision.md.
+// Only MICA's container has data-bootstrap. See docs/topics/chatbot/21-chatbot-mount-collision.md.
 const { chromium, devices } = require('playwright');
 const fs = require('fs');
 const ED = process.argv[2], CONTROL = process.argv[3];

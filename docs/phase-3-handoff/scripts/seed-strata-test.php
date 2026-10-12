@@ -14,7 +14,7 @@
  * loads; that is what is under test), tsr_complete (the survey submit sets it) or study_group (the
  * randomization target). Prints the tsr survey link. Development projects only.
  *
- * See docs/randomization/README.md (stratified test).
+ * See docs/topics/randomization/README.md (stratified test).
  */
 $pid     = (int) ($argv[1] ?? 0);
 $record  = (string) ($argv[2] ?? '');

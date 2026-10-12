@@ -13,7 +13,7 @@
  * **Setting the form status back to Incomplete on the record page is not enough on its own.**
  * That is what the old docblocks promised, and it stopped being sufficient when enforcement moved
  * onto the response row - which it had to, because the form-status write was silently failing on
- * every session (docs/session-lifecycle/README.md). This script exists so there is one explicit,
+ * every session (docs/topics/session/session-lifecycle.md). This script exists so there is one explicit,
  * auditable way to undo a closure rather than inferring intent from a field's value.
  *
  * Deliberately NOT automatic and NOT inferred: nothing treats "form status looks Incomplete" as

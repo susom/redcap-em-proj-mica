@@ -7,7 +7,7 @@
  *
  * Idempotent. A second --apply reports "already ok" for every attribute.
  *
- * THE DEFECT. Found by actually receiving both texts (docs/alerts/PID271_ALERT_TEST_MATRIX.md
+ * THE DEFECT. Found by actually receiving both texts (docs/testing/PID271_ALERT_TEST_MATRIX.md
  * section 7c). The +92 and +98 rungs carry byte-identical bodies:
  *
  *     a9843172...  alerts 06, 08, 11, 13   SMS    "...booster session is ready..."

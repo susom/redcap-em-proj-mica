@@ -1,5 +1,5 @@
 // `close` empty-redirect E2E: a participant submits the study's closing survey and must land on a
-// page, not a white screen. See docs/phase-3-handoff/29-close-empty-redirect.md.
+// page, not a white screen. See docs/topics/session/29-close-empty-redirect.md.
 //
 //   node e2e/close-empty-redirect.js 'done=<close link>' 'session=<close link>' ...
 //
