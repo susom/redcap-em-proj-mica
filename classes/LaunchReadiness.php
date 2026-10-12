@@ -4,6 +4,7 @@ namespace Stanford\MICA;
 
 require_once __DIR__ . "/GateResult.php";
 require_once __DIR__ . "/LaunchEnvironmentInterface.php";
+require_once __DIR__ . "/ModelSelection.php";
 require_once __DIR__ . "/RoleService.php";
 
 /**
@@ -336,6 +337,41 @@ class LaunchReadiness
      */
     private function modelsGate(): GateResult
     {
+        $policy = $this->env->tokenPolicy();
+        $high = $policy === ModelSelection::HIGH;
+        $counselorKey = ModelSelection::key(ModelSelection::COUNSELOR, $policy);
+        $scanKey = ModelSelection::key(ModelSelection::SAFETYSCAN, $policy);
+        $registry = $high ? 'SecureChatAI\'s high-threshold registry' : 'the SecureChatAI registry';
+
+        /*
+         * The AI token policy first: when it is wrong, no alias below can be right. Both are data
+         * rules enforced at call time too (MICA::tokenPolicyRefusal), so this is where a study finds
+         * out before a participant does.
+         */
+        if ($high && !$this->env->secureChatSupportsTokenPolicy()) {
+            return new GateResult(
+                'models',
+                'Model aliases resolve',
+                false,
+                'Use high-threshold AI models is on, but the installed SecureChatAI has no token-policy '
+                . 'support, so every counselor turn and every scan is refused rather than sent to a '
+                . 'standard model.',
+                'Deploy the SecureChatAI version with token policies (standard / high-threshold AI Hub '
+                . 'tokens) first, or turn the switch off.'
+            );
+        }
+        if (!$high && $this->env->secureChatMinimumTokenPolicy() === ModelSelection::HIGH) {
+            return new GateResult(
+                'models',
+                'Model aliases resolve',
+                false,
+                'SecureChatAI\'s Minimum Token Policy for this project is high-threshold, but MICA\'s '
+                . 'Use high-threshold AI models is off, so every counselor turn and every scan is refused.',
+                'A super user ticks Use high-threshold AI models in MICA\'s settings and picks both '
+                . 'high-threshold models.'
+            );
+        }
+
         $available = $this->env->availableModelAliases();
         $aliases = [
             'counselor'  => $this->env->counselorAlias(),
@@ -363,14 +399,31 @@ class LaunchReadiness
                 // loudly - SecureChatAI returns the provider's canned apology, which is how docs 14
                 // D1 happened - so the symptom would have been sessions that looked screened and
                 // were not.
-                'Set both the counselor (`llm-model`) and SafetyScan (`safetyscan-model-alias`) '
-                . 'aliases to values in the SecureChatAI registry. The SafetyScan one is the more '
+                "Set both the counselor (`$counselorKey`) and SafetyScan (`$scanKey`) "
+                . "aliases to values in $registry. The SafetyScan one is the more "
                 . 'serious of the two: it decides which model screens a session for risk, and an '
                 . 'alias that is not registered returns a canned apology rather than an error.'
             );
         }
 
         $configured = $aliases;
+
+        $placeholders = array_keys(array_filter($aliases, [ModelSelection::class, 'isPlaceholder']));
+        if ($placeholders !== []) {
+            return new GateResult(
+                'models',
+                'Model aliases resolve',
+                false,
+                sprintf(
+                    'The %s alias is a placeholder from config.json (%s), not a real model.',
+                    implode(' and ', $placeholders),
+                    implode(', ', array_map(static fn(string $w): string => $aliases[$w], $placeholders))
+                ),
+                "Pick a real model for `$counselorKey` and `$scanKey`. The placeholders stand in "
+                . 'until AI Hub publishes the high-threshold list and config.json is updated.'
+            );
+        }
+
         $missing = [];
         foreach ($configured as $which => $alias) {
             if (!in_array($alias, $available, true)) {
@@ -384,8 +437,9 @@ class LaunchReadiness
                 'Model aliases resolve',
                 false,
                 sprintf(
-                    '%s not in the SecureChatAI registry. Registered: %s.',
+                    '%s not in %s. Registered: %s.',
                     implode(' and ', $missing),
+                    $registry,
                     $available === [] ? '(none)' : implode(', ', $available)
                 ),
                 'Add the alias to SecureChatAI\'s api-settings, or point MICA at one that exists. An '
@@ -398,7 +452,11 @@ class LaunchReadiness
             'models',
             'Model aliases resolve',
             true,
-            sprintf('%s registered.', implode(', ', $configured))
+            sprintf(
+                '%s registered%s.',
+                implode(', ', $configured),
+                $high ? ' under the high-threshold policy' : ''
+            )
         );
     }
 

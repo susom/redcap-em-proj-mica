@@ -11,6 +11,8 @@ require_once "classes/ProviderFailure.php";
 // Reached transitively through TranscriptFinalizer, but the counselor turn needs it too - and this
 // file's convention is to require what it uses so a load failure names the right class.
 require_once "classes/SessionPseudoId.php";
+// Which AI Hub token policy (standard / high-threshold) the counselor turn and the scan run under.
+require_once "classes/ModelSelection.php";
 // Required explicitly rather than left to the composer autoloader below: the integrity gate on the
 // hash-pinned handoff artifacts must not become unreachable just because vendor/ is absent.
 require_once "classes/ArtifactRegistry.php";
@@ -293,12 +295,38 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * return value *is* the module's entire settings dialog; an exception escaping it would truncate
      * the endpoint's JSON and leave an administrator with no editable configuration at all.
      *
+     * It also shapes the model dropdowns for the AI token policy (ModelSelection::applyToConfig):
+     * live high-threshold aliases from SecureChatAI, and the switch's show/hide for users who cannot
+     * see the super-users-only switch. Caught here for the same reason: a SecureChatAI that cannot
+     * be read must not cost the administrator the dialog.
+     *
      * @param array<int,array<string,mixed>> $settings
      * @return array<int,array<string,mixed>>
      */
     public function redcap_module_configuration_settings($project_id, $settings)
     {
-        return (new PinnedPromptView(new ArtifactRegistry()))->apply(is_array($settings) ? $settings : []);
+        $settings = (new PinnedPromptView(new ArtifactRegistry()))->apply(is_array($settings) ? $settings : []);
+        if (empty($project_id)) {
+            return $settings;
+        }
+
+        try {
+            $pid = (int) $project_id;
+            $high = $this->secureChatSupportsTokenPolicy()
+                ? (array) $this->getSecureChatInstance()->getAvailableModels(ModelSelection::HIGH, $pid)
+                : [];
+
+            return ModelSelection::applyToConfig(
+                $settings,
+                $this->tokenPolicy($pid),
+                \ExternalModules\ExternalModules::isSuperUser(),
+                array_values(array_map('strval', $high)),
+                SecureChatSafetyScanCaller::OPENAI_SCHEMA_MODELS
+            );
+        } catch (\Throwable $e) {
+            $this->emError('Could not shape the model dropdowns for the token policy', $e->getMessage());
+            return $settings;
+        }
     }
 
     /**
@@ -500,11 +528,18 @@ class MICA extends \ExternalModules\AbstractExternalModule {
 
     private function assertModelIsRegistered($model): void
     {
+        $refusal = $this->tokenPolicyRefusal(ModelSelection::COUNSELOR, (string) $model);
+        if ($refusal !== null) {
+            // The reason goes to staff; the participant gets the same wording as an unknown model.
+            $this->emError('Counselor turn refused under the AI token policy: ' . $refusal, $model);
+            throw new \Exception("The configured AI model \"$model\" is not available. Please contact your administrator.");
+        }
+
         if (empty($model)) {
             throw new \Exception('No LLM model configured for this project (llm-model project setting is empty)');
         }
 
-        $available = $this->getSecureChatInstance()->getAvailableModels();
+        $available = $this->availableModelAliases();
         if (empty($available) || !is_array($available)) {
             $this->emError('Could not read the SecureChatAI model registry; skipping alias validation', $model);
             return;
@@ -1736,11 +1771,12 @@ class MICA extends \ExternalModules\AbstractExternalModule {
                     $this->emDebug("chatml Messages array to API", $messages);
 
                     //CALL API ENDPOINT WITH AUGMENTED CHATML
-                    $model  = $this->getProjectSetting("llm-model");
+                    $model  = $this->modelAlias(ModelSelection::COUNSELOR);
                     $params = array("messages" => $messages);
 
                     // Alter model parameters if set by user
                     $this->setModelParameters($params);
+                    $params += $this->tokenPolicyParams();
 
                     // Without `session_id` the provider's own turn logging returns early
                     // (SecureChatAI.php:2242), so MICA's conversations produced ZERO provider turn
@@ -4365,7 +4401,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
             $caller,
             new RedcapScanResultStore($this),
             new FindingWriter(new RedcapScanResultStore($this)),
-            (string) ($this->getProjectSetting('safetyscan-model-alias', $projectId) ?: 'gemini-2.5-flash'),
+            $this->scanModelAlias($projectId),
             $this->appVersion(),
             null,
             fn(string $m) => $this->emDebug("scan runner (pid $projectId): $m"),
@@ -4453,6 +4489,141 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         }
 
 
+    }
+
+    /**
+     * The AI Hub token policy this project's AI calls run under: `high` while the super-user switch
+     * `use-high-threshold-models` is ticked, `standard` otherwise. See classes/ModelSelection.php.
+     */
+    public function tokenPolicy(?int $projectId = null): string
+    {
+        return ModelSelection::policy($this->getProjectSetting(ModelSelection::SWITCH_KEY, $projectId));
+    }
+
+    /** The alias a role (counselor / safetyscan) is configured with under the project's policy. */
+    public function modelAlias(string $role, ?int $projectId = null): string
+    {
+        $key = ModelSelection::key($role, $this->tokenPolicy($projectId));
+
+        return trim((string) $this->getProjectSetting($key, $projectId));
+    }
+
+    /**
+     * The SafetyScan alias handed to ScanRunner.
+     *
+     * Under standard an unset alias keeps its historical fallback. Under high-threshold there is no
+     * fallback - that literal is a standard model - so a blank alias stays blank and the scan caller
+     * refuses it (manual review), which is what a data rule has to do.
+     */
+    public function scanModelAlias(?int $projectId = null): string
+    {
+        $alias = $this->modelAlias(ModelSelection::SAFETYSCAN, $projectId);
+        if ($alias !== '' || $this->tokenPolicy($projectId) === ModelSelection::HIGH) {
+            return $alias;
+        }
+
+        return 'gemini-2.5-flash';
+    }
+
+    /**
+     * Extra callAI() params for the project's policy. Standard sends nothing, so SecureChatAI's own
+     * per-project minimum still decides; high-threshold asks for it explicitly.
+     *
+     * @return array<string,string>
+     */
+    public function tokenPolicyParams(?int $projectId = null): array
+    {
+        return $this->tokenPolicy($projectId) === ModelSelection::HIGH
+            ? ['token_policy' => ModelSelection::HIGH]
+            : [];
+    }
+
+    /**
+     * Whether the installed SecureChatAI understands `token_policy` at all.
+     *
+     * Probed rather than assumed: PHP ignores extra arguments to a userland method, so an older
+     * SecureChatAI would accept `getAvailableModels('high')` and `token_policy => 'high'` without a
+     * word and serve both from the standard set. Under high-threshold that must be a refusal.
+     */
+    public function secureChatSupportsTokenPolicy(): bool
+    {
+        try {
+            return method_exists($this->getSecureChatInstance(), 'getProjectMinimumTokenPolicy');
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Aliases SecureChatAI serves under the project's policy; empty when it cannot be read.
+     *
+     * @return list<string>
+     */
+    public function availableModelAliases(?int $projectId = null): array
+    {
+        try {
+            $chat = $this->getSecureChatInstance();
+            if ($this->tokenPolicy($projectId) === ModelSelection::HIGH) {
+                $available = $this->secureChatSupportsTokenPolicy()
+                    ? $chat->getAvailableModels(ModelSelection::HIGH, $projectId)
+                    : [];
+            } else {
+                $available = $this->secureChatSupportsTokenPolicy()
+                    ? $chat->getAvailableModels(null, $projectId)
+                    : $chat->getAvailableModels();
+            }
+        } catch (\Throwable $e) {
+            $available = [];
+        }
+
+        return is_array($available) ? array_values(array_map('strval', $available)) : [];
+    }
+
+    /**
+     * Why a call for this role must not be made under the token policy, or null when it may.
+     *
+     * Only the policy's own refusals; whether a standard alias is registered stays with the
+     * existing checks. Under high-threshold every gap is a refusal - an unreadable or empty
+     * registry included - because the alternative is data reaching a model it may not reach.
+     */
+    public function tokenPolicyRefusal(string $role, string $alias, ?int $projectId = null): ?string
+    {
+        if ($projectId === null) {
+            try {
+                $projectId = $this->getProjectId() ? (int) $this->getProjectId() : null;
+            } catch (\Throwable $e) {
+                $projectId = null;
+            }
+        }
+        $key = ModelSelection::key($role, $this->tokenPolicy($projectId));
+
+        if ($this->tokenPolicy($projectId) !== ModelSelection::HIGH) {
+            if (
+                $this->secureChatSupportsTokenPolicy()
+                && $projectId !== null
+                && $this->getSecureChatInstance()->getProjectMinimumTokenPolicy($projectId) === ModelSelection::HIGH
+            ) {
+                return 'SecureChatAI requires the high-threshold policy for this project, but MICA\'s '
+                    . '"Use high-threshold AI models" is off.';
+            }
+            return null;
+        }
+
+        if (!$this->secureChatSupportsTokenPolicy()) {
+            return 'High-threshold models are switched on, but the installed SecureChatAI has no token '
+                . 'policy support, so it would serve the call from the standard set.';
+        }
+        if ($alias === '') {
+            return "High-threshold models are switched on, but `$key` is blank.";
+        }
+        if (ModelSelection::isPlaceholder($alias)) {
+            return "`$key` is \"$alias\", a placeholder from config.json, not a real model.";
+        }
+        if (!in_array($alias, $this->availableModelAliases($projectId), true)) {
+            return "\"$alias\" is not registered in SecureChatAI under the high-threshold policy.";
+        }
+
+        return null;
     }
 
     /**

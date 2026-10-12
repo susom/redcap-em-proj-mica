@@ -23,11 +23,23 @@ interface LaunchEnvironmentInterface
     /** @throws \Throwable when a pinned artifact does not match its manifest hash */
     public function verifyArtifacts(): void;
 
-    /** @return string[] aliases the SecureChatAI registry actually knows */
+    /** `standard` or `high`: MICA's AI token policy (ModelSelection), from its super-user switch. */
+    public function tokenPolicy(): string;
+
+    /** Whether the installed SecureChatAI understands token policies at all. */
+    public function secureChatSupportsTokenPolicy(): bool;
+
+    /** SecureChatAI's own Minimum Token Policy for this project; null when it has none to report. */
+    public function secureChatMinimumTokenPolicy(): ?string;
+
+    /** @return string[] aliases the SecureChatAI registry actually knows, under tokenPolicy() */
     public function availableModelAliases(): array;
+
+    /** The counselor alias under tokenPolicy(). */
 
     public function counselorAlias(): ?string;
 
+    /** The SafetyScan alias under tokenPolicy(). */
     public function safetyScanAlias(): ?string;
 
     public function isScanMockMode(): bool;

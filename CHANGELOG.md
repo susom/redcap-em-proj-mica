@@ -55,6 +55,26 @@ against `platform.php = 8.2` rather than the developer's PHP.
 `php-ml` and `twilio/sdk` were dropped: 2,598 files and 17.5 MB with zero
 references anywhere in the codebase. `vendor/` is 235 files / 1.3 MB.
 
+### High-threshold AI models: one switch moves the counselor and the SafetyScan (2026-10-12)
+
+- **The switch:** a new super-user setting, **Use high-threshold AI models**, off by default. It sends
+  both MICA calls to SecureChatAI's high-threshold model set, on its own AI Hub token.
+- **The dropdowns:** ticking the switch swaps both model dropdowns for high-threshold versions
+  (`llm-model-high`, `safetyscan-model-alias-high`). Each lists what SecureChatAI has registered under
+  high-threshold, then placeholders until AI Hub publishes its list.
+- **No fallback:** with the switch on, a blank, placeholder or unregistered alias is refused before
+  anything is sent, and so is a SecureChatAI too old to honour the policy. A refused scan goes to
+  manual review.
+- **Launch readiness:** the models gate checks all of the above, plus a SecureChatAI project minimum
+  stricter than the switch.
+- **Designers:** they never see the switch, so the dialog shows them the active pair only, and their
+  Save keeps the rest.
+- **Dev scripts:** `safetyscan-payload-sample.php` reads SecureChatAI's new registry shape
+  (`modelConfig[policy][alias]`). It and `verify-settings.php`, `preflight-safetyscan.php` and
+  `capture-llm-payload.php` follow the switch.
+
+Details, alias naming and prod steps: [`docs/token-policy.md`](docs/token-policy.md).
+
 ### With a named reviewer list, the Reviewer role is optional (2026-10-02)
 
 The PI wants a list of emails and no reviewer role. Removing the role on prod 35968 failed the

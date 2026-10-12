@@ -174,6 +174,13 @@
             "type": "textarea"
         },
         {
+            "key": "use-high-threshold-models",
+            "name": "<b>Use high-threshold AI models</b> <span style=\"color:#c00\">(super users only)</span><br><i>Moves <b>both</b> of MICA's AI calls - the counselor (<b>LLM Model</b>, further down) and the <b>SafetyScan</b> - to SecureChatAI's high-threshold model set, which runs on its own AI Hub token. Ticking it swaps both model dropdowns for their high-threshold lists; each keeps its own saved choice, so unticking restores the standard ones. It is a data rule: with this on, nothing is ever sent to a standard model - a blank or unregistered high-threshold model refuses the call instead. Before ticking it on Production, make sure SecureChatAI has the high-threshold models registered, then check the review dashboard's Launch readiness tab.</i>",
+            "required": false,
+            "type": "checkbox",
+            "super-users-only": true
+        },
+        {
             "key": "safetyscan-model-alias",
             "name": "<b>SafetyScan model alias</b><br><i>The SecureChatAI model that screens every finished session for safety concerns. <b>GPT-5.6 Sol is the one verified end to end.</b> A dropdown rather than free text because a mistyped alias fails every scan: on 2026-09-28 prod had <code>gpt-5.6-sol</code> (the model's version name) instead of <code>gpt-5-6-sol</code>, and every session came out \"NOT SCREENED\". Only models with enforced structured output are offered - the scan depends on it. The model must also be registered in SecureChatAI on this server; the review dashboard's Launch readiness tab checks. <b>Do not leave it blank:</b> blank falls back to <code>gemini-2.5-flash</code>, which Stanford prod does not register.</i>",
             "required": false,
@@ -200,7 +207,31 @@
                     "name": "GPT-4.1"
                 }
             ],
-            "default": "gpt-5-6-sol"
+            "default": "gpt-5-6-sol",
+            "branchingLogic": {
+                "field": "use-high-threshold-models",
+                "value": false
+            }
+        },
+        {
+            "key": "safetyscan-model-alias-high",
+            "name": "<b>SafetyScan model alias (high-threshold)</b><br><i>Used instead of <b>SafetyScan model alias</b> while <b>Use high-threshold AI models</b> is ticked. Lists the SafetyScan-capable models SecureChatAI has registered under the high-threshold policy on this server, then placeholders that stand in for AI Hub's list until it is published - a placeholder is not a real alias, and every scan would fail on it. Only models with enforced structured output are offered. <b>Do not leave it blank:</b> with the switch on, a blank alias means no session is screened.</i>",
+            "required": false,
+            "type": "dropdown",
+            "choices": [
+                {
+                    "value": "placeholder-high-model-1",
+                    "name": "PLACEHOLDER - high-threshold model 1 (replace in config.json once AI Hub publishes the list; not a real alias)"
+                },
+                {
+                    "value": "placeholder-high-model-2",
+                    "name": "PLACEHOLDER - high-threshold model 2 (replace in config.json once AI Hub publishes the list; not a real alias)"
+                }
+            ],
+            "branchingLogic": {
+                "field": "use-high-threshold-models",
+                "value": true
+            }
         },
         {
             "key": "safetyscan-max-attempts",
@@ -445,7 +476,31 @@
                     "name": "Gemini 2.5 Pro"
                 }
             ],
-            "default": "gpt-4-1"
+            "default": "gpt-4-1",
+            "branchingLogic": {
+                "field": "use-high-threshold-models",
+                "value": false
+            }
+        },
+        {
+            "key": "llm-model-high",
+            "name": "<b>LLM Model (high-threshold)</b><br><i>Used instead of <b>LLM Model</b> while <b>Use high-threshold AI models</b> is ticked. Lists the models SecureChatAI has registered under the high-threshold policy on this server, then placeholders that stand in for AI Hub's list until it is published - a placeholder is not a real alias, and every counselor turn would be refused on it.</i>",
+            "required": false,
+            "type": "dropdown",
+            "choices": [
+                {
+                    "value": "placeholder-high-model-1",
+                    "name": "PLACEHOLDER - high-threshold model 1 (replace in config.json once AI Hub publishes the list; not a real alias)"
+                },
+                {
+                    "value": "placeholder-high-model-2",
+                    "name": "PLACEHOLDER - high-threshold model 2 (replace in config.json once AI Hub publishes the list; not a real alias)"
+                }
+            ],
+            "branchingLogic": {
+                "field": "use-high-threshold-models",
+                "value": true
+            }
         },
         {
             "key": "gpt-temperature",

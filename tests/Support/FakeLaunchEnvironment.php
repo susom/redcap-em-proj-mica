@@ -18,6 +18,9 @@ final class FakeLaunchEnvironment implements LaunchEnvironmentInterface
     public array $policyData;
     public array $policyErrors = [];
     public ?\Throwable $artifactError = null;
+    public string $tokenPolicy = 'standard';
+    public bool $supportsTokenPolicy = true;
+    public ?string $minimumTokenPolicy = 'standard';
     public array $available = ['gpt-5-4', 'gemini-2.5-flash'];
     public ?string $counselor = 'gpt-5-4';
     public ?string $safetyScan = 'gemini-2.5-flash';
@@ -74,6 +77,21 @@ final class FakeLaunchEnvironment implements LaunchEnvironmentInterface
         if ($this->artifactError !== null) {
             throw $this->artifactError;
         }
+    }
+
+    public function tokenPolicy(): string
+    {
+        return $this->tokenPolicy;
+    }
+
+    public function secureChatSupportsTokenPolicy(): bool
+    {
+        return $this->supportsTokenPolicy;
+    }
+
+    public function secureChatMinimumTokenPolicy(): ?string
+    {
+        return $this->minimumTokenPolicy;
     }
 
     public function availableModelAliases(): array

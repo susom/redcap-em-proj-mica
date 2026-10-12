@@ -168,8 +168,11 @@ function capture_files(string $dir): array
  */
 function print_shape($mica, $chat, int $PID): void
 {
-    $alias = (string) $mica->getProjectSetting('llm-model', $PID);
-    echo "PID $PID  llm-model = " . ($alias !== '' ? $alias : '(unset)') . "\n\n";
+    // The switch picks the AI token policy, and the policy picks which setting the counselor reads.
+    $policy = $mica->tokenPolicy($PID);
+    $key    = \Stanford\MICA\ModelSelection::key('counselor', $policy);
+    $alias  = $mica->modelAlias('counselor', $PID);
+    echo "PID $PID  token policy = $policy  $key = " . ($alias !== '' ? $alias : '(unset)') . "\n\n";
 
     if ($alias === '') {
         echo "No model configured; nothing to derive.\n";

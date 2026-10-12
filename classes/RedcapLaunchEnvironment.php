@@ -4,6 +4,7 @@ namespace Stanford\MICA;
 
 require_once __DIR__ . "/ArtifactRegistry.php";
 require_once __DIR__ . "/LaunchEnvironmentInterface.php";
+require_once __DIR__ . "/ModelSelection.php";
 require_once __DIR__ . "/NotificationPolicy.php";
 require_once __DIR__ . "/RedcapRecipientDirectory.php";
 require_once __DIR__ . "/RoleService.php";
@@ -104,31 +105,43 @@ class RedcapLaunchEnvironment implements LaunchEnvironmentInterface
         $this->artifacts->verifyAll();
     }
 
-    public function availableModelAliases(): array
+    public function tokenPolicy(): string
     {
-        if ($this->models !== null) {
-            return $this->models;
+        return $this->module->tokenPolicy($this->projectId);
+    }
+
+    public function secureChatSupportsTokenPolicy(): bool
+    {
+        return $this->module->secureChatSupportsTokenPolicy();
+    }
+
+    public function secureChatMinimumTokenPolicy(): ?string
+    {
+        if (!$this->secureChatSupportsTokenPolicy()) {
+            return null;
         }
 
         try {
-            $available = $this->module->getSecureChatInstance()->getAvailableModels();
+            return $this->module->getSecureChatInstance()->getProjectMinimumTokenPolicy($this->projectId);
         } catch (\Throwable $e) {
-            $available = [];
+            return null;
         }
+    }
 
-        return $this->models = is_array($available)
-            ? array_values(array_map('strval', $available))
-            : [];
+    public function availableModelAliases(): array
+    {
+        // The project id explicitly: the gates also run where there is no project context.
+        return $this->models ??= $this->module->availableModelAliases($this->projectId);
     }
 
     public function counselorAlias(): ?string
     {
-        return $this->setting('llm-model');
+        return $this->setting(ModelSelection::key(ModelSelection::COUNSELOR, $this->tokenPolicy()));
     }
 
     public function safetyScanAlias(): ?string
     {
-        return $this->setting('safetyscan-model-alias');
+        return $this->setting(ModelSelection::key(ModelSelection::SAFETYSCAN, $this->tokenPolicy()));
     }
 
     public function isScanMockMode(): bool

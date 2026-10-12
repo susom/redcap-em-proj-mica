@@ -223,22 +223,27 @@ if ($sampleRecord === null) {
 
 echo "\n3. The models\n";
 
-try {
-    $registry = $module->getSecureChatInstance()->getAvailableModels();
-    $registry = is_array($registry) ? $registry : [];
-} catch (\Throwable $e) {
-    $registry = [];
-}
+// Under the project's AI token policy: the switch picks which alias settings are live, and the
+// registry is that policy's model set.
+$policy = $module->tokenPolicy($PID);
+$registry = $module->availableModelAliases($PID);
+note_('AI token policy', $policy === 'high' ? 'high (use-high-threshold-models is on)' : 'standard');
 note_('SecureChatAI registry', implode(', ', $registry) ?: '(empty - could not be read)');
 
-foreach (['llm-model' => 'the counselor', 'safetyscan-model-alias' => 'the safety scanner'] as $key => $what) {
+foreach (['counselor' => 'the counselor', 'safetyscan' => 'the safety scanner'] as $role => $what) {
+    $key = \Stanford\MICA\ModelSelection::key($role, $policy);
     $alias = $str($key);
+    $refusal = $module->tokenPolicyRefusal($role, $alias, $PID);
+    if ($alias !== '' && $refusal !== null) {
+        bad_($key, $refusal, 'The call is refused before it is sent - see Launch readiness.');
+        continue;
+    }
 
     if ($alias === '') {
         bad_(
             $key,
             "unset - $what has no configured model",
-            $key === 'safetyscan-model-alias'
+            $role === 'safetyscan'
                 ? 'The scanner falls back to a hardcoded alias that is NOT checked against the '
                 . 'registry, and an unregistered alias returns the provider\'s canned apology rather '
                 . 'than an error - so sessions look screened and are not.'
@@ -282,7 +287,7 @@ foreach (['gpt-temperature' => [0, 2], 'gpt-top-p' => [0, 1], 'gpt-frequency-pen
 }
 
 $effort = $str('reasoning-effort');
-$counselor = $str('llm-model');
+$counselor = $module->modelAlias('counselor', $PID);
 if ($effort !== '') {
     in_array($counselor, ['o1', 'o3-mini', 'gpt-5',
              'gpt-5-6-sol', 'gpt-5-6-luna', 'gpt-5-6-terra'], true)

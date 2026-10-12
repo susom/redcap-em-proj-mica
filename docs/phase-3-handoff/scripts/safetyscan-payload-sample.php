@@ -26,7 +26,8 @@
  *   - the pinned output schema, and whether SecureChatAI will actually forward it for this alias;
  *   - SecureChatAI's parameter filter and dynamic token budget for this alias
  *     (filterDefaultParamsForModel + computeDynamicMaxTokens, both private, both via reflection);
- *   - the deployment model-id the alias resolves to.
+ *   - the AI token policy the scan runs under (MICA's `use-high-threshold-models` switch), and the
+ *     deployment model-id the alias resolves to in that policy's model set.
  *
  * Replicated, not called: `GenericModelRequest::sendRequest()` wraps `json_schema` into
  * `response_format` and substitutes the model-id, but it does that *inside* the method that performs
@@ -112,7 +113,14 @@ $init->setAccessible(true);
 $init->invoke($chat);
 
 $registry = new \Stanford\MICA\ArtifactRegistry(dirname(__DIR__, 3) . '/handoff');
-$alias    = (string) ($module->getProjectSetting('safetyscan-model-alias', $PID) ?: 'gemini-2.5-flash');
+// The same resolution the scan uses: the switch picks the policy, the policy picks the alias setting.
+$policy   = $module->tokenPolicy($PID);
+$alias    = $module->scanModelAlias($PID);
+if ($alias === '') {
+    fwrite(STDERR, "High-threshold models are on for PID $PID but safetyscan-model-alias-high is blank: "
+        . "no scan would be sent, so there is no body to show.\n");
+    exit(1);
+}
 
 // ---------------------------------------------------------------------- the synthetic transcript
 
@@ -255,7 +263,7 @@ $callAiParams = [
         ['role' => 'user',   'content' => $transcriptJson],
     ],
     'json_schema' => $provider['schema'],
-];
+] + $module->tokenPolicyParams($PID);
 
 // ------------------------------------------- level B: SecureChatAI's filter, then the dynamic budget
 
@@ -273,8 +281,13 @@ $filtered[$tokenParam] = (int) $dynamicMax;
 $cfgProp = new \ReflectionProperty(\Stanford\SecureChatAI\SecureChatAI::class, 'modelConfig');
 $cfgProp->setAccessible(true);
 $modelConfig = $cfgProp->getValue($chat);
-$modelId = $modelConfig[$alias]['model_id'] ?? '(alias not in the api-settings registry)';
-$apiUrl  = $modelConfig[$alias]['api_url'] ?? '(none)';
+// SecureChatAI with token policies keys the registry policy => alias => row; an older one is flat.
+// Only `model_id` and `api_url` are read: a row also carries its `api_token`, never printed.
+$row = $module->secureChatSupportsTokenPolicy()
+    ? ($modelConfig[$policy][$alias] ?? null)
+    : ($modelConfig[$alias] ?? null);
+$modelId = $row['model_id'] ?? "(alias not registered under the $policy policy)";
+$apiUrl  = $row['api_url'] ?? '(none)';
 
 // Replicated from GenericModelRequest.php:42-64 - see the header note on why it cannot be called.
 $wire = $filtered;
@@ -294,7 +307,10 @@ if (isset($wire['json_schema'])) {
 
 h('CONTEXT');
 printf("  pid                         %d\n", $PID);
-printf("  safetyscan-model-alias      %s\n", $alias);
+printf("  AI token policy             %s\n", $policy === 'high'
+    ? 'high - use-high-threshold-models is on'
+    : 'standard');
+printf("  %-27s %s\n", \Stanford\MICA\ModelSelection::key('safetyscan', $policy), $alias);
 printf("  resolves to deployment      %s\n", $modelId);
 printf("  endpoint                    %s\n", preg_replace('/\?.*/', '?<query>', (string) $apiUrl));
 printf("  addendum                    %s\n", $addendum === ''
@@ -325,7 +341,7 @@ echo pretty([
             ['role' => 'user',   'content' => '<<TRANSCRIPT JSON - printed in full below>>'],
         ],
         'json_schema' => '<<pinned safetyscan output schema, minus the withheld keywords - in full below>>',
-    ],
+    ] + $module->tokenPolicyParams($PID),
     'project_id' => $PID,
     'username'   => null,
 ]) . "\n";

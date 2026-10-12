@@ -143,18 +143,25 @@ note_(
 
 echo "\n2. The transcript gets scanned\n";
 
-$alias = trim((string) $module->getProjectSetting('safetyscan-model-alias', $PID));
+// Under the project's AI token policy: the switch picks which alias setting the scan reads, and the
+// registry is that policy's model set.
+$policy = $module->tokenPolicy($PID);
+$aliasKey = \Stanford\MICA\ModelSelection::key('safetyscan', $policy);
+$alias = $module->modelAlias('safetyscan', $PID);
 $mock = (bool) $module->getProjectSetting('scan-mock-mode', $PID);
+$available = $module->availableModelAliases($PID);
+note_('AI token policy', $policy);
 
-try {
-    $available = $module->getSecureChatInstance()->getAvailableModels();
-} catch (\Throwable $e) {
-    $available = [];
-}
-$available = is_array($available) ? $available : [];
+$refusal = $module->tokenPolicyRefusal('safetyscan', $alias, $PID);
+link_(
+    'token policy allows the scan',
+    $refusal === null,
+    $refusal ?? 'yes',
+    'Every scan is refused before it is sent until this is fixed - see Launch readiness.'
+);
 
 link_(
-    'safetyscan-model-alias set',
+    "$aliasKey set",
     $alias !== '',
     $alias !== '' ? $alias : 'UNSET',
     'Set it under External Modules > MICA > Configure. Unset means the scanner falls back to a '
