@@ -150,7 +150,7 @@ not produce a text.
 
 Testing alerts against whatever records a project happens to hold is circular. MICA enrols every
 participant at **arm 1's Day 1** and materializes only `study_group` into the assigned arm
-([`ALERT_EVENT_PREFIX_BUG.md` §3](../topics/alerts/ALERT_EVENT_PREFIX_BUG.md), true by construction). An alert that
+([`ALERT_EVENT_PREFIX_BUG.md` §3](../reference/ALERT_EVENT_PREFIX_BUG.md), true by construction). An alert that
 reads enrolment data at arm 3's Day 1 therefore passes if someone once seeded a test record there,
 and fails for every real participant.
 
@@ -625,7 +625,7 @@ docker exec redcap_2023_1_web php \
 
 After any real logic change, a record that has already been evaluated will not re-queue —
 `reevaluate_send_time = 0` on all of these. Clear it first
-([`ALERT_EVENT_PREFIX_BUG.md` §6](../topics/alerts/ALERT_EVENT_PREFIX_BUG.md)):
+([`ALERT_EVENT_PREFIX_BUG.md` §6](../reference/ALERT_EVENT_PREFIX_BUG.md)):
 
 ```sql
 DELETE FROM redcap_alerts_recurrence WHERE alert_id = <id> AND record = '<rec>';

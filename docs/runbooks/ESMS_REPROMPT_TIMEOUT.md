@@ -21,7 +21,7 @@ What the phone showed:
 
 ## 2. Reproduction
 
-[`simulate-esms-timing.php`](../../phase-3-handoff/scripts/simulate-esms-timing.php) runs the module's
+[`simulate-esms-timing.php`](../phase-3-handoff/scripts/simulate-esms-timing.php) runs the module's
 real code:
 
 - the `@ESMS` send through REDCap's `Message::send()`;

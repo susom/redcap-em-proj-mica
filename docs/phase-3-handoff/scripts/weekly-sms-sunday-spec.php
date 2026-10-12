@@ -10,8 +10,8 @@
  * Keeping it here is what makes "the CSV patch produces the same instrument the dev build did" a
  * checkable claim instead of a hope. The rationale for every rule is in the docblock of
  * apply-weekly-sms-branching.php and in section 4 of the original PID 268 build write-up
- * (ARM3_WEEKLY_SMS_BUILD.md, removed from docs/ 2026-10-12, in git history). The current build:
- * docs/topics/alerts/ARM3_WEEKLY_SMS_REBUILD_271.md.
+ * (ARM3_WEEKLY_SMS_BUILD.md, removed from docs/ 2026-10-12, in git history). So is the 271
+ * rebuild write-up, ARM3_WEEKLY_SMS_REBUILD_271.md.
  *
  * No REDCap dependency - plain PHP, so the CSV patcher can run anywhere.
  */

@@ -51,8 +51,8 @@ Supporting [`../../topics/safetyscan/31-critical-finding-crc-notify.md`](../../t
 
 ## Arm-3 weekly SMS (Enhanced SMS Conversation)
 
-Supporting [`../../topics/alerts/ESMS_REPROMPT_TIMEOUT.md`](../../topics/alerts/ESMS_REPROMPT_TIMEOUT.md) and the
-[`ARM3_WEEKLY_SMS_*`](../../topics/alerts/) docs.
+Supporting [`../../runbooks/ESMS_REPROMPT_TIMEOUT.md`](../../runbooks/ESMS_REPROMPT_TIMEOUT.md) and the
+`ARM3_WEEKLY_SMS_*` (removed 2026-10-12) docs.
 
 | File | Purpose |
 |---|---|

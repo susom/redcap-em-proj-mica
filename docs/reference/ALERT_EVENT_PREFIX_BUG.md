@@ -286,7 +286,7 @@ participant-facing reminder) and 3 that fired with blank contact details in the 
 
 ### C2. Root cause — and a latent bug that is *not* it
 
-[`apply-baseline-split-and-order.php`](../../phase-3-handoff/scripts/apply-baseline-split-and-order.php)
+[`apply-baseline-split-and-order.php`](../phase-3-handoff/scripts/apply-baseline-split-and-order.php)
 intended to designate the new form to all of `baseline1`'s events:
 
 ```php
@@ -360,7 +360,7 @@ needs the same designation applied.
 
 ### C7. Consequence for the PI test manual
 
-[`pi-review/MICA_Arm3_SMS_Test_Manual.pdf`](pi-review/) is rebuilt against the fixed structure: five
+`pi-review/MICA_Arm3_SMS_Test_Manual.pdf` (removed 2026-10-12) is rebuilt against the fixed structure: five
 tests again, with test 1 in **Arm 1** and tests 2–5 in **Arm 3**. Two things the manual had wrong
 independently of this, both corrected:
 
