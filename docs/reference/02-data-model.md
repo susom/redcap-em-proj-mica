@@ -211,7 +211,7 @@ team sign-off** (open question #8):
 > or is repeating a development convenience to make login re-testable? The answer decides whether
 > the above is a required rework or should be reverted. Revert SQL is in `10 §5`.
 
-> **Confirmed still true 2026-08-17** ([`09-pid-257-structure-audit.md`](../archive/09-pid-257-structure-audit.md)):
+> **Confirmed still true 2026-08-17** (`09-pid-257-structure-audit.md` (removed 2026-10-12)):
 > as of the researcher's structure delivery, both instruments contain *only* their
 > `_complete` field and are **not enabled as surveys**, so **every field in §3.1 and §3.2
 > below remains to be built** (audit G1, G4, G5) — none of them exist yet. Two additions to
@@ -239,7 +239,7 @@ team sign-off** (open question #8):
 | `mica_booster_window_open` (booster) | date | window logic (or derive from randomization date) |
 
 > **Updated 2026-08-17** against the as-built PID 257
-> ([`09-pid-257-structure-audit.md`](../archive/09-pid-257-structure-audit.md)).
+> (`09-pid-257-structure-audit.md` (removed 2026-10-12)).
 
 **Contact fields already exist — do not add.** `baseline1` carries `first_name`,
 `last_name` (PHI), `email` (email-validated, PHI), `phonen` (cell, PHI) and

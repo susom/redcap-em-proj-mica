@@ -20,7 +20,7 @@ mechanism, and none of those belong in a running pilot.
 
 ## Unreleased — `mica-phase-3` (R01)
 
-Plan and rationale: [`docs/phase-3-handoff/`](docs/plan/README.md).
+Plan and rationale: `docs/phase-3-handoff/` (removed 2026-10-12).
 Stage tracker: [`06-implementation-plan/README.md`](docs/plan/06-implementation-plan/README.md).
 
 ### Stage 0 — Foundations
@@ -420,7 +420,7 @@ rather than silently rewritten.
 ### SecureChatAI conformance — SOW "update API calls, request/response handling"
 
 The three items `13 §7` listed as *must change for correctness* / *leaves value on
-the table*, scoped from [`18-sow-status-review.md`](docs/plan/18-sow-status-review.md) §5.
+the table*, scoped from `18-sow-status-review.md` (removed 2026-10-12) §5.
 
 - **A provider failure is no longer stored as counselor speech.** `callAI()` never
   throws; it rewrites a failure as an assistant message carrying a canned apology,
@@ -456,7 +456,7 @@ behaviour so a bypass upstream would fail it), **43/43 participant E2E**, lint c
 New: `close-expired-sessions` (off by default), `ed-session-window-hours` (24),
 `booster-session-window-days` (14), and the `mica_session_closer` cron. Closes the
 first of the three enforcement gates that
-[`18 §10 A6`](docs/plan/18-sow-status-review.md) listed as unowned after
+`18 §10 A6` (removed 2026-10-12) listed as unowned after
 the R01 session engine went out of scope.
 
 **The clock starts at the participant's first message**, per session type. A session
@@ -628,7 +628,7 @@ newlines, which orphaned each value onto its own line; and `<form>_complete` com
 event's `name` rather than `name_ext`, because the latter appends the arm and an allocation has no
 business being written into a prompt.
 
-Runbook: [`26-prod-runbook-day1-flow.md`](docs/runbooks/26-prod-runbook-day1-flow.md), which
+Runbook: `26-prod-runbook-day1-flow.md` (removed 2026-10-12), which
 ends with four open study decisions rather than implying they are settled.
 
 ### Day-1 flow rebuilt: ID split from demographics, and MICA reached after TSR
@@ -805,7 +805,7 @@ was used — absent means the validated prompt unmodified, the same convention
 - **The pilot code paths were deliberately NOT deleted.** Decision 5 conditions that on
   Stage 2, which is out of scope; `getSystemContextForRecord()` is the only implementation of
   the session-completed / study-completed gates, so deleting it would turn a gap into a
-  blank page. Reasoning in [`18 §5.1`](docs/plan/18-sow-status-review.md).
+  blank page. Reasoning in `18 §5.1` (removed 2026-10-12).
 
 ### Earlier phase-3 work on this branch
 

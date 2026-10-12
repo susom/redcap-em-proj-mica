@@ -56,7 +56,7 @@ Two things to know:
 - **`screen_eligibility` gates on `calc_eligible = '1'`.** Answer `screen` so you
   come out eligible — age 18–65, has a cell phone, not military, not in prison, not
   pregnant — or the chain stops there and never reaches consent.
-  ([`../topics/screening/ELIGIBILITY_GATE.md`](../topics/screening/ELIGIBILITY_GATE.md))
+  (`../topics/screening/ELIGIBILITY_GATE.md` (removed 2026-10-12))
 - ⚠️ **`person_obtaining_consent` has auto-continue OFF**, so the chain **stops
   there** even though the next survey resolves to `baseline1`. That form is the
   staff consent-witness signature. In the real study a CRC is present at the ED and
@@ -149,7 +149,7 @@ contains only `study_group`: the login prompt appeared, the phone number was
 accepted, and the chat mounted.
 
 This also **resolves the arm-3 problem** flagged in
-[`../topics/auth/SURVEY_LOGIN.md`](../topics/auth/SURVEY_LOGIN.md): 1004 is the pre-randomisation event that
+`../topics/auth/SURVEY_LOGIN.md` (removed 2026-10-12): 1004 is the pre-randomisation event that
 *every* record passes through regardless of assigned arm, so one credential slot now
 covers arms 2 and 3. That is why the original design pointed here.
 

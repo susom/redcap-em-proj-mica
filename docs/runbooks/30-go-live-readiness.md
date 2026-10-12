@@ -131,7 +131,7 @@ setting, is [32](32-prod-runbook-crc-notify.md).
 
 - **Take screening and baseline off Arms 2 and 3.** REDCap offers a public screening link per arm,
   and the Arm-2 link skipped eligibility and consent in two browser tests. Event designations are
-  locked in Production. See [PI reply](../correspondence/2026-09-25-pi-screens-in-arm-1.md).
+  locked in Production. See PI reply (removed 2026-10-12).
   - **Checked against the 09-28 17:34 export:** no data, logic, ASI or alert depends on these.
   - **Untick on Day 1 (ED) of Arm 2 and Arm 3:** `pre_screen`, `auditc`, `screen2`, `contact_info`,
     `baseline1`, `ddq`, `audit`, `sip2r`, `bscq`, `drug_use`, `tsr`, plus `sms_code_check` on Arm 2.

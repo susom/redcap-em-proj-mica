@@ -1,5 +1,7 @@
 # Phase 3 Discovery — 2FA Replacement for MICA 3.0
 
+> **Summary only (2026-10-12).** The full analysis and design (§1–11) were removed from `docs/`; they are in git history as `08a-auth-options-analysis.md` and `08b-auth-recommended-design.md`. The configuration that was built is in [10-auth-implementation-pid257.md](10-auth-implementation-pid257.md).
+
 **SOW item:** Discovery → "Identify a 2FA Replacement"
 **Status:** DISCOVERY / RECOMMENDATION — awaiting PI + security sign-off. No code changed.
 **Written:** 2026-08-17 · **Revised:** 2026-08-17 against the as-built PID 257 · **Branch:** `mica-phase-3`
@@ -7,17 +9,12 @@
 
 > **Revision note.** The researcher-provided structure for PID 257 landed after the first
 > draft. It was audited field-by-field — see
-> [`09-pid-257-structure-audit.md`](../../archive/09-pid-257-structure-audit.md) — and this memo revised
+> `09-pid-257-structure-audit.md` (removed 2026-10-12) — and this memo revised
 > against it. **The options analysis (§4) and ranking (§5) did not change**; everything
 > load-bearing in the recommendation held. Three things did: the chat has no host instrument
 > yet (§6.1), no date-of-birth field exists so the credential choice changed (§6.1), and the
 > study has its own `check_code` passcode pattern that must be reconciled rather than
 > duplicated (§6.1a).
-
-## Parts
-
-- [08a — 2FA replacement: current state, requirements and options (§1–5)](08a-auth-options-analysis.md): §1 current state, §2 requirements, §3 what REDCap provides natively (Survey Login semantics, delivery, link expiry), §4 options, §5 decision matrix.
-- [08b — 2FA replacement: recommended design and rollout (§6–11)](08b-auth-recommended-design.md): §6 target design (incl. the one-credential-slot multi-arm constraint), §7 Track A remediation, §8 session binding, §9 session-window routing, §10 plan impact, §11 feasibility spike.
 
 
 ## SOW obligations and where they are answered

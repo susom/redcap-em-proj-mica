@@ -226,7 +226,7 @@ back with no counselor persona — the model introduced itself as Claude — bec
 `baseline_arm_1` / `consent_date` against the R01 structure, so no prompt is
 assembled. The new `console.warn` in `callAjax()` announces this. The send path
 is fixed; supplying the R01 session context is
-[`09-pid-257-structure-audit.md`](../archive/09-pid-257-structure-audit.md) / Stage 2 work.
+`09-pid-257-structure-audit.md` (removed 2026-10-12) / Stage 2 work.
 
 **Still worth doing later:** the Dexie identity cache disappears entirely once
 participant identity is server-derived (`07` decision 8 / Stage 1 §1.6). This fix

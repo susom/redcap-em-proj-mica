@@ -1,6 +1,6 @@
 # Phase 3 — Detailed implementation plan
 
-Work breakdown for the stages defined in [`../03-implementation-stages.md`](../03-implementation-stages.md),
+Work breakdown for the stages defined in `../03-implementation-stages.md` (removed 2026-10-12),
 against the revised storage design in [`../../reference/02-data-model.md`](../../reference/02-data-model.md)
 (REDCap fields / EM log / Entity tables — revised 2026-08-11). Each stage has
 its own file with tasks, concrete file paths, code contracts, tests, and an

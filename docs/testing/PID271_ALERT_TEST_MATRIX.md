@@ -134,7 +134,7 @@ SMS alerts (01, 03, 06, 08, 11, 13) carry an empty `email_to`, because their rec
 `phone_number_to`. So they are converted to an email with no recipient and vanish.
 
 `twilio_enabled_global` is `1` on this instance, so the project column is the only thing missing.
-This is prerequisite **P1** in [`README.md`](../archive/alerts-257/README.md#production-replication-checklist); it does
+This is prerequisite **P1** in `README.md` (removed 2026-10-12); it does
 not travel with any export, which is why a project copied to mimic prod loses it.
 
 **This blocks all six SMS alerts independently of the prefix bug.** Fixing the prefixes alone will
@@ -579,14 +579,14 @@ class of drift on its own. **After any UI visit to the module's config page, re-
 
 1. **It does not affect alerts 01–22.** ESMS runs the weekly check-in over its *own* Twilio
    credentials and ignores `twilio_modules_enabled` entirely
-   ([`ARM3_WEEKLY_SMS_BUILD.md` §1a](../archive/ARM3_WEEKLY_SMS_BUILD_268.md)). The two mechanisms share a vendor
+   (`ARM3_WEEKLY_SMS_BUILD.md` §1a (removed 2026-10-12)). The two mechanisms share a vendor
    and nothing else. Section 2's blocker is still a blocker.
 2. **Nothing will send.** The module is inert until an ASI with `@ESMS` in its subject fires, and
    **PID 271 has no ASIs at all**.
 
 ## 10. The weekly-SMS build is not in 271 — and no longer in 268 either
 
-Checked while looking for the sender. [`ARM3_WEEKLY_SMS_BUILD.md`](../archive/ARM3_WEEKLY_SMS_BUILD_268.md)
+Checked while looking for the sender. `ARM3_WEEKLY_SMS_BUILD.md` (removed 2026-10-12)
 describes a PID 268 state that **no longer exists in the database**:
 
 | Piece the build doc records as done | 268 now | 271 |

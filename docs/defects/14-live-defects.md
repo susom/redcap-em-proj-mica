@@ -5,7 +5,7 @@ D1, D2, D3, D4, D6, D7, D8, D10, D11, D13, D16, D22, D23, D24, D25.** Still open
 D14, D15, D17-D21
 **Scope:** defects in the code as it stands on `mica-phase-3` @ `ab81cca`.
 These are distinct from the SOW migration work in
-[`07-chatbot-cleanup-securechatai.md`](../plan/07-chatbot-cleanup-securechatai.md):
+`07-chatbot-cleanup-securechatai.md` (removed 2026-10-12):
 they are broken now and do not need the phase-3 architecture to be fixed.
 
 > **Process note (project standard):** every item below must be reproduced in a

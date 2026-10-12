@@ -28,7 +28,7 @@ fields references at least one of five non-existent things:
 | `[time_diff]` | field | ❌ — no equivalent anywhere in the project |
 
 This is already recorded as a reference-integrity finding in
-[`09-pid-257-structure-audit.md §5`](../../archive/09-pid-257-structure-audit.md). Doc 19 exists because
+`09-pid-257-structure-audit.md §5` (removed 2026-10-12). Doc 19 exists because
 that audit deliberately proposed no fixes; this one maps the user-visible banner onto the
 audit and works out what the repair actually is.
 
@@ -94,7 +94,7 @@ reference as the blocker.
 
 ### Bucket B — already self-labelled dead; recommend deletion, not repair (5 fields)
 
-Per [`09 §5`](../../archive/09-pid-257-structure-audit.md) ("intentional cruft"), these are not defects.
+Per `09 §5` (removed 2026-10-12) ("intentional cruft"), these are not defects.
 Repairing them would mean inventing a `consent_date` and a `time_diff` for fields nobody
 intends to keep.
 

@@ -187,7 +187,7 @@ lands (or against a pilot-structured project).
 **Still the root cause:** the `null` comes from the R01/pilot event mismatch. This
 fix makes the failure honest and non-destructive; it does not make finalization
 *work* on PID 257. That is Stage 2 /
-[`09-pid-257-structure-audit.md`](../archive/09-pid-257-structure-audit.md).
+`09-pid-257-structure-audit.md` (removed 2026-10-12).
 
 ### D11 — `saveData` results: the OTP path failed *open*
 

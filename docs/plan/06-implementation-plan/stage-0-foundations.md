@@ -225,7 +225,7 @@ existing full-path E2E was re-run against it: **23/23, unchanged** — Survey Lo
 gate, chatbot load, three-turn conversation with context retained, single JS/CSS
 bundle, desktop + iPhone 13. The one known gap is also unchanged: End Session
 still reports that the project is not configured for MICA sessions, which is the
-Stage 2 / [`09`](../../archive/09-pid-257-structure-audit.md) G1/G4 work, not a regression.
+Stage 2 / `09` (removed 2026-10-12) G1/G4 work, not a regression.
 
 ## Implementation record — 0.4 (2026-08-19)
 

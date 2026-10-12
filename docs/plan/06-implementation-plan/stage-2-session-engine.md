@@ -64,7 +64,7 @@ Resolution rules (`01-architecture.md §3`):
 ### 2.3 PID 257 dictionary + auth (revised 2026-08-17 against the as-built project)
 
 > Rewritten against the real dictionary — see
-> [`09-pid-257-structure-audit.md`](../../archive/09-pid-257-structure-audit.md) and the revised
+> `09-pid-257-structure-audit.md` (removed 2026-10-12) and the revised
 > [`08-auth-discovery.md §6`](../../topics/auth/08-auth-discovery.md). The researcher structure is in
 > place (262 fields / 27 instruments / 18 surveys, 0 records); several assumptions here
 > were wrong and are corrected below.

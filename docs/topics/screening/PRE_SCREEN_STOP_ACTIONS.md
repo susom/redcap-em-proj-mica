@@ -25,7 +25,7 @@ four stop actions led straight into AUDIT-C:
 | `s_interest`: … interested in completing the screen …? | No |
 
 This was first measured on 2026-09-25 on a copy of the PI's export
-([`../../correspondence/2026-09-25-pi-screens-in-arm-1.md`](../../correspondence/2026-09-25-pi-screens-in-arm-1.md)),
+(`../../correspondence/2026-09-25-pi-screens-in-arm-1.md` (removed 2026-10-12)),
 but the fix never reached 279.
 
 **Reproduced on 279 in the browser** with `node e2e/eligibility-calc.js stops 279 leak`, on desktop

@@ -1,9 +1,9 @@
 # Arm 3 weekly SMS: rebuilt on PID 271 (2026-09-23)
 
 **Status:** built and verified on localhost PID 271. **The invitation is INACTIVE**, so nothing sends.
-**Prod:** not touched. Follow [ARM3_WEEKLY_SMS_PROD_RUNBOOK.md](../../runbooks/arm3-weekly-sms-prod.md).
+**Prod:** not touched from here. Its step-by-step prod runbook (ARM3_WEEKLY_SMS_PROD_RUNBOOK.md) was removed from `docs/` on 2026-10-12 and is in git history.
 
-Background: the original build on PID 268 ([ARM3_WEEKLY_SMS_BUILD.md](../../archive/ARM3_WEEKLY_SMS_BUILD_268.md))
+Background: the original build on PID 268 (ARM3_WEEKLY_SMS_BUILD.md (removed 2026-10-12))
 was reverted on 2026-09-21 on request, and 268 was deleted the next day. PID 271 was copied from
 prod, and prod never had the weekly SMS, so 271 didn't have it either. The weekly SMS is **not an
 alert**. It is an Automated Survey Invitation (ASI) on `sunday`, so it never appears under Alerts &

@@ -99,7 +99,7 @@ after `:2822` does not run. Those requests would otherwise have produced a blank
 - **Designating `admin` on every event** so the field can hold a per-event value: a structural change
   on production for a routing problem.
 - **Moving the redirect back to `tsr`**: reverses the Day-1 flow rebuild's decision
-  ([`26-prod-runbook-day1-flow.md`](../../runbooks/26-prod-runbook-day1-flow.md)).
+  (`26-prod-runbook-day1-flow.md` (removed 2026-10-12)).
 
 ## 5. Verified after the fix
 

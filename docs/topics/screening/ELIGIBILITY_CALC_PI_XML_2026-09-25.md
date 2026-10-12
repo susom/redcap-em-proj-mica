@@ -22,7 +22,7 @@ local project built from that file (**PID 272**). **Not applied to PID 271 or pr
 >   reference the deleted `randomization_date`.
 >
 > Evidence and the full table:
-> [`../../correspondence/2026-09-25-pi-screens-in-arm-1.md`](../../correspondence/2026-09-25-pi-screens-in-arm-1.md).
+> `../../correspondence/2026-09-25-pi-screens-in-arm-1.md` (removed 2026-10-12).
 
 ---
 
@@ -149,7 +149,7 @@ Screening instruments in the PI's XML compared with PID 271:
 
 The survey chain is unchanged: `pre_screen` → `auditc` → `screen2` → `screen_eligibility` →
 `consent`, all auto-continue. The only condition is `[calc_screen_result] = '1'` on
-`screen_eligibility`, from [`ELIGIBILITY_GATE.md`](ELIGIBILITY_GATE.md).
+`screen_eligibility`, from `ELIGIBILITY_GATE.md` (removed 2026-10-12).
 
 ---
 
@@ -237,7 +237,7 @@ everyone, so the wrong one stops every participant at `pre_screen`.
 The 10:58 version was entered through Survey Settings on 272 (`eligibility-calc.js gate`), where
 REDCap's validator reported Valid, then re-walked (`run 272 gated`, **36/36**). Every `pre_screen` stop now
 ends at `pre_screen`, and eligible men and women still reach consent. Survey settings do not
-travel in the Data Dictionary; see [`../../archive/alerts-257/PROD_PROMOTION.md`](../../archive/alerts-257/PROD_PROMOTION.md).
+travel in the Data Dictionary; see `../../archive/alerts-257/PROD_PROMOTION.md` (removed 2026-10-12).
 
 The `screen2` stops (no phone, pregnant) still continue to `screen_eligibility`. With this
 equation, those participants score `2` and see the resources message. That was left alone because

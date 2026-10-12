@@ -177,7 +177,7 @@ needs to produce both. Nothing in this plan can proceed on a project with no all
 
 **This is the part most likely to be missed.** `randomization_date` is a plain text field
 with **no action tag**, typed by hand by the CRC today. It is the anchor for every reminder
-ladder — 13 references in `docs/archive/alerts-257/MICA_257_alerts_import.csv` and 12 in its generator,
+ladder — 13 references in `MICA_257_alerts_import.csv` (the PID 257 alerts import, removed 2026-10-12) and 12 in its generator,
 covering alerts 02–14 ([`22-minimum-test-path.md`](../../testing/22-minimum-test-path.md) §4 calls it
 "the anchor for **every** reminder ladder").
 

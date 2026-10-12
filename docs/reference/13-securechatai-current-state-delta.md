@@ -1,7 +1,7 @@
 # 13 — SecureChatAI current-state delta (agent loop, hooks, response contract)
 
 **Status:** EVIDENCE (verified against code 2026-08-18)
-**Why this doc exists:** [`07-chatbot-cleanup-securechatai.md`](../plan/07-chatbot-cleanup-securechatai.md)
+**Why this doc exists:** `07-chatbot-cleanup-securechatai.md` (removed 2026-10-12)
 was written 2026-08-13. SecureChatAI has since gained a built-in agent loop,
 a tool framework, and pre/post tool-use hooks. This doc records the **verified**
 consumer-facing contract as of `secure_chat_ai_v9.9.9` @ `c847be0`, corrects the

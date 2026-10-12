@@ -2,7 +2,7 @@
 
 **Status:** verified end-to-end on localhost PID 268, 2026-09-15. One defect found and fixed.
 **Audience:** engineering. The stakeholder-facing version is
-[2026-09-15-statistician-reply.md](../../correspondence/2026-09-15-statistician-randomization.md).
+2026-09-15-statistician-reply.md (removed 2026-10-12).
 
 Supersedes the "randomization is disabled, so the allocation field had to be invented" framing in
 [../session/15-arm-materialization.md](../session/15-arm-materialization.md), which
@@ -27,7 +27,7 @@ was written against PID 257 before the built-in module was turned on.
 > [../../runbooks/30-go-live-readiness.md](../../runbooks/30-go-live-readiness.md).
 >
 > **"Why are screens logged under an arm?"** is answered for the PI in
-> [2026-09-25-pi-reply-screens-in-arm-1.md](../../correspondence/2026-09-25-pi-screens-in-arm-1.md). It covers
+> 2026-09-25-pi-reply-screens-in-arm-1.md (removed 2026-10-12). It covers
 > renaming arm 1 (safe: display name only) and the per-arm public screening link. That link skips
 > eligibility and consent and was reproduced in a browser.
 

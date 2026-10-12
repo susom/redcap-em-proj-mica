@@ -144,7 +144,7 @@ runs at **Day 1 (ED)** (`mica_ed_session` instrument, arms 2 & 3) and
   in the ED) plus REDCap-native **Survey Login** scoped to the two MICA chat
   surveys. Open question #7 is answered (participant's own device at Day 1). See
   [`08-auth-discovery.md`](../topics/auth/08-auth-discovery.md) for the design and
-  [`09-pid-257-structure-audit.md`](../archive/09-pid-257-structure-audit.md) for the
+  `09-pid-257-structure-audit.md` (removed 2026-10-12) for the
   as-built constraints (no `ui_hosting_instrument`, no DOB field).
 - Session hosts: `mica_ed_session` (Day 1, arms 2 & 3) and
   `mica_booster_session` (Month 3, arms 2 & 3) — one survey per window, so the
