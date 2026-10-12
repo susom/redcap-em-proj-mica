@@ -20,8 +20,8 @@ mechanism, and none of those belong in a running pilot.
 
 ## Unreleased — `mica-phase-3` (R01)
 
-Plan and rationale: [`docs/phase-3-handoff/`](docs/phase-3-handoff/README.md).
-Stage tracker: [`06-implementation-plan/README.md`](docs/phase-3-handoff/06-implementation-plan/README.md).
+Plan and rationale: `docs/phase-3-handoff/` (removed 2026-10-12).
+Stage tracker: [`06-implementation-plan/README.md`](docs/plan/06-implementation-plan/README.md).
 
 ### Stage 0 — Foundations
 
@@ -218,7 +218,7 @@ alias is `gpt-5-6-sol`.
 ### No SafetyScan had ever succeeded on a GPT alias — the provider refused the schema (D23)
 
 Found while checking the PI's requirement that a CRC hears about a critical finding within 5 minutes
-([`31`](docs/phase-3-handoff/31-critical-finding-crc-notify.md)). Azure's strict structured output
+([`31`](docs/topics/safetyscan/31-critical-finding-crc-notify.md)). Azure's strict structured output
 refuses `uniqueItems`, and the pinned output schema uses it twice. So every scan was an HTTP 400:
 three attempts, then manual review. The session reached its reviewers as "could not be screened"
 about 7.5 minutes after End Session, never as a finding. Reproduced as a participant: a disclosed
@@ -309,7 +309,7 @@ UI bypassed entirely by calling the AJAX action from the page context, which is 
 does — the server answers `Session already completed.` and records nothing. Regression test:
 `npm run e2e:reentry`. Full write-up, including the unchanged `edit_completed_response = 1` survey
 setting that lets REDCap serve the page in the first place:
-[`docs/session-lifecycle/`](docs/session-lifecycle/README.md).
+[`docs/topics/session/`](docs/topics/session/session-lifecycle.md).
 
 ### Arm placement worked by accident on PID 257 and not at all on PID 268
 
@@ -321,7 +321,7 @@ methods** — so the check was always false and the query always ran against the
 `\Records::getDataTable()`, the resolver the module's seven other call sites already use.
 
 Invisible on PID 257, whose `data_table` *is* `redcap_data` — which is why
-[`15-arm-materialization.md`](docs/phase-3-handoff/15-arm-materialization.md)'s 12/12 verification
+[`15-arm-materialization.md`](docs/topics/session/15-arm-materialization.md)'s 12/12 verification
 passed. On PID 268 (`redcap_data7`) the query matched 0 rows where the real table has 33, so the
 method always answered "not in this arm", with two consequences:
 
@@ -340,7 +340,7 @@ writes to the other arm's event.
 
 Full verification, the two open protocol findings it turned up (the trigger does not require consent
 to be given; allocation precedes the whole baseline battery), and the reply to the study
-statistician: [`docs/randomization/`](docs/randomization/README.md).
+statistician: [`docs/topics/randomization/`](docs/topics/randomization/README.md).
 
 ### GPT-5.6 selectable — and it is reasoning-class, not a chat model
 
@@ -420,7 +420,7 @@ rather than silently rewritten.
 ### SecureChatAI conformance — SOW "update API calls, request/response handling"
 
 The three items `13 §7` listed as *must change for correctness* / *leaves value on
-the table*, scoped from [`18-sow-status-review.md`](docs/phase-3-handoff/18-sow-status-review.md) §5.
+the table*, scoped from `18-sow-status-review.md` (removed 2026-10-12) §5.
 
 - **A provider failure is no longer stored as counselor speech.** `callAI()` never
   throws; it rewrites a failure as an assistant message carrying a canned apology,
@@ -456,7 +456,7 @@ behaviour so a bypass upstream would fail it), **43/43 participant E2E**, lint c
 New: `close-expired-sessions` (off by default), `ed-session-window-hours` (24),
 `booster-session-window-days` (14), and the `mica_session_closer` cron. Closes the
 first of the three enforcement gates that
-[`18 §10 A6`](docs/phase-3-handoff/18-sow-status-review.md) listed as unowned after
+`18 §10 A6` (removed 2026-10-12) listed as unowned after
 the R01 session engine went out of scope.
 
 **The clock starts at the participant's first message**, per session type. A session
@@ -628,7 +628,7 @@ newlines, which orphaned each value onto its own line; and `<form>_complete` com
 event's `name` rather than `name_ext`, because the latter appends the arm and an allocation has no
 business being written into a prompt.
 
-Runbook: [`26-prod-runbook-day1-flow.md`](docs/phase-3-handoff/26-prod-runbook-day1-flow.md), which
+Runbook: `26-prod-runbook-day1-flow.md` (removed 2026-10-12), which
 ends with four open study decisions rather than implying they are settled.
 
 ### Day-1 flow rebuilt: ID split from demographics, and MICA reached after TSR
@@ -738,7 +738,7 @@ empty field.
 prompt, the canonical transcript, and the wrapped `response_format` — at all three
 levels: what MICA hands to `callAI()`, what SecureChatAI's parameter filter leaves, and
 the bytes on the wire. Snapshot and commentary in
-[`23-safetyscan-payload.md`](docs/phase-3-handoff/23-safetyscan-payload.md).
+[`23-safetyscan-payload.md`](docs/reference/23-safetyscan-payload.md).
 
 The two existing options were both bad. Arming `capture-llm-payload.php` on a live scan
 writes PHI to disk, and its `shape` mode covers the counselor path only and deliberately
@@ -805,11 +805,11 @@ was used — absent means the validated prompt unmodified, the same convention
 - **The pilot code paths were deliberately NOT deleted.** Decision 5 conditions that on
   Stage 2, which is out of scope; `getSystemContextForRecord()` is the only implementation of
   the session-completed / study-completed gates, so deleting it would turn a gap into a
-  blank page. Reasoning in [`18 §5.1`](docs/phase-3-handoff/18-sow-status-review.md).
+  blank page. Reasoning in `18 §5.1` (removed 2026-10-12).
 
 ### Earlier phase-3 work on this branch
 
-Landed through the live-defect pass ([`14-live-defects.md`](docs/phase-3-handoff/14-live-defects.md))
+Landed through the live-defect pass ([`14-live-defects.md`](docs/defects/14-live-defects.md))
 and the auth implementation rather than the stage sequence — see the "State as of
 2026-08-19" section of the stage tracker for which stage each piece belongs to:
 
@@ -822,4 +822,4 @@ and the auth implementation rather than the stage sequence — see the "State as
   (D11, D16); model context rebuilt on restore (D8); the send button no longer
   hangs on an empty context (D7, D22).
 - Automatic arm placement from `study_group`
-  ([`15-arm-materialization.md`](docs/phase-3-handoff/15-arm-materialization.md)).
+  ([`15-arm-materialization.md`](docs/topics/session/15-arm-materialization.md)).

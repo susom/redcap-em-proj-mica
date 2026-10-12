@@ -26,7 +26,7 @@
  * `sunday.bd_1..bd_11`, and 35 more). This script touches ONLY the four `admin` fields listed
  * in TARGETS - the rest are a separate, researcher-owned cleanup. It also does not touch the
  * fields that need a `consent_date` / `group` / `dummy_email` / `time_diff` decision. See
- * ../19-admin-form-logic-errors.md for the full three-bucket split.
+ * ../../topics/project/19-admin-form-logic-errors.md for the full three-bucket split.
  *
  * NOTE: this writes redcap_metadata directly, which only takes effect immediately while the
  * project is in DEVELOPMENT status. In production REDCap requires the draft/approval workflow -

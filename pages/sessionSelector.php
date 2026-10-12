@@ -4,7 +4,7 @@
 // Authorization comes first, before any state-changing branch. Until 2026-08-19 the POST handler
 // below ran *before* any rights check at all - validatePermissions() was only consulted inside
 // fetchIncompleteSessions(), further down the page - so anyone who could open this page could close
-// an arbitrary participant's session. See docs/phase-3-handoff/14-live-defects.md D4.
+// an arbitrary participant's session. See docs/defects/14-live-defects.md D4.
 //
 // CSRF is already handled upstream and does not need a token here: the framework calls
 // checkCSRFToken() in ExternalModules/index.php before this file is included (framework 14 >=

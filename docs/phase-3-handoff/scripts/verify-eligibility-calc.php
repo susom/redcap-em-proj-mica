@@ -15,7 +15,7 @@
  * Records are named TT-<run>-<n>, so a re-run never touches an earlier run's records. Scratch
  * projects only: it writes ~1,000 records.
  *
- * See docs/screening/ELIGIBILITY_CALC_PI_XML_2026-09-25.md.
+ * See docs/topics/screening/ELIGIBILITY_CALC_PI_XML_2026-09-25.md.
  */
 
 $pid = (int) ($argv[1] ?? 0);

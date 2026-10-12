@@ -20,7 +20,7 @@
  * upload would silently overwrite the wrong rows. Export from the target, transform, upload to the
  * same target. The script records the source ids in its report so a mismatch is visible.
  *
- * WHAT IT CHANGES, per docs/alerts/PID271_ALERT_TEST_MATRIX.md sections 6 and 7c:
+ * WHAT IT CHANGES, per docs/testing/PID271_ALERT_TEST_MATRIX.md sections 6 and 7c:
  *   - enrolment-field references in `alert-condition`, `phone-number-to`, `email-to`,
  *     `send-on-field` and `alert-message` are re-pointed at the arm-1 Day-1 event
  *   - the +98-day booster rungs get their own wording and subject, so they stop being

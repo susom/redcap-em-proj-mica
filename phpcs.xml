@@ -7,7 +7,7 @@
         pilot-era files are named as exclusions. A new file is therefore linted by default and
         cannot escape the standard by being forgotten; the exclusion list only ever shrinks, one
         entry per legacy file cleaned. (Stage 0.5 open decision 1 in
-        docs/phase-3-handoff/06-implementation-plan/stage-0-foundations.md: scoping phpcs at
+        docs/plan/06-implementation-plan/stage-0-foundations.md: scoping phpcs at
         today's MICA.php would be red from the first run and stay red, which is the opposite of
         "every stage ends green".)
     </description>

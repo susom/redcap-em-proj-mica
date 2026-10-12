@@ -29,7 +29,7 @@
  * WHY TWO PASSES. Running only against whatever records a project happens to hold is circular: an
  * alert that reads enrolment data at arm 3's Day 1 will "pass" if someone once seeded a test
  * record there, and fail for every real participant. MICA enrols everyone at arm 1's Day 1 and
- * materializes only `study_group` into the assigned arm (docs/alerts/ALERT_EVENT_PREFIX_BUG.md
+ * materializes only `study_group` into the assigned arm (docs/reference/ALERT_EVENT_PREFIX_BUG.md
  * section 3), so:
  *
  *   PASS A - LIVE   only (record, event) pairs where the record is really in that event's arm.
@@ -167,7 +167,7 @@ const PREFIX_FIELDS = ['randomization_date', 'phonen', 'email', 'choice_fup_deli
                        'study_withdrawn', 'sms_stop', 'first_name', 'calcrnd', 'dummy_email'];
 
 /**
- * Rewrite one alert attribute the way docs/alerts/ALERT_EVENT_PREFIX_BUG.md section 5 prescribes:
+ * Rewrite one alert attribute the way docs/reference/ALERT_EVENT_PREFIX_BUG.md section 5 prescribes:
  * point every enrolment-field reference at arm 1's Day 1, whether it is currently prefixed with
  * another arm's Day 1 or not prefixed at all. `[event-name]` clauses are left alone - those
  * correctly name the firing event.

@@ -5,7 +5,7 @@
 //   docker exec <web> php .../scripts/e2e-admin-form-user.php 271 teardown
 //
 // WHY THE SAVE LANDS ON month_3_arm_3 AND NOT ON THE ANCHOR. Measured in §7b of
-// docs/alerts/PID271_ALERT_TEST_MATRIX.md: changing `randomization_date` at event 1104 - the value
+// docs/testing/PID271_ALERT_TEST_MATRIX.md: changing `randomization_date` at event 1104 - the value
 // the alert actually reads - queues nothing, twice over (browser and API). The save has to land on
 // the alert's own firing event. So this opens the booster-session form at Month 3 and saves it,
 // which is also what a coordinator does when chasing a participant who has not attended.

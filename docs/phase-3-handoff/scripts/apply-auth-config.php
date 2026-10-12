@@ -2,8 +2,8 @@
 /**
  * Applies the Option B authentication configuration to a MICA REDCap project.
  *
- *   docs/phase-3-handoff/08-auth-discovery.md   - the design
- *   docs/phase-3-handoff/10-auth-implementation-pid257.md - what this did to PID 257, and why
+ *   docs/topics/auth/08-auth-discovery.md   - the design
+ *   docs/topics/auth/10-auth-implementation-pid257.md - what this did to PID 257, and why
  *
  * Idempotent: safe to re-run. Run verify-auth-config.php afterwards.
  *

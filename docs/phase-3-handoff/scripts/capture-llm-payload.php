@@ -11,7 +11,7 @@
  *
  * Commands: on | off | status | list | last | shape
  *
- * Full write-up: ../20-llm-request-capture.md
+ * Full write-up: ../../reference/20-llm-request-capture.md
  *
  * ## What this is for
  *

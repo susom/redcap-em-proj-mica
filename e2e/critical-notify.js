@@ -1,5 +1,5 @@
 // Critical finding -> CRC email within 5 minutes of End Session (PID 271).
-// See docs/phase-3-handoff/31-critical-finding-crc-notify.md.
+// See docs/topics/safetyscan/31-critical-finding-crc-notify.md.
 //
 //   docker run -d --rm --name mica_mailpit --network redcap_2023_1_redcap_network \
 //       --network-alias mailhog -p 18025:8025 axllent/mailpit:latest        # the mail sink

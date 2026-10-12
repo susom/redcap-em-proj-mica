@@ -1,5 +1,5 @@
 // Randomization trigger E2E (PID 271): both ways a record gets randomized, and the one that must not.
-// See docs/randomization/TRIGGER_TSR_COMPLETE_OR_MANUAL.md.
+// See docs/topics/randomization/TRIGGER_TSR_COMPLETE_OR_MANUAL.md.
 //
 //   docker exec <web> php .../scripts/seed-rand-test.php 271 TRIGTSR01     # and TRIGNEG01, TRIGMAN01
 //   docker exec <web> php .../scripts/e2e-admin-form-user.php 271 setup --randomize

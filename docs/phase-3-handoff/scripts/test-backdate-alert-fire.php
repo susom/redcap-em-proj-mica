@@ -7,7 +7,7 @@
  * Default: pid 271, record 11, date 2026-06-01. Without --save it only prints the prediction and
  * the current state; --save performs the write.
  *
- * WHY THIS EXISTS. docs/alerts/PID271_ALERT_TEST_MATRIX.md section 6 applied the event-prefix fix,
+ * WHY THIS EXISTS. docs/testing/PID271_ALERT_TEST_MATRIX.md section 6 applied the event-prefix fix,
  * and the harness showed all four attributes resolving. That is a static check. This is the
  * dynamic one: does REDCap's own sender, on its own cron, actually queue and deliver?
  *

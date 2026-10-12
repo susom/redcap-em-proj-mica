@@ -9,7 +9,7 @@
 // group working correctly. With the balanced 1:1:1 dev table, one seed in three lands on SC;
 // check `study_group` before blaming the test.
 //
-// Guards the bug in docs/session-lifecycle/README.md: End Session left the host instrument's
+// Guards the bug in docs/topics/session/session-lifecycle.md: End Session left the host instrument's
 // form status unwritten - REDCap refuses `<form>_complete` for a survey response (`survey_403`,
 // no bypass) - so `sessionIsClosed()` always said "open" and the browser Back button handed the
 // participant a live chat, whose turns were appended to a transcript that had already been

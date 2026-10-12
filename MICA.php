@@ -232,7 +232,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
         // which removed the framework's design-rights default for BOTH links - so any user with
         // access to the project could open "Mica Session Admin". Combined with the missing rights
         // check in pages/sessionSelector.php, that let them close any participant's session.
-        // See docs/phase-3-handoff/14-live-defects.md D4.
+        // See docs/defects/14-live-defects.md D4.
         // The review dashboard is gated by the user's REDCap ROLE, not by design rights.
         //
         // The framework's default is design rights, and applying it here meant only a project
@@ -924,7 +924,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
              * That stops being true the moment the redirect moves onto the closing page itself,
              * which is where PID 268 now is: there is nothing after it, the fallback would name the
              * survey carrying the redirect, and the handoff page IS the honest ending. Hence the
-             * guard below - see docs/phase-3-handoff/27-arm1-redirect-loop.md.
+             * guard below - see docs/topics/session/27-arm1-redirect-loop.md.
              */
             $fallbackUrl = null;
             $fallbackForm = trim((string) $this->getProjectSetting('session-fallback-instrument', $project_id));
@@ -1112,7 +1112,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * carries the `[ed_session_url]` redirect, is designated at every event of every arm. Piped at
      * any of those other events it resolves to nothing, and REDCap redirects to `''` anyway
      * (`EdSessionLink::redirectPipesToNothing()`). That is every intervention participant finishing
-     * Day 1, and everyone finishing a follow-up. See docs/phase-3-handoff/29-close-empty-redirect.md.
+     * Day 1, and everyone finishing a follow-up. See docs/topics/session/29-close-empty-redirect.md.
      *
      * `state=done` because in every such case the participant has just completed the study's
      * closing survey: there is nothing after it.
@@ -1479,7 +1479,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * through *before* randomization: on the R01 structure that is arm 1 Day 1, which is also where
      * the participant chain runs and therefore where a survey redirect can pipe the value with no
      * event prefix. Hardcoding the id is what broke the survey-login credential once already
-     * (docs/phase-3-handoff/22-minimum-test-path.md §Findings - written at 1008, read at 1004).
+     * (docs/testing/22-minimum-test-path.md §Findings - written at 1008, read at 1004).
      */
     private function firstEventHostingForm($proj, string $formName): ?int
     {
@@ -2708,7 +2708,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * Re-entry is possible in the first place because the host surveys have
      * `edit_completed_response = 1` (and `save_and_return = 1`), so REDCap re-serves a completed
      * response rather than refusing it. That is a project setting, not something this code should
-     * flip silently - see docs/session-lifecycle/README.md.
+     * flip silently - see docs/topics/session/session-lifecycle.md.
      */
     private function sessionIsClosed($recordId, ?string $hostInstrument, ?int $eventId = null): bool
     {
@@ -3198,7 +3198,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * already-finalized transcript.
      *
      * The call order is fixed, so this write now succeeds - but it is still not the enforcement,
-     * because it is one reordering away from failing again. See docs/session-lifecycle/README.md.
+     * because it is one reordering away from failing again. See docs/topics/session/session-lifecycle.md.
      *
      * What actually closes a session:
      *   - `markSurveyResponseSubmitted()` stamps `redcap_surveys_response.completion_time`, and
@@ -4408,7 +4408,7 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * The decision itself lives in UserRightsCheck (unit-tested); this method only supplies the
      * REDCap facts. It used to read `current(getPrivileges(PROJECT_ID)[PROJECT_ID])`, which returns
      * the alphabetically-first user in the project rather than the caller - see UserRightsCheck's
-     * docblock and docs/phase-3-handoff/14-live-defects.md D4.
+     * docblock and docs/defects/14-live-defects.md D4.
      *
      * @return bool
      */

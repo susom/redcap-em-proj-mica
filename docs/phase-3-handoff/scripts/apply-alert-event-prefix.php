@@ -10,9 +10,9 @@
  * WHAT THIS FIXES. MICA enrols every participant at arm 1's Day 1 and materializes only
  * `study_group` into the assigned arm, so `phonen`, `email`, `randomization_date`,
  * `choice_fup_delivery`, `study_withdrawn` and `sms_stop` exist at that one event and nowhere else
- * (docs/alerts/ALERT_EVENT_PREFIX_BUG.md section 3, true by construction). Alerts 02-14 read those
+ * (docs/reference/ALERT_EVENT_PREFIX_BUG.md section 3, true by construction). Alerts 02-14 read those
  * fields either unprefixed at the participant's own arm event (02-04) or prefixed with
- * `[day_1_ed_arm_2|3]` (05-14). Both resolve to blank. See docs/alerts/PID271_ALERT_TEST_MATRIX.md.
+ * `[day_1_ed_arm_2|3]` (05-14). Both resolve to blank. See docs/testing/PID271_ALERT_TEST_MATRIX.md.
  *
  * WHY ALL FOUR ATTRIBUTES, ALWAYS. This is the whole point of the script existing rather than
  * someone editing the logic box. Alert 11 on PID 271 was hand-fixed in the condition only, leaving

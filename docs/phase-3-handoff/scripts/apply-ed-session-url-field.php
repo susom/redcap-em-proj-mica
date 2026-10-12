@@ -127,4 +127,4 @@ echo "  2. Upload allocation tables for BOTH development and production.\n";
 echo "  3. Set the handoff survey's 'Redirect to a URL' to [$field].\n";
 echo "  4. Name a field in the module's 'Stamp the randomization date' setting, or alerts\n";
 echo "     02-14 lose their anchor once randomization is automated.\n";
-echo "See docs/phase-3-handoff/24-ed-session-handoff.md\n";
+echo "See docs/topics/session/24-ed-session-handoff.md\n";
