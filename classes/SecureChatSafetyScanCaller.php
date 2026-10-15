@@ -2,6 +2,7 @@
 
 namespace Stanford\MICA;
 
+require_once __DIR__ . "/ModelSelection.php";
 require_once __DIR__ . "/ProviderFailure.php";
 require_once __DIR__ . "/SafetyScanCallerInterface.php";
 
@@ -32,9 +33,13 @@ require_once __DIR__ . "/SafetyScanCallerInterface.php";
  */
 class SecureChatSafetyScanCaller implements SafetyScanCallerInterface
 {
-    /** Mirrors SecureChatAI.php:399. Duplicated knowingly - see schemaWouldBeSent(). */
-    private const OPENAI_SCHEMA_MODELS = [
+    /**
+     * Mirrors SecureChatAI.php:399. Duplicated knowingly - see schemaWouldBeSent(). Public so the
+     * settings dialog offers the SafetyScan only aliases it can actually be screened with.
+     */
+    public const OPENAI_SCHEMA_MODELS = [
         'gpt-4-1', 'gpt-4-1-nano', 'gpt-5', 'gpt-5-4', 'gpt-5-4-nano', 'gpt-5-6-sol', 'gpt-5-6-luna', 'gpt-5-6-terra',
+        'gpt-5-5', 'gpt-5-2', 'gpt-5-4-mini', 'gpt-4-1-mini',
         'o1', 'o3', 'o3-mini', 'o4-mini',
     ];
 
@@ -76,6 +81,20 @@ class SecureChatSafetyScanCaller implements SafetyScanCallerInterface
         string $transcriptJson,
         array $outputSchema
     ): array {
+        // Before anything is sent: under high-threshold a blank, placeholder or unregistered alias, or
+        // a SecureChatAI that cannot honour the policy, is refused here rather than at the provider.
+        // `service_error` is the transient class, so it retries and then lands in manual review -
+        // never a clean screen.
+        $refusal = $this->module->tokenPolicyRefusal(ModelSelection::SAFETYSCAN, $modelAlias, $this->projectId);
+        if ($refusal !== null) {
+            return $this->failure(
+                'service_error',
+                'Not sent: refused under the AI token policy. ' . $refusal,
+                microtime(true),
+                false
+            ) + ['providerSchemaWithheld' => []];
+        }
+
         $provider = self::providerSchema($outputSchema);
         $result = $this->attempt($modelAlias, $systemPrompt, $transcriptJson, $outputSchema, $provider['schema']);
 
@@ -162,7 +181,7 @@ class SecureChatSafetyScanCaller implements SafetyScanCallerInterface
                         ['role' => 'user', 'content' => $transcriptJson],
                     ],
                     'json_schema' => $providerSchema,
-                ],
+                ] + $this->module->tokenPolicyParams($this->projectId),
                 $this->projectId,
                 // No username: the scan is a system action against a pseudonymous transcript, and
                 // there is no participant identity to attach even if one were wanted.
@@ -191,7 +210,10 @@ class SecureChatSafetyScanCaller implements SafetyScanCallerInterface
         // An explicit error survives when the caller is not the UI path; check it before the
         // heuristic, because a real error type is far better evidence than an absence of fields.
         if (isset($response['error'])) {
-            $message = is_string($response['error']) ? $response['error'] : json_encode($response['error']);
+            // SecureChatAI's sanitized refusals carry `error: true` and the reason in `message`.
+            $message = is_string($response['error'])
+                ? $response['error']
+                : (is_string($response['message'] ?? null) ? $response['message'] : json_encode($response['error']));
             return $this->failure(
                 $this->classifyErrorText((string) ($response['type'] ?? '') . ' ' . $message),
                 $message,
@@ -301,7 +323,8 @@ class SecureChatSafetyScanCaller implements SafetyScanCallerInterface
      */
     private function schemaWouldBeSent(string $modelAlias): bool
     {
-        return in_array($modelAlias, self::OPENAI_SCHEMA_MODELS, true);
+        // By family, as SecureChatAI does: `gpt-5-4-high-threshold-policy` is a gpt-5-4.
+        return in_array(ModelSelection::family($modelAlias), self::OPENAI_SCHEMA_MODELS, true);
     }
 
     /**

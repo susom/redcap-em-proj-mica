@@ -270,6 +270,77 @@ final class LaunchReadinessTest extends TestCase
 
     // ------------------------------------------------------------- gate 4, models
 
+    // High-threshold (AI token policy). The fake env's aliases are read as the active policy's, the
+    // way RedcapLaunchEnvironment reads `llm-model-high` / `safetyscan-model-alias-high` under high.
+
+    private function useHighThreshold(): void
+    {
+        $this->env->tokenPolicy = 'high';
+        $this->env->minimumTokenPolicy = 'standard';
+        $this->env->available = ['gpt-5-4-hi', 'gpt-5-6-sol'];
+        $this->env->counselor = 'gpt-5-4-hi';
+        $this->env->safetyScan = 'gpt-5-6-sol';
+    }
+
+    public function testHighThresholdWithRegisteredAliasesIsReady(): void
+    {
+        $this->useHighThreshold();
+
+        $this->assertSame([], $this->failedIds());
+        $this->assertStringContainsString('under the high-threshold policy', $this->byId()['models']->detail);
+    }
+
+    public function testHighThresholdOnASecureChatAIWithoutPoliciesBlocksLaunch(): void
+    {
+        // An older SecureChatAI ignores `token_policy` and would serve the standard set.
+        $this->useHighThreshold();
+        $this->env->supportsTokenPolicy = false;
+
+        $this->assertSame(['models'], $this->failedIds());
+        $this->assertStringContainsString('no token-policy support', $this->byId()['models']->detail);
+    }
+
+    public function testASecureChatAIMinimumAboveMICAsSwitchBlocksLaunch(): void
+    {
+        $this->env->minimumTokenPolicy = 'high';
+
+        $this->assertSame(['models'], $this->failedIds());
+        $this->assertStringContainsString('Minimum Token Policy', $this->byId()['models']->detail);
+        $this->assertStringContainsString('Use high-threshold AI models', $this->byId()['models']->howToFix);
+    }
+
+    public function testAPlaceholderAliasIsNamedAsAPlaceholder(): void
+    {
+        $this->useHighThreshold();
+        $this->env->safetyScan = 'placeholder-high-model-1';
+        $this->env->available[] = 'placeholder-high-model-1';   // even if something registered it
+
+        $this->assertSame(['models'], $this->failedIds());
+        $this->assertStringContainsString('placeholder', $this->byId()['models']->detail);
+        $this->assertStringContainsString('safetyscan', $this->byId()['models']->detail);
+    }
+
+    public function testABlankHighThresholdAliasNamesTheHighThresholdSetting(): void
+    {
+        $this->useHighThreshold();
+        $this->env->safetyScan = null;
+
+        $this->assertSame(['models'], $this->failedIds());
+        $this->assertStringContainsString('`safetyscan-model-alias-high`', $this->byId()['models']->howToFix);
+        $this->assertStringContainsString('high-threshold registry', $this->byId()['models']->howToFix);
+    }
+
+    public function testAHighThresholdAliasOnlyInTheStandardSetBlocksLaunch(): void
+    {
+        $this->useHighThreshold();
+        $this->env->counselor = 'gpt-4-1';   // a standard alias, not in the high-threshold registry
+
+        $this->assertSame(['models'], $this->failedIds());
+        $this->assertStringContainsString('high-threshold registry', $this->byId()['models']->detail);
+        $this->assertStringContainsString('gpt-4-1', $this->byId()['models']->detail);
+    }
+
+
     public function testAnUnregisteredAliasBlocksLaunch(): void
     {
         $this->env->safetyScan = 'gemini-3.5-flash';   // production candidate, not in the dev registry
