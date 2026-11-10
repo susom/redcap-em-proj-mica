@@ -11,8 +11,9 @@ require_once __DIR__ . "/TranscriptRecordBuilder.php";
  * every session, and rewriting identical values would put a data-change line in REDCap's logging
  * for every statement of every session on every pass.
  *
- * An existing instance beyond the desired count is cleared: every field blank, including the form
- * status, which with `overwrite` removes the instance. The set of statements only grows (see
+ * An existing instance beyond the desired count comes back as an all-blank row, which the sync
+ * deletes with REDCap::deleteRecord(). Saving the blanks instead would leave the instance behind with
+ * form status 0. The set of statements only grows (see
  * TranscriptRecordBuilder), so this is for a `no_reply` row that a late reply made untrue, and for
  * instances somebody added by hand.
  */

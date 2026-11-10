@@ -32,6 +32,12 @@ final class TranscriptRecordBuilderTest extends TestCase
     }
 
     /** @return array<string,mixed> */
+    private function at(string $id, string $role, string $content, string $timestamp): array
+    {
+        return ['message_id' => $id, 'speaker_role' => $role, 'content' => $content, 'timestamp' => $timestamp];
+    }
+
+    /** @return array<string,mixed> */
     private function transcript(int $logId, int $version, int $boundary, array $messages): array
     {
         return ['log_id' => $logId, 'version' => $version, 'supersedes_boundary' => $boundary, 'messages' => $messages];
@@ -142,6 +148,32 @@ final class TranscriptRecordBuilderTest extends TestCase
 
         self::assertSame(['L101', 'L102', 'L201', 'L202'], $this->column($rows, 'tx_message_id'));
         self::assertSame(['f1', '', '', 'f3'], $this->column($rows, 'tx_flag_finding_ids'));
+    }
+
+    public function testAReusedRecordIdDoesNotInheritTheDeletedRecordsSession(): void
+    {
+        // Record 1 chatted, was deleted, and a new record got ID 1. The finalizer stored the new
+        // session as a continuation (boundary after the old one), so both transcripts are in the slot.
+        $old = $this->transcript(900, 1, 0, [
+            $this->at('L101', 'participant', 'old', '2026-09-22T18:05:27+00:00'),
+            $this->at('L102', 'mica', 'old reply', '2026-09-22T18:05:40+00:00'),
+        ]);
+        $new = $this->transcript(950, 2, 102, [
+            $this->at('L201', 'participant', 'new', '2026-11-10T19:15:24+00:00'),
+            $this->at('L202', 'mica', 'new reply', '2026-11-10T19:15:30+00:00'),
+        ]);
+        $deleted = new \DateTimeImmutable('2026-11-10 11:14:02', new \DateTimeZone('America/Los_Angeles'));
+
+        $builder = $this->builder();
+        $rows = $builder->build('baseline', [$old, $new], [], $deleted);
+
+        self::assertSame(['L201', 'L202'], $this->column($rows, 'tx_message_id'));
+        self::assertSame(['1', '2'], $this->column($rows, 'tx_seq'));
+        self::assertSame(2, $builder->droppedBeforeCutoff());
+
+        // No deletion on record: nothing is cut.
+        self::assertCount(4, $builder->build('baseline', [$old, $new], []));
+        self::assertSame(0, $builder->droppedBeforeCutoff());
     }
 
     public function testHighlightedStatementsCarryTheQuoteAndTheReviewersDecision(): void
