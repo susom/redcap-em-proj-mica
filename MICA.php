@@ -35,6 +35,7 @@ require_once "classes/SessionWindow.php";
 // Used by the session closer to read a finalized transcript back for its first message time.
 require_once "classes/CanonicalJson.php";
 require_once "classes/TranscriptFinalizer.php";
+require_once "classes/RedcapTranscriptRecordSync.php";
 // Stage 4: the scan itself.
 require_once "classes/FindingThresholds.php";
 require_once "classes/FindingWriter.php";
@@ -2001,6 +2002,67 @@ class MICA extends \ExternalModules\AbstractExternalModule {
      * same window resolves to the same key and only the first one sends - which means a digest is not
      * lost because the server was busy at 07:00.
      */
+    /**
+     * Copies finalized sessions into the `mica_transcript` instrument, one instance per statement,
+     * so a report or the API can export them for coding. Every 15 minutes; a project without the
+     * instrument is skipped, so uploading the instrument is what turns this on. Idempotent: an
+     * unchanged session writes nothing. See RedcapTranscriptRecordSync and doc 33.
+     */
+    public function micaTranscriptRecordsCron($cronInfo = []): string
+    {
+        $summary = [];
+
+        foreach ($this->getProjectsWithModuleEnabled() as $projectId) {
+            try {
+                $result = $this->syncTranscriptRecords((int) $projectId);
+
+                if ($result['status'] === 'no_instrument') {
+                    continue;
+                }
+
+                if ($result['instances_written'] + $result['instances_cleared'] > 0 || $result['errors'] !== []) {
+                    $summary[] = sprintf(
+                        'pid %d: %s, %d session(s), %d statement(s) written, %d cleared%s',
+                        $projectId,
+                        $result['status'],
+                        $result['slots'],
+                        $result['instances_written'],
+                        $result['instances_cleared'],
+                        $result['errors'] === [] ? '' : ', errors: ' . implode('; ', $result['errors'])
+                    );
+                }
+            } catch (\Throwable $e) {
+                $summary[] = "pid $projectId: FAILED - " . $e->getMessage();
+                $this->emError('mica_transcript_records cron failed for one project', [
+                    'project_id' => $projectId,
+                    'error'      => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $summary === [] ? 'nothing to do' : implode('; ', $summary);
+    }
+
+    /**
+     * One project's transcript copy. Public so a CLI check can run it without waiting for the cron.
+     *
+     * @return array{status:string,slots:int,instances_written:int,instances_cleared:int,
+     *               records_written:int,skipped:array<string,int>,errors:list<string>}
+     */
+    public function syncTranscriptRecords(int $projectId, ?string $record = null): array
+    {
+        $result = (new RedcapTranscriptRecordSync($this))->syncProject($projectId, $record);
+
+        if ($result['errors'] !== []) {
+            $this->emError('mica_transcript copy had errors', [
+                'project_id' => $projectId,
+                'errors'     => $result['errors'],
+            ]);
+        }
+
+        return $result;
+    }
+
     public function micaDigestCron($cronInfo = []): string
     {
         $now = time();
