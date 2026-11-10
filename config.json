@@ -565,6 +565,13 @@
             "method": "micaSessionCloserCron",
             "cron_frequency": "3600",
             "cron_max_run_time": "1800"
+        },
+        {
+            "cron_name": "mica_transcript_records",
+            "cron_description": "Copies each finalized MICA session into the repeating 'MICA Transcript' instrument, one instance per statement, with the statements the Safety Scan highlighted marked, so a REDCap report or the API can export them. Every 15 minutes, idempotent (an unchanged session writes nothing), and skips any project without the instrument.",
+            "method": "micaTranscriptRecordsCron",
+            "cron_frequency": "900",
+            "cron_max_run_time": "600"
         }
     ]
 }

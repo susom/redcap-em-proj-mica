@@ -1,0 +1,14 @@
+Variable / Field Name,Form Name,Section Header,Field Type,Field Label,"Choices, Calculations, OR Slider Labels",Field Note,Text Validation Type OR Show Slider Number,Text Validation Min,Text Validation Max,Identifier?,Branching Logic (Show field only if...),Required Field?,Custom Alignment,Question Number (surveys only),Matrix Group Name,Matrix Ranking?,Field Annotation
+tx_session_type,mica_transcript,One statement from a MICA session per instance. Written automatically by the MICA module from the finalized transcript; do not edit.,text,Session type,,baseline = Day 1 (ED) session; booster = Month 3 booster,,,,,,,,,,,@READONLY
+tx_seq,mica_transcript,,text,Statement number,,"Order within the session, from 1",integer,,,,,,,,,,@READONLY
+tx_message_id,mica_transcript,,text,Message ID,,Same ID the Safety Scan cites (L + log id). Blank on a no-reply row,,,,,,,,,,,@READONLY
+tx_speaker,mica_transcript,,dropdown,Speaker,"participant, Participant | mica, MICA | no_reply, No reply logged",,,,,,,,,,,,@READONLY
+tx_timestamp,mica_transcript,,text,Time,,,datetime_seconds_ymd,,,,,,,,,,@READONLY
+tx_text,mica_transcript,,notes,Statement,,Verbatim,,,,y,,,,,,,@READONLY
+tx_flagged,mica_transcript,,yesno,Highlighted by the Safety Scan,,,,,,,,,,,,,@READONLY
+tx_flag_quote,mica_transcript,,notes,Highlighted text,,The exact words the finding cites. Several findings are separated by |,,,,y,[tx_flagged] = '1',,,,,,@READONLY
+tx_flag_concern,mica_transcript,,text,Concern type,,"Reviewer's corrected type if set, otherwise the scan's",,,,,[tx_flagged] = '1',,,,,,@READONLY
+tx_flag_urgency,mica_transcript,,text,Urgency,,"Reviewer's corrected urgency if set, otherwise the scan's",,,,,[tx_flagged] = '1',,,,,,@READONLY
+tx_flag_review,mica_transcript,,text,Review status,,"pending, confirmed, dismissed or needs_second_review",,,,,[tx_flagged] = '1',,,,,,@READONLY
+tx_flag_finding_ids,mica_transcript,,text,Finding ID(s),,Matches finding_id on the MICA Safety Finding form,,,,,[tx_flagged] = '1',,,,,,@READONLY
+tx_transcript_ref,mica_transcript,,text,Transcript,,The finalized transcript this statement came from,,,,,,,,,,,@READONLY

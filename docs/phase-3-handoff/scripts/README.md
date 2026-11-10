@@ -12,6 +12,7 @@ bypass (`10 §3`). The verifier asserts that specifically.
 | File | Purpose |
 |---|---|
 | `apply-auth-config.php` | Idempotent. Adds the mount-point field to each host instrument, makes each host instrument repeating at every event it is designated to, enables both as surveys with link time limits and "Repeat Survey", and configures scoped Survey Login with a single credential slot. Event ids are derived from the instruments' own designations, not hardcoded. |
+| `sync-transcript-records.php` | Runs the transcript copy into the `mica_transcript` instrument now instead of waiting for the 15-minute cron: `<pid> [record]` prints the summary (sessions, statements written/cleared, skips, errors), `--cron` runs the cron method over every project. Never prints transcript text. Doc 33. |
 | `verify-auth-config.php` | Independent check of the intended end state. Does not reuse the apply logic. Exit 0 = pass. |
 | `manual-test-auth.php` | Test-participant lifecycle for hand-testing the gate: `setup` \| `links` \| `reset-lockout` \| `teardown`. Creates a participant that satisfies the real preconditions (credential at the pre-randomization event, then randomized into an arm so a link can exist). Walkthrough: [`../11-auth-manual-test-guide.md`](../11-auth-manual-test-guide.md). |
 
