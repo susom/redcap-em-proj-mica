@@ -88,10 +88,12 @@ final class RedcapTranscriptRecordSync
 
         $records = array_values(array_unique(array_column($slots, 'record')));
         $findingsByRun = $this->findingsByRun($projectId, $records);
+        $deletedAt = $this->latestDeletions($projectId, $records);
         $existing = $this->existingInstances($projectId, $records);
         $primary = ProjectContext::for($projectId);
 
         $writesByRecord = [];
+        $deletesByRecord = [];
 
         foreach ($slots as $key => $slot) {
             $summary['slots']++;
@@ -119,7 +121,17 @@ final class RedcapTranscriptRecordSync
                 continue;
             }
 
-            $desired = $this->builder->build($slot['session_type'], $transcripts, $findingsByTranscript);
+            $desired = $this->builder->build(
+                $slot['session_type'],
+                $transcripts,
+                $findingsByTranscript,
+                $deletedAt[$slot['record']] ?? null
+            );
+            $dropped = $this->builder->droppedBeforeCutoff();
+            if ($dropped > 0) {
+                $summary['skipped']['messages_from_deleted_record'] =
+                    ($summary['skipped']['messages_from_deleted_record'] ?? 0) + $dropped;
+            }
             $changes = TranscriptRecordDiff::changes($desired, $existing[$key] ?? []);
 
             if ($changes === []) {
@@ -129,8 +141,13 @@ final class RedcapTranscriptRecordSync
             $eventName = ProjectContext::uniqueEventName($projectId, $slot['event_id']);
 
             foreach ($changes as $instance => $row) {
-                $cleared = trim(implode('', $row)) === '';
-                $summary[$cleared ? 'instances_cleared' : 'instances_written']++;
+                if (trim(implode('', $row)) === '') {
+                    // Removed, not blanked: saving every field empty leaves the instance behind with
+                    // form status 0, an empty "Incomplete" instance on the record.
+                    $deletesByRecord[$slot['record']][] = [$eventName, $instance];
+                    continue;
+                }
+                $summary['instances_written']++;
 
                 $writesByRecord[$slot['record']][] = [
                     $primary                   => $slot['record'],
@@ -164,11 +181,63 @@ final class RedcapTranscriptRecordSync
             $summary['records_written']++;
         }
 
+        foreach ($deletesByRecord as $record => $instances) {
+            foreach ($instances as [$eventName, $instance]) {
+                $deleted = \REDCap::deleteRecord(
+                    $projectId,
+                    (string) $record,
+                    null,
+                    $eventName,
+                    TranscriptRecordBuilder::FORM,
+                    $instance
+                );
+                if ($deleted === true) {
+                    $summary['instances_cleared']++;
+                } else {
+                    $summary['errors'][] = "record $record: could not delete instance $instance of "
+                        . TranscriptRecordBuilder::FORM . " at $eventName";
+                }
+            }
+        }
+
         if ($summary['errors'] !== []) {
             $summary['status'] = 'partial';
         }
 
         return $summary;
+    }
+
+    /**
+     * When each record was last deleted, for records whose ID has been used before. REDCap logs a
+     * record deletion, and only that, as event DELETE on redcap_data; `ts` is server-local
+     * YYYYMMDDHHMMSS.
+     *
+     * @param list<string> $records
+     * @return array<string,\DateTimeImmutable>
+     */
+    private function latestDeletions(int $projectId, array $records): array
+    {
+        if ($records === []) {
+            return [];
+        }
+
+        $result = $this->module->query(
+            'SELECT pk, MAX(ts) AS ts FROM ' . \Logging::getLogEventTable($projectId)
+            . " WHERE project_id = ? AND event = 'DELETE' AND object_type = 'redcap_data'"
+            . ' AND pk IN (' . implode(',', array_fill(0, count($records), '?')) . ') GROUP BY pk',
+            array_merge([$projectId], $records)
+        );
+
+        $zone = new \DateTimeZone(date_default_timezone_get());
+        $deleted = [];
+        while ($row = $result->fetch_assoc()) {
+            $at = \DateTimeImmutable::createFromFormat('YmdHis', (string) $row['ts'], $zone);
+            if ($at !== false) {
+                $deleted[(string) $row['pk']] = $at;
+            }
+        }
+
+        return $deleted;
     }
 
     /** @return list<string> */

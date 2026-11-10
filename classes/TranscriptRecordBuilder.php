@@ -32,6 +32,14 @@ namespace Stanford\MICA;
  * row is inserted after any participant message not followed by a MICA message, so a coder sees the
  * gap instead of two participant messages that look like one turn. A finalized transcript is a
  * closed conversation, so a last participant message with no reply is treated the same way.
+ *
+ * ## A record ID used twice
+ *
+ * Deleting a record leaves its EM log rows and scan jobs behind, and REDCap's auto-numbering can give
+ * the same ID to the next record created. The finalizer then treats the new record's first session
+ * as a continuation of the deleted record's, so without a cut-off the new record's transcript would
+ * open with somebody else's conversation. The sync passes the record's latest deletion time as
+ * `$notBefore`, and every message logged before it is left out.
  */
 final class TranscriptRecordBuilder
 {
@@ -75,6 +83,9 @@ final class TranscriptRecordBuilder
 
     private \DateTimeZone $timezone;
 
+    /** Messages the last build() left out because they predate the record's deletion. */
+    private int $droppedBeforeCutoff = 0;
+
     public function __construct(?\DateTimeZone $timezone = null)
     {
         // The timestamps are stored RFC 3339 with an offset; REDCap's datetime validation wants a
@@ -90,11 +101,34 @@ final class TranscriptRecordBuilder
      *        transcript log_id => findings of that transcript's latest scan run. Each finding:
      *        finding_id, concern_type, urgency, review_status, corrected_concern_type,
      *        corrected_urgency, evidence (list of {message_id, exact_quote}).
+     * @param \DateTimeImmutable|null $notBefore
+     *        The record's latest deletion, if its ID was used before: messages logged earlier belong
+     *        to the deleted record and are left out.
      * @return list<array<string,string>> index 0 is instance 1
      */
-    public function build(string $sessionType, array $transcripts, array $findingsByTranscript): array
-    {
+    public function build(
+        string $sessionType,
+        array $transcripts,
+        array $findingsByTranscript,
+        ?\DateTimeImmutable $notBefore = null
+    ): array {
         $messages = $this->mergedMessages($transcripts);
+        $this->droppedBeforeCutoff = 0;
+
+        if ($notBefore !== null) {
+            $kept = [];
+            foreach ($messages as $m) {
+                $at = $this->parse($m['timestamp'] ?? null);
+                // A message with no readable time cannot be shown to be the deleted record's, so it
+                // stays. MICA always logs one; this is for the schema's nullable timestamp.
+                if ($at !== null && $at < $notBefore) {
+                    $this->droppedBeforeCutoff++;
+                    continue;
+                }
+                $kept[] = $m;
+            }
+            $messages = $kept;
+        }
         $flags = $this->flagsByMessage($transcripts, $findingsByTranscript);
 
         $rows = [];
@@ -135,6 +169,11 @@ final class TranscriptRecordBuilder
         }
 
         return $rows;
+    }
+
+    public function droppedBeforeCutoff(): int
+    {
+        return $this->droppedBeforeCutoff;
     }
 
     /**
@@ -253,14 +292,21 @@ final class TranscriptRecordBuilder
 
     private function localTime(?string $timestamp): string
     {
+        $at = $this->parse($timestamp);
+
+        return $at === null ? '' : $at->setTimezone($this->timezone)->format('Y-m-d H:i:s');
+    }
+
+    private function parse(?string $timestamp): ?\DateTimeImmutable
+    {
         if ($timestamp === null || trim($timestamp) === '') {
-            return '';
+            return null;
         }
 
         try {
-            return (new \DateTimeImmutable($timestamp))->setTimezone($this->timezone)->format('Y-m-d H:i:s');
+            return new \DateTimeImmutable($timestamp);
         } catch (\Exception) {
-            return '';
+            return null;
         }
     }
 

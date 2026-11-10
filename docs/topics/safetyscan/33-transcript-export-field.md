@@ -80,6 +80,14 @@ Behavior:
     or Month 3 events.
   - A deleted record is never recreated: jobs and log rows survive record deletion, and the copy checks that the
     record exists.
+  - **A reused record ID does not inherit the deleted record's sessions.** REDCap's auto-numbering can give a deleted
+    record's ID to the next record, and MICA's message log isn't deleted with the record. The finalizer then stores
+    the new record's first session as a continuation of the old one. The copy leaves out every message logged
+    before the record's latest deletion (event `DELETE` on `redcap_data` in the project log). Found 2026-11-10:
+    record 1 on PID 271 was deleted and recreated, and its form opened with the deleted record's 2026-09-22 chat.
+  - Statements that no longer belong are **deleted** with `REDCap::deleteRecord(pid, record, null, event,
+    'mica_transcript', instance)`. Blanking every field instead leaves the instance behind as an empty
+    "Incomplete" instance.
   - A transcript that fails its hash check skips the whole session; a coder never gets a session with a hole in it.
 - **Size is not an issue.** Each statement is at most 12,000 bytes (the transcript schema's limit). That is far
   under REDCap's 64 KB per value, and there is no per-session blob.
